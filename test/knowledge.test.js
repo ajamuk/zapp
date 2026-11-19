@@ -14,9 +14,10 @@ test('horarios filtrados por sede, modalidad y franja', () => {
   assert.deepEqual(r.dias, { lunes: ['11:30'], miercoles: ['11:30'], viernes: ['11:30'] });
   const t = consultarHorarios({ sede: 'getafe', modalidad: 'academy', franja: 'tarde' });
   assert.deepEqual(t.dias.lunes, ['17:00', '18:00', '19:00']);
-  // Parla CrossFit el lunes no tiene 16:30 (eso es HYROX): el error que cometía Zapp
-  const cf = consultarHorarios({ sede: 'parla', modalidad: 'crossfit', franja: 'tarde' });
-  assert.ok(!cf.dias.lunes.includes('16:30'));
+  // Viernes de Academy en Getafe: el horario de Zapp tenía una clase de 19:00 que ya no existe
+  assert.deepEqual(t.dias.viernes, ['17:00', '18:00']);
+  // Getafe no tiene Open Box
+  assert.deepEqual(consultarHorarios({ sede: 'getafe', modalidad: 'open box' }).dias, {});
   assert.equal(consultarHorarios({ sede: 'parla' }).ok, false);
 });
 

@@ -28,8 +28,10 @@ Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 
 ```sh
 npm install
-npm test                                  # 16 pruebas, sin red
+npm test                                  # pruebas sin red
 ANTHROPIC_API_KEY=... npm run simular     # chat de terminal con Sofía (modelo real, sin GHL)
+ANTHROPIC_API_KEY=... npm run evaluar     # réplica de 32 momentos reales de Zapp → data/informe-evaluacion.md
+npm run sync-aimharder                    # horarios desde AimHarder + aviso si cambia algún precio
 ```
 
 ## Desplegar en el VPS
@@ -66,9 +68,8 @@ curl -s localhost:3200/admin/costes -H "Authorization: Bearer $ADMIN_TOKEN"
 
 ## Pendiente antes de producción
 
-- [ ] Probar el prompt con conversaciones reales en modo prueba (comparar con Zapp).
-- [ ] URL de búsqueda de socios de AimHarder (`docs/aimharder.md`).
+- [ ] Pasar `npm run evaluar` y revisar el informe; luego modo prueba con conversaciones reales en GHL.
 - [ ] Grabar los pasos del alta por navegador.
-- [ ] Festivos 2026-2027 en `config/festivos.json`; confirmar tamaño de grupo de Academy (8 o 10).
+- [ ] Festivos 2026-2027 en `config/festivos.json`; decidir si el bono de 1 clase se puede comunicar.
 - [ ] Comprobar en GHL los nombres exactos de campos del webhook y de la plantilla `zapp_seguimiento_programado`.
 - [ ] Aprobación de Carlos → traspaso del número a GHL → `MODE=live`.

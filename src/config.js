@@ -46,8 +46,9 @@ export const config = {
     calendarPruebaParla: env('GHL_CALENDAR_PRUEBA_PARLA'),
   },
   aimharder: {
-    apiUrl: env('AIMHARDER_API_URL'),
-    apiKey: env('AIMHARDER_API_KEY'),
+    tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
+      access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),
+    }])),
     adminUrl: env('AIMHARDER_ADMIN_URL'),
     adminUser: env('AIMHARDER_ADMIN_USER'),
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),

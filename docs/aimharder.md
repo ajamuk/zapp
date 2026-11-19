@@ -1,18 +1,22 @@
 # AimHarder: búsqueda de socios y alta por navegador
 
-## 1. Búsqueda por teléfono (API)
+## 1. Socios (API pública)
 
-Sirve para separar socios de leads antes de que conteste la IA.
+La API (`https://api.aimharder.com`, un token por sede) no busca por teléfono. Por eso el servicio descarga los
+clientes de las tres sedes con sus tarifas vigentes (`GET /clients?with-current-memberships=true`) y guarda un
+índice teléfono → socio en SQLite. Se repite al arrancar y cada 4 horas (unos 7 s por sede).
 
-- `AIMHARDER_API_URL`: endpoint de búsqueda de clientes. El sistema llama a `GET <url>?phone=<teléfono>`
-  con `Authorization: Bearer <AIMHARDER_API_KEY>`.
-- Se espera una lista de clientes (o `{ clients: [...] }`). Se considera socio a quien tenga `active: true`
-  (o `status: "active"`). Si la API de AimHarder usa otros nombres de campo, se ajusta en
-  `src/aimharder/index.js` (función `buscarSocioPorTelefono`), 10 líneas.
-- Sin configurar, todo el mundo se trata como lead.
+- Socio = tiene alguna tarifa vigente hoy → la IA no contesta, se etiqueta `socio` y se asigna a su sede.
+- Exsocio (ficha sin tarifa vigente) → se trata como lead y se etiqueta `exsocio`.
+- Tokens en `.env` (`AIMHARDER_TOKEN_*` y `AIMHARDER_REFRESH_*`). Cuando caducan (la API responde 410) se renuevan
+  solos con el refresh token y la pareja nueva se guarda en `data/aimharder-tokens.json`.
 
-**Pendiente:** pasar la URL real de búsqueda y un ejemplo de respuesta (puede salir del pipeline de
-reconciliación AimHarder–GHL que ya existe).
+Comprobado el 19 nov 2026: Parla 317 socios con tarifa, Getafe 382, Las Rosas 260.
+
+## Horarios y tarifas
+
+`npm run sync-aimharder` regenera `config/horarios.json` desde las clases de AimHarder y avisa si algún precio de
+`config/tarifas.json` ya no coincide. Conviene lanzarlo cada vez que se cambie el horario (o programarlo semanal).
 
 ## 2. Alta por navegador (Playwright)
 

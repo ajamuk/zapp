@@ -10,7 +10,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas'] },
-        modalidad: { type: 'string', enum: ['academy', 'crossfit', 'hyrox'] },
+        modalidad: { type: 'string', enum: ['academy', 'crossfit', 'hyrox', 'open_box', 'halterofilia', 'crossfit_partner'] },
         franja: { type: 'string', enum: ['manana', 'tarde'] },
       },
       required: ['sede', 'modalidad'],

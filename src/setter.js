@@ -95,7 +95,7 @@ export class Setter {
       return 'socio';
     }
     this.repo.updateConv(conv.id, { tipo: 'captacion' });
-    await this.safe(() => this.ghl.addTags(conv.contact_id, [TAGS.tipo.captacion]));
+    await this.safe(() => this.ghl.addTags(conv.contact_id, [TAGS.tipo.captacion, ...(socio.exSocio ? ['exsocio'] : [])]));
     return 'captacion';
   }
 

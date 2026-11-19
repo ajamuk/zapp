@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS ai_runs (
   error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS socios (
+  telefono TEXT NOT NULL,
+  sede TEXT NOT NULL,
+  aimharder_id INTEGER NOT NULL,
+  nombre TEXT,
+  activo INTEGER NOT NULL,
+  tarifa TEXT,
+  actualizado TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS socios_tel ON socios(telefono);
 CREATE TABLE IF NOT EXISTS altas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -120,6 +130,12 @@ export function repo(db) {
       db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error)
         VALUES (@conversation_id, @motivo, @modelo, @tokens_in, @tokens_cache_read, @tokens_cache_write, @tokens_out, @ms, @error)`)
         .run({ tokens_in: 0, tokens_cache_read: 0, tokens_cache_write: 0, tokens_out: 0, ms: 0, error: null, ...r }),
+    reemplazarSocios: db.transaction((sede, filas) => {
+      db.prepare('DELETE FROM socios WHERE sede = ?').run(sede);
+      const ins = db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)');
+      for (const f of filas) ins.run(f);
+    }),
+    sociosPorTelefono: (tel) => db.prepare('SELECT * FROM socios WHERE telefono = ?').all(tel),
     addAlta: (convId, datos, estado, detalle = null) =>
       db.prepare('INSERT INTO altas (conversation_id, datos, estado, detalle) VALUES (?, ?, ?, ?)').run(convId, JSON.stringify(datos), estado, detalle),
     costes: (dias = 7) =>

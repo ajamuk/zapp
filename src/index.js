@@ -1,14 +1,21 @@
 import { config } from './config.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { Ghl } from './ghl.js';
-import { buscarSocioPorTelefono, prepararAltaNavegador } from './aimharder/index.js';
+import { buscarSocioPorTelefono, prepararAltaNavegador, sincronizarSocios } from './aimharder/index.js';
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
 import { procesarSeguimientos } from './followups.js';
 import { crearApp } from './server.js';
 
 const repo = crearRepo(openDb(config.dbPath));
-const aimharder = { buscarSocioPorTelefono, prepararAlta: prepararAltaNavegador };
+const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador };
+
+// Índice de socios desde AimHarder: al arrancar y cada 4 horas.
+const sincronizar = () => sincronizarSocios(repo)
+  .then((r) => console.log('Socios sincronizados:', JSON.stringify(r)))
+  .catch((e) => avisarEquipo(`No se pudo sincronizar socios de AimHarder: ${e.message}`));
+sincronizar();
+setInterval(sincronizar, 4 * 3600 * 1000);
 const setter = new Setter({ repo, ghl: new Ghl(), aimharder, avisar: avisarEquipo });
 
 const app = crearApp({ setter, repo, aimharder, avisar: avisarEquipo });

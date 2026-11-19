@@ -1,7 +1,7 @@
 # Base de conocimiento — CrossFit MetroPolitano
 
 Fuente única de datos del negocio para Sofía. Si un dato no está aquí, no se inventa: se dice que se consulta con el equipo.
-Copiado de Zapp el 19 nov 2026. Los puntos marcados con **[CONFIRMAR]** tienen fuentes que no coinciden.
+Copiado de Zapp el 19 nov 2026; tarifas y horarios comprobados en AimHarder el mismo día. Los puntos marcados con **[CONFIRMAR]** están pendientes.
 
 ## Marca
 
@@ -17,7 +17,7 @@ Copiado de Zapp el 19 nov 2026. Los puntos marcados con **[CONFIRMAR]** tienen f
 
 - Ruta obligatoria para quien nunca ha hecho CrossFit o lleva mucho tiempo sin entrenar.
 - Aprende movimientos y técnica paso a paso, cargas adaptadas, coach corrigiendo.
-- Grupos de máximo 10 personas. **[CONFIRMAR]** la ficha antigua decía 8.
+- Grupos de máximo 10 personas.
 - Dura uno o dos meses; después pasa a las clases de CrossFit con toda la comunidad.
 - Quien ya tiene experiencia entra directamente a CrossFit/HYROX.
 - Precio: a igualdad de días, Academy cuesta lo mismo que CrossFit/HYROX (Academy 2 días = Tarifa M, Academy 3 días = Tarifa L).
@@ -37,7 +37,8 @@ CrossFit y HYROX comparten tarifa y se pueden combinar.
 - Las clases que sobran de un mes no pasan al siguiente.
 - Las clases de CrossFit/HYROX no se cambian por Open Box; el Open Box de la tarifa es el que es.
 - La Tarifa M 2025 ya no existe.
-- Tarifas de congelación: no se comunican; se deriva al equipo.
+- Tarifas de congelación: existen, pero no se comunican ni se ofrecen; se deriva al equipo.
+- Bono de 1 clase suelta (Parla 11,50 €, Getafe 12 €, Las Rosas 12,50 €): **[CONFIRMAR]** si se puede comunicar. Mientras tanto, no se ofrece.
 - Guía para recomendar: 1 día/semana → S · 2 días → M · 3 días → L · 4 o más → XL.
 
 ## Bonos de 10 clases
@@ -64,7 +65,9 @@ Solo si el lead pregunta por un bono. Validez: 4 meses para usar las 10 clases.
 ## Horarios publicados
 
 Son el horario habitual: no confirman plazas libres. La disponibilidad real se ve en la app.
-Los horarios están en `config/horarios.json` y se consultan con la herramienta `consultar_horarios`.
+Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consultan con la herramienta `consultar_horarios`.
+
+- Actividades: Academy, CrossFit y HYROX en las tres sedes; CrossFit Partner los sábados; Open Box y Halterofilia en Parla y Las Rosas (no en Getafe); Fuerza en Parla.
 
 - Las clases se abren para reservar 4 días antes a las 22:00 y se pueden reservar hasta 1 minuto antes.
 - No hay turno fijo: cada día se elige la hora en la app.

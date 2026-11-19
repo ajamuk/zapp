@@ -31,6 +31,9 @@ export function normalizarModalidad(m) {
   const t = String(m || '').toLowerCase();
   if (t.includes('academy') || t.includes('inicia') || t.includes('principiante')) return 'academy';
   if (t.includes('hyrox')) return 'hyrox';
+  if (t.includes('open')) return 'open_box';
+  if (t.includes('halter')) return 'halterofilia';
+  if (t.includes('partner')) return 'crossfit_partner';
   if (t.includes('crossfit') || t.includes('cross')) return 'crossfit';
   return null;
 }
@@ -46,7 +49,8 @@ export function consultarHorarios({ sede, modalidad, franja }) {
   const s = normalizarSede(sede);
   const m = normalizarModalidad(modalidad);
   if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral abre el 1 de febrero de 2027; aún no hay horario publicado.' };
-  if (!s || !m) return { ok: false, error: 'Falta la sede (parla, getafe, las_rosas) o la modalidad (academy, crossfit, hyrox).' };
+  if (!s || !m) return { ok: false, error: 'Falta la sede (parla, getafe, las_rosas) o la modalidad (academy, crossfit, hyrox, open_box, halterofilia, crossfit_partner).' };
+  if (!knowledge.horarios[s]?.[m]) return { ok: true, sede: s, modalidad: m, dias: {}, aviso: `En esta sede no hay ${m.replace('_', ' ')}.` };
   const f = franja ? (String(franja).toLowerCase().startsWith('m') ? 'manana' : 'tarde') : null;
   const tabla = knowledge.horarios[s]?.[m] || {};
   const dias = {};
@@ -71,7 +75,8 @@ export function tarifaRecomendada(familia, dias) {
 export function consultarTarifas({ sede, familia, dias_por_semana }) {
   const s = normalizarSede(sede);
   if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral: ofertas de preapertura en preparación; no dar precios.' };
-  const fam = normalizarModalidad(familia) === 'academy' ? 'academy' : normalizarModalidad(familia) ? 'crossfit_hyrox' : null;
+  const mod = normalizarModalidad(familia);
+  const fam = mod === 'academy' ? 'academy' : ['crossfit', 'hyrox'].includes(mod) || String(familia).includes('crossfit') ? 'crossfit_hyrox' : null;
   if (!s || !fam) return { ok: false, error: 'Falta la sede o la familia (academy o crossfit/hyrox).' };
   const t = knowledge.tarifas[s];
   const desc = knowledge.tarifas.descripciones;
