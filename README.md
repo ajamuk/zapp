@@ -34,6 +34,12 @@ ANTHROPIC_API_KEY=... npm run evaluar     # réplica de 32 momentos reales de Za
 npm run sync-aimharder                    # horarios desde AimHarder + aviso si cambia algún precio
 ```
 
+## Simulador para probar a Sofía
+
+Página para chatear con Sofía desde el móvil o el ordenador, sin GHL ni leads reales: muestra qué herramientas usa,
+la fase y las etiquetas, y deja puntuar cada respuesta (👍/👎 + nota). Las pruebas se guardan para afinar el prompt.
+Se regenera con `npm run build-simulador` cuando cambian el prompt, la base de conocimiento, horarios o tarifas.
+
 ## Desplegar en el VPS
 
 ```sh
@@ -70,6 +76,6 @@ curl -s localhost:3200/admin/costes -H "Authorization: Bearer $ADMIN_TOKEN"
 
 - [ ] Pasar `npm run evaluar` y revisar el informe; luego modo prueba con conversaciones reales en GHL.
 - [ ] Grabar los pasos del alta por navegador.
-- [ ] Festivos 2026-2027 en `config/festivos.json`; decidir si el bono de 1 clase se puede comunicar.
+- [ ] Festivos 2026-2027 en `config/festivos.json`.
 - [ ] Comprobar en GHL los nombres exactos de campos del webhook y de la plantilla `zapp_seguimiento_programado`.
 - [ ] Aprobación de Carlos → traspaso del número a GHL → `MODE=live`.

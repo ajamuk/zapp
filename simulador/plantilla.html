@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simulador de Sofía</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* VOICE: herramienta de trabajo, tranquila, como el móvil del box
+   IDEA: la pantalla de WhatsApp de un lead, con la trastienda (herramientas, etiquetas) a la vista
+   PICTURE: la propia conversación, a pantalla completa
+   COLOUR and TYPE: verde profundo #00463c, papel claro, lima #e6f5c8 para Sofía, coral para avisos; Inter Tight + Inter
+   LAYOUT: barra superior con ajustes, chat en el centro, caja de escribir fija abajo */
+:root{color-scheme:light dark;--bg:light-dark(#eef1ec,#0d1512);--chat:light-dark(#f7f8f5,#111c18);--ink:light-dark(#14211c,#e7efe9);--mute:light-dark(#5b6b64,#9fb1a8);--deep:#00463c;--lead:light-dark(#ffffff,#1d2a25);--sofia:light-dark(#e6f5c8,#23402f);--line:light-dark(#d7ddd8,#26342e);--coral:#ff6f59}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Inter,system-ui,sans-serif;display:flex;flex-direction:column}
+header{background:var(--deep);color:#fff;padding:12px max(4vw,14px);display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+header h1{font:700 20px/1.1 "Inter Tight",Inter,sans-serif;margin:0;flex:1 1 180px}
+header h1 small{display:block;font:400 13px/1.3 Inter,sans-serif;opacity:.8;margin-top:3px}
+.ajustes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+select,button,textarea,input{font:inherit;font-size:16px;border-radius:10px}
+select{background:#0b5a4d;color:#fff;border:1px solid #2e7a6c;padding:8px 10px;min-height:44px}
+button{cursor:pointer;min-height:44px;padding:0 16px;border:0}
+button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #b6e36b;outline-offset:2px}
+.nuevo{background:#e6f5c8;color:#00463c;font-weight:600}
+main{flex:1;overflow-y:auto;background:var(--chat);padding:18px max(4vw,12px) 8px}
+.hilo{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:6px}
+.vacio{color:var(--mute);text-align:center;margin:12vh auto 0;max-width:440px}
+.vacio b{color:var(--ink);font:600 18px "Inter Tight",sans-serif;display:block;margin-bottom:6px}
+.sug{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+.sug button{background:var(--lead);color:var(--ink);border:1px solid var(--line);font-size:14px;min-height:40px;border-radius:20px}
+.b{max-width:min(82%,560px);padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 1px 0 rgb(0 0 0/.06)}
+.b.lead{align-self:flex-end;background:var(--lead);border-top-right-radius:4px}
+.b.sofia{align-self:flex-start;background:var(--sofia);border-top-left-radius:4px}
+.meta{align-self:flex-start;font-size:13px;color:var(--mute);display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 10px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:2px 9px;background:var(--bg)}
+.chip.aviso{border-color:var(--coral);color:var(--coral)}
+.voto{background:none;border:1px solid var(--line);color:var(--mute);min-height:32px;padding:0 10px;font-size:13px;border-radius:999px}
+.voto.on{background:var(--deep);color:#fff;border-color:var(--deep)}
+.nota{display:flex;gap:6px;width:100%;margin-top:4px}
+.nota input{flex:1;border:1px solid var(--line);background:var(--lead);color:var(--ink);padding:6px 10px;min-height:38px}
+.nota button{min-height:38px;background:var(--deep);color:#fff;font-size:14px}
+.escribe{align-self:flex-start;color:var(--mute);font-style:italic;font-size:14px}
+.error{align-self:center;color:var(--coral);font-size:14px;text-align:center}
+footer{background:var(--bg);border-top:1px solid var(--line);padding:10px max(4vw,12px) max(10px,env(safe-area-inset-bottom))}
+form{max-width:760px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--lead);color:var(--ink);padding:10px 12px;min-height:44px;max-height:140px}
+.enviar{background:var(--deep);color:#fff;font-weight:600}
+.enviar:disabled{opacity:.5}
+.pie{max-width:760px;margin:6px auto 0;font-size:13px;color:var(--mute)}
+@media(prefers-reduced-motion:no-preference){.b{animation:in .18s ease-out}@keyframes in{from{opacity:0;transform:translateY(4px)}}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Simulador de Sofía<small>Habla con ella como si fueras un lead. No sale nada a ningún cliente.</small></h1>
+  <div class="ajustes">
+    <label><span class="sr" hidden>Canal</span><select id="canal" aria-label="Canal"><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select></label>
+    <label><select id="nombre" aria-label="Nombre del perfil"><option value="">Perfil sin nombre</option><option value="Laura">Perfil: Laura</option><option value="Javier">Perfil: Javier</option></select></label>
+    <button class="nuevo" id="nuevo" type="button">Nueva conversación</button>
+  </div>
+</header>
+<main id="main"><div class="hilo" id="hilo"></div></main>
+<footer>
+  <form id="f"><textarea id="txt" rows="1" placeholder="Escribe como un lead…" aria-label="Mensaje"></textarea><button class="enviar" id="send" type="submit">Enviar</button></form>
+  <div class="pie" id="pie">Puntúa cada respuesta con 👍 o 👎 y una nota: lo uso para afinar a Sofía.</div>
+</footer>
+<script>
+{
+const D = /*__DATOS__*/null;
+const DIAS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+const SEDE_N = {parla:'Parla',getafe:'Getafe',las_rosas:'Las Rosas',el_canaveral:'El Cañaveral'};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- Herramientas (mismas reglas que el servicio) ----
+const sede = (s) => { const t = String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); if (t.includes('parla')) return 'parla'; if (t.includes('getafe')||t.includes('bercial')) return 'getafe'; if (t.includes('rosas')||t.includes('rozas')||t.includes('san blas')) return 'las_rosas'; if (t.includes('canaveral')) return 'el_canaveral'; return null; };
+const modalidad = (m) => { const t = String(m||'').toLowerCase(); if (t.includes('academy')) return 'academy'; if (t.includes('hyrox')) return 'hyrox'; if (t.includes('open')) return 'open_box'; if (t.includes('halter')) return 'halterofilia'; if (t.includes('partner')) return 'crossfit_partner'; if (t.includes('cross')) return 'crossfit'; return null; };
+function consultarHorarios({sede: s, modalidad: m, franja}) {
+  s = sede(s); m = modalidad(m);
+  if (s === 'el_canaveral') return {ok:false, error:'El Cañaveral abre el 1 de febrero de 2027; sin horario publicado.'};
+  if (!s || !m) return {ok:false, error:'Falta sede o modalidad.'};
+  const f = franja ? (String(franja).toLowerCase().startsWith('m') ? 'manana' : 'tarde') : null;
+  const tabla = D.horarios[s][m]; if (!tabla) return {ok:true, sede:s, modalidad:m, dias:{}, aviso:`En esta sede no hay ${m}.`};
+  const dias = {}; for (const d of DIAS) { const hs = (tabla[d]||[]).filter((h) => !f || (f === 'manana' ? +h.slice(0,2) < 14 : +h.slice(0,2) >= 14)); if (hs.length) dias[d] = hs; }
+  return {ok:true, sede:s, modalidad:m, franja:f, dias, aviso:'Horario habitual; no confirma plazas.'};
+}
+function recomendada(fam, n) { n = +n; if (fam === 'academy') return n >= 3 ? 'academy_3' : 'academy_2'; if (!n) return null; return n <= 1 ? 'S' : n === 2 ? 'M' : n === 3 ? 'L' : 'XL'; }
+function consultarTarifas({sede: s, familia, dias_por_semana}) {
+  s = sede(s); if (s === 'el_canaveral') return {ok:false, error:'El Cañaveral: preapertura, sin precios.'};
+  const fam = modalidad(familia) === 'academy' ? 'academy' : (String(familia).includes('cross') || modalidad(familia) === 'hyrox') ? 'crossfit_hyrox' : null;
+  if (!s || !fam) return {ok:false, error:'Falta sede o familia.'};
+  const claves = fam === 'academy' ? ['academy_2','academy_3'] : ['S','M','L','XL'];
+  const opciones = claves.map((k) => ({clave:k, descripcion:D.tarifas.descripciones[k], euros_mes:D.tarifas[s][k]}));
+  const r = dias_por_semana ? recomendada(fam, dias_por_semana) : null;
+  return {ok:true, sede:s, familia:fam, opciones, recomendada: r ? opciones.find((o) => o.clave === r) : null};
+}
+function calcularPrimerRecibo({sede: s, tarifa, fecha_inicio}) {
+  s = sede(s); const c = D.tarifas[s]?.[tarifa]; const m = String(fecha_inicio).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!c || !m) return {ok:false, error:'Sede, tarifa o fecha (AAAA-MM-DD) no válidas.'};
+  const dm = new Date(Date.UTC(+m[1], +m[2], 0)).getUTCDate(); const rest = dm - +m[3] + 1;
+  return {ok:true, cuota_mensual:c, dias_restantes:rest, primer_recibo: Math.round(c * rest / dm * 100) / 100};
+}
+
+let estado, efectos;
+const TOOLS = [
+  {name:'consultar_horarios', description:'Horario habitual publicado de una sede y modalidad (academy, crossfit, hyrox, open_box, halterofilia, crossfit_partner), opcionalmente por franja manana|tarde. Úsala siempre antes de dar horarios.', inputSchema:{type:'object',properties:{sede:{type:'string'},modalidad:{type:'string'},franja:{type:'string'}},required:['sede','modalidad']}, execute:(i) => { efectos.push(`horarios ${SEDE_N[sede(i.sede)]||i.sede} · ${i.modalidad}${i.franja?' · '+i.franja:''}`); return consultarHorarios(i); }},
+  {name:'consultar_tarifas', description:'Tarifas oficiales de una sede y familia (academy | crossfit_hyrox). Con dias_por_semana devuelve la recomendada.', inputSchema:{type:'object',properties:{sede:{type:'string'},familia:{type:'string'},dias_por_semana:{type:'integer'}},required:['sede','familia']}, execute:(i) => { efectos.push(`tarifas ${SEDE_N[sede(i.sede)]||i.sede} · ${i.familia}${i.dias_por_semana?' · '+i.dias_por_semana+' días':''}`); return consultarTarifas(i); }},
+  {name:'calcular_primer_recibo', description:'Primer recibo prorrateado según la fecha de inicio (AAAA-MM-DD).', inputSchema:{type:'object',properties:{sede:{type:'string'},tarifa:{type:'string'},fecha_inicio:{type:'string'}},required:['sede','tarifa','fecha_inicio']}, execute:(i) => { efectos.push(`primer recibo ${i.tarifa} · ${i.fecha_inicio}`); return calcularPrimerRecibo(i); }},
+  {name:'preparar_alta', description:'Crea el alta en AimHarder. Solo con el sí del lead y todos los datos: nombre_completo, email, fecha_nacimiento, sede, tarifa, fecha_inicio.', inputSchema:{type:'object',properties:{nombre_completo:{type:'string'},email:{type:'string'},fecha_nacimiento:{type:'string'},sede:{type:'string'},tarifa:{type:'string'},fecha_inicio:{type:'string'}},required:['nombre_completo','email','fecha_nacimiento','sede','tarifa','fecha_inicio']}, execute:(i) => { efectos.push('⚑ alta enviada al equipo'); estado.alta = 'pendiente'; const r = calcularPrimerRecibo(i); return {ok:true, estado:'pendiente_equipo', primer_recibo:r.primer_recibo, nota:'El equipo termina el alta. Dile que le llegará la invitación de AimHarder al correo y le avisamos por aquí. No digas que ya está hecha.'}; }},
+  {name:'reservar_prueba_parla', description:'Pide al equipo la prueba gratuita en Parla. Solo si el lead la pidió.', inputSchema:{type:'object',properties:{modalidad:{type:'string'},fecha_hora:{type:'string'}},required:['modalidad','fecha_hora']}, execute:(i) => { efectos.push(`⚑ prueba Parla ${i.modalidad} · ${i.fecha_hora}`); estado.prueba = true; return {ok:true, estado:'solicitada', nota:'Dile que se la dejas apuntada y el equipo se la confirma. Sin coste.'}; }},
+  {name:'derivar_a_equipo', description:'Pasa la conversación a una persona del equipo y pausa la IA (salud, gestion_socio, cobro, llamada, visita, no_documentado, otro).', inputSchema:{type:'object',properties:{motivo:{type:'string'},resumen:{type:'string'}},required:['motivo','resumen']}, execute:(i) => { efectos.push(`⚑ derivado al equipo: ${i.motivo}`); estado.derivado = true; return {ok:true, nota:'Avisa al lead de que lo revisa una persona del equipo y no sigas vendiendo.'}; }},
+];
+
+function reglas() {
+  const hoy = new Date(); const iso = new Date(hoy.getTime() - hoy.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  return D.prompt.replace(/## Herramientas[\s\S]*?(?=\nUsa siempre)/, '## Herramientas\n\nUsa las herramientas que tienes (consultar_horarios, consultar_tarifas, calcular_primer_recibo, preparar_alta, reservar_prueba_parla, derivar_a_equipo).\n')
+    + '\n\n# Base de conocimiento\n\n' + D.negocio
+    + `\n\n# Contexto de esta conversación\n- Hoy es ${DIAS[(hoy.getDay()+6)%7]} ${iso} (hora de Madrid).\n- Canal: ${$('canal').value}.\n- Nombre del perfil: ${$('nombre').value || 'desconocido'}.\n`
+    + '\n# Formato de tu respuesta final\nDespués de usar las herramientas que necesites, responde SOLO con un JSON: {"mensajes": ["burbuja 1", "burbuja 2"], "sede": "parla|getafe|las_rosas|el_canaveral|desconocida", "fase": "f1 apertura|f2 diagnóstico|f3 presentación|f4 objeciones|f5 cierre|cerrada", "etiquetas": []}. De 1 a 4 burbujas.';
+}
+
+let turnos = [], historial = [], ocupado = false, ctl = null, idConv = null;
+const hilo = $('hilo'), main = $('main');
+const abajo = () => { main.scrollTop = main.scrollHeight; };
+const SUG = ['cuánto cuesta en getafe?', 'quiero probar una clase', 'nunca he hecho crossfit, me da miedo no poder seguir', 'horarios de hyrox en parla por la tarde', 'tengo una hernia, puedo entrenar?', 'soy socio y no me deja reservar en la app'];
+function vacio() {
+  hilo.innerHTML = `<div class="vacio"><b>Empieza una conversación</b>Escribe como lo haría alguien que viene de un anuncio. Debajo de cada respuesta verás qué ha consultado Sofía y qué haría en GHL.<div class="sug">${SUG.map((s) => `<button type="button" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
+}
+function nueva() { ctl?.abort(); turnos = []; historial = []; estado = {}; idConv = 'c' + Date.now().toString(36); vacio(); $('txt').focus(); }
+
+function burbuja(cls, texto) { const d = document.createElement('div'); d.className = 'b ' + cls; d.textContent = texto; hilo.append(d); }
+function meta(r, ef, idx) {
+  const m = document.createElement('div'); m.className = 'meta';
+  const chips = [...ef.map((e) => `<span class="chip${e.startsWith('⚑') ? ' aviso' : ''}">${esc(e)}</span>`)];
+  if (r.fase) chips.push(`<span class="chip">${esc(r.fase)}</span>`);
+  if (r.sede && r.sede !== 'desconocida') chips.push(`<span class="chip">sede: ${esc(SEDE_N[r.sede] || r.sede)}</span>`);
+  for (const t of r.etiquetas || []) chips.push(`<span class="chip">#${esc(t)}</span>`);
+  m.innerHTML = chips.join('') + `<button class="voto" data-v="bien" data-i="${idx}" type="button" aria-label="Respuesta buena">👍</button><button class="voto" data-v="mal" data-i="${idx}" type="button" aria-label="Respuesta mala">👎</button>`;
+  hilo.append(m);
+}
+
+async function enviar(texto) {
+  if (ocupado || !texto.trim()) return;
+  if (!turnos.length) hilo.innerHTML = '';
+  if (estado.derivado) { burbuja('lead', texto); const e = document.createElement('div'); e.className = 'error'; e.textContent = 'La IA está pausada en esta conversación (derivada al equipo). Empieza una nueva.'; hilo.append(e); abajo(); return; }
+  ocupado = true; $('send').disabled = true;
+  burbuja('lead', texto); turnos.push({role:'user', content:texto}); historial.push({autor:'lead', texto});
+  const w = document.createElement('div'); w.className = 'escribe'; w.textContent = 'Sofía está escribiendo…'; hilo.append(w); abajo();
+  efectos = []; ctl = new AbortController();
+  try {
+    const sample = await claude.use('sample');
+    if (!sample) throw {code:'not_granted'};
+    const r = await sample.json([{role:'user', content:reglas()}, ...turnos], {tools:TOOLS, signal:ctl.signal});
+    w.remove();
+    const msgs = (Array.isArray(r?.mensajes) ? r.mensajes : []).map(String).filter((s) => s.trim()).slice(0, 4);
+    if (!msgs.length) msgs.push('(Sofía no ha enviado nada)');
+    for (const m of msgs) burbuja('sofia', m);
+    turnos.push({role:'assistant', content:msgs.join('\n')});
+    historial.push({autor:'sofia', texto:msgs.join('\n'), efectos:[...efectos], fase:r.fase || null, sede:r.sede || null});
+    meta(r, efectos, historial.length - 1);
+    guardar();
+  } catch (e) {
+    w.remove(); turnos.pop(); historial.pop();
+    if (e?.code === 'cancelled') return;
+    const d = document.createElement('div'); d.className = 'error';
+    d.textContent = e?.code === 'not_granted' || e?.code === 'sampling_disabled' ? 'Hace falta permitir que esta página use Claude para hablar con Sofía.' : e?.code === 'rate_limited' ? 'Demasiadas pruebas seguidas. Espera un poco y vuelve a enviar.' : 'Sofía no ha podido contestar. Vuelve a enviar el mensaje.';
+    hilo.append(d);
+  } finally { ocupado = false; $('send').disabled = false; abajo(); }
+}
+
+let db = null;
+claude.use('db').then((x) => { db = x; }).catch(() => {});
+async function guardar() {
+  if (!db || !historial.length) return;
+  try { await db.collection('pruebas').doc(idConv).set({canal:$('canal').value, perfil:$('nombre').value || null, actualizado:new Date().toISOString(), mensajes:historial}); }
+  catch { $('pie').textContent = 'No se ha podido guardar esta prueba; la conversación sigue funcionando.'; }
+}
+
+hilo.addEventListener('click', (ev) => {
+  const s = ev.target.closest('[data-s]'); if (s) { enviar(s.dataset.s); return; }
+  const v = ev.target.closest('.voto'); if (!v) return;
+  const i = +v.dataset.i; const h = historial[i]; if (!h) return;
+  h.voto = v.dataset.v;
+  v.parentElement.querySelectorAll('.voto').forEach((b) => b.classList.toggle('on', b === v));
+  if (!v.parentElement.querySelector('.nota')) {
+    const n = document.createElement('div'); n.className = 'nota';
+    n.innerHTML = `<input placeholder="Qué debería haber dicho (opcional)" aria-label="Nota"><button type="button">Guardar</button>`;
+    n.querySelector('button').onclick = () => { h.nota = n.querySelector('input').value.trim(); n.querySelector('button').textContent = 'Guardado'; guardar(); };
+    v.parentElement.append(n);
+  }
+  guardar();
+});
+$('f').addEventListener('submit', (e) => { e.preventDefault(); const t = $('txt').value; $('txt').value = ''; enviar(t); });
+$('txt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
+$('nuevo').addEventListener('click', nueva);
+nueva();
+}
+</script>
+</body>
+</html>

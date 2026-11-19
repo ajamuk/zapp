@@ -38,7 +38,7 @@ CrossFit y HYROX comparten tarifa y se pueden combinar.
 - Las clases de CrossFit/HYROX no se cambian por Open Box; el Open Box de la tarifa es el que es.
 - La Tarifa M 2025 ya no existe.
 - Tarifas de congelación: existen, pero no se comunican ni se ofrecen; se deriva al equipo.
-- Bono de 1 clase suelta (Parla 11,50 €, Getafe 12 €, Las Rosas 12,50 €): **[CONFIRMAR]** si se puede comunicar. Mientras tanto, no se ofrece.
+- Bono de 1 clase suelta: Parla 11,50 €, Getafe 12 €, Las Rosas 12,50 €. **Nunca se ofrece**; solo se responde si el lead pregunta expresamente por una clase suelta o un bono de un día.
 - Guía para recomendar: 1 día/semana → S · 2 días → M · 3 días → L · 4 o más → XL.
 
 ## Bonos de 10 clases
