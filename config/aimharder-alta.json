@@ -1,0 +1,26 @@
+{
+  "_nota": "Pasos del alta en el panel de AimHarder. Pendiente de grabar sobre el panel real: cambiar 'configurado' a true cuando los selectores estén comprobados. {campo} se sustituye por el dato del alta.",
+  "configurado": false,
+  "tarifas": {
+    "parla": { "academy_2": "", "academy_3": "", "S": "", "M": "", "L": "", "XL": "" },
+    "getafe": { "academy_2": "", "academy_3": "", "S": "", "M": "", "L": "", "XL": "" },
+    "las_rosas": { "academy_2": "", "academy_3": "", "S": "", "M": "", "L": "", "XL": "" }
+  },
+  "descuentos": {},
+  "pasos": [
+    { "accion": "escribir", "selector": "#TODO-usuario", "valor": "{usuario}" },
+    { "accion": "escribir", "selector": "#TODO-password", "valor": "{password}" },
+    { "accion": "click", "selector": "#TODO-entrar" },
+    { "accion": "esperar", "selector": "#TODO-panel" },
+    { "accion": "click", "selector": "#TODO-nuevo-cliente" },
+    { "accion": "escribir", "selector": "#TODO-nombre", "valor": "{nombre_completo}" },
+    { "accion": "escribir", "selector": "#TODO-email", "valor": "{email}" },
+    { "accion": "escribir", "selector": "#TODO-nacimiento", "valor": "{fecha_nacimiento}" },
+    { "accion": "escribir", "selector": "#TODO-telefono", "valor": "{telefono}" },
+    { "accion": "elegir", "selector": "#TODO-tarifa", "valor": "{tarifa_aimharder}" },
+    { "accion": "escribir", "selector": "#TODO-fecha-inicio", "valor": "{fecha_inicio}" },
+    { "accion": "elegir", "selector": "#TODO-descuento", "valor": "{descuento_aimharder}", "soloSi": "descuento_aimharder" },
+    { "accion": "click", "selector": "#TODO-guardar", "guardar": true },
+    { "accion": "esperar", "selector": "#TODO-confirmacion", "guardar": true }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "_nota": "Importes en euros al mes. Usados por la herramienta de tarifas y por el cálculo del primer recibo prorrateado.",
+  "parla": {
+    "academy_2": 85, "academy_3": 95,
+    "S": 55, "M": 85, "L": 95, "XL": 105,
+    "bono10": 120
+  },
+  "getafe": {
+    "academy_2": 89, "academy_3": 99,
+    "S": 57, "M": 89, "L": 99, "XL": 119,
+    "bono10": 119
+  },
+  "las_rosas": {
+    "academy_2": 95, "academy_3": 105,
+    "S": 60, "M": 95, "L": 105, "XL": 120,
+    "bono10": 130
+  },
+  "descripciones": {
+    "academy_2": "CrossFit Academy · 2 días por semana",
+    "academy_3": "CrossFit Academy · 3 días por semana",
+    "S": "CrossFit/HYROX · Tarifa S · 5 clases al mes",
+    "M": "CrossFit/HYROX · Tarifa M · 9 clases al mes",
+    "L": "CrossFit/HYROX · Tarifa L · 13 clases al mes",
+    "XL": "CrossFit/HYROX · Tarifa XL",
+    "bono10": "Bono de 10 clases (validez 4 meses)"
+  }
+}

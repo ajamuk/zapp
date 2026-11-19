@@ -1,0 +1,30 @@
+{
+  "_nota": "Etiquetas que pone el sistema en GHL. 'usuario' es el ID de usuario de GHL al que se asigna el contacto (rellenar en .env o aquí). Las de sede las pone la IA en cuanto conoce la sede.",
+  "sedes": {
+    "parla": { "tag": "parla", "responsableEnv": "GHL_USER_PARLA" },
+    "getafe": { "tag": "getafe", "responsableEnv": "GHL_USER_GETAFE" },
+    "las_rosas": { "tag": "las rosas", "responsableEnv": "GHL_USER_LAS_ROSAS" },
+    "el_canaveral": { "tag": "el cañaveral", "responsableEnv": "GHL_USER_LAS_ROSAS" }
+  },
+  "tipo": {
+    "socio": "socio",
+    "captacion": "captación"
+  },
+  "tareas": {
+    "responder": "responder",
+    "pago_por_verificar": "pago por verificar",
+    "gestion_socio": "gestión de socio",
+    "derivado_salud": "derivado salud",
+    "alta_preparada": "alta preparada",
+    "alta_fallida": "alta fallida",
+    "prueba_parla": "prueba parla",
+    "visita": "visita",
+    "llamar": "llamar"
+  },
+  "control": {
+    "pausar_ia": "parar ia",
+    "reanudar_ia": "continuar ia"
+  },
+  "embudo": ["f1 apertura", "f2 diagnóstico", "f3 presentación", "f4 objeciones", "f5 cierre"],
+  "otras": ["no contesta", "hot lead"]
+}
