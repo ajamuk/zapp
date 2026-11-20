@@ -1,4 +1,4 @@
-# metro-setter
+# ZAPP · Sofía
 
 Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 
@@ -6,8 +6,9 @@ Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 - **Este servicio** es el cerebro: recibe cada mensaje por webhook de GHL, separa socios de leads (AimHarder),
   contesta como Sofía, etiqueta, asigna, programa seguimientos y prepara el alta en AimHarder.
 
-> **Estado:** construido y probado con tests. Arranca en **modo prueba** (`MODE=shadow`): no envía nada,
-> deja la respuesta como nota en GHL. El traspaso del número y el paso a `MODE=live` esperan la aprobación de Carlos.
+> **Estado:** revisión interna en MetroTools. En el VPS arranca con `MODE=shadow` y `GHL_WEBHOOK_ENABLED=false`.
+> Al habilitar la entrada en modo prueba, Sofía puede añadir notas, etiquetas y asignaciones en GHL.
+> El traspaso del número y el paso a `MODE=live` esperan la aprobación de Carlos.
 
 ## Estructura
 
@@ -34,28 +35,27 @@ ANTHROPIC_API_KEY=... npm run evaluar     # réplica de 32 momentos reales de Za
 npm run sync-aimharder                    # horarios desde AimHarder + aviso si cambia algún precio
 ```
 
-## Simulador para probar a Sofía
+## Probar a Sofía
 
-Página para chatear con Sofía desde el móvil o el ordenador, sin GHL ni leads reales: muestra qué herramientas usa,
-la fase y las etiquetas, y deja puntuar cada respuesta (👍/👎 + nota). Las pruebas se guardan para afinar el prompt.
-Se regenera con `npm run build-simulador` cuando cambian el prompt, la base de conocimiento, horarios o tarifas.
+La pestaña **Probar IA** del panel usa la misma lógica conversacional con GHL y AimHarder simulados.
+Requiere `ANTHROPIC_API_KEY`. Guarda el historial de prueba en memoria hasta que se reinicia el servicio o la conversación.
+El simulador HTML independiente se puede regenerar con `npm run build-simulador`.
 
-## Desplegar en el VPS
+## Instalación en el VPS
 
-```sh
-git clone https://github.com/ajamuk/zapp.git /opt/metro-setter && cd /opt/metro-setter
-npm install --omit=optional
-cp .env.example .env && nano .env         # rellenar claves; dejar MODE=shadow
-pm2 start deploy/ecosystem.config.cjs && pm2 save
-```
-
-Nginx: `deploy/nginx-setter.conf` (expone solo el webhook y /health) + `certbot --nginx -d setter.crossfitmpo.com`.
+- Panel: [ZAPP · Sofía en MetroTools](https://apps.crossfitmpo.com/zapp/). Aparece en «En desarrollo» para administradores.
+- Servicio: `codex-zapp.service` en `127.0.0.1:3200`. Código en `/opt/codex-hosting/apps/zapp/current`.
+- Configuración: `/etc/codex-hosting/zapp.env`. La base SQLite se conserva en el `DB_PATH` de la instalación anterior.
+- Proxy: `deploy/nginx-metrotools.conf` usa la sesión de MetroTools. Nginx añade la credencial de administración desde el servidor.
+  El dominio del webhook expone únicamente el webhook y `/health`.
+- Para actualizar: instalar en una release nueva con `npm ci --omit=optional`, validar con `npm test`,
+  conservar los horarios específicos del VPS y cambiar `current` antes de reiniciar `codex-zapp`.
 
 ## Conectar GHL
 
 1. En GHL: Ajustes → Integraciones privadas → token con permisos de conversaciones (leer/escribir), contactos (leer/escribir) y notas. Va a `GHL_TOKEN`.
 2. Workflow «Mensaje entrante» (disparador *Customer Replied*, canales WhatsApp e Instagram) → acción *Webhook* a
-   `https://setter.crossfitmpo.com/webhooks/ghl` con la cabecera `x-setter-secret` = `WEBHOOK_SECRET`.
+   la URL HTTPS del webhook del VPS con la cabecera `x-setter-secret` = `WEBHOOK_SECRET`.
    Incluir conversationId, contactId, messageType, body, messageId, phone, tags y nombre del contacto.
 3. Mensajes que envía el equipo: para que la IA se aparte cuando escribe una persona, el servicio entiende el evento
    `OutboundMessage` de GHL (con `userId`). Si no se puede suscribir ese evento, el equipo pone la etiqueta `parar ia`
@@ -75,7 +75,7 @@ curl -s localhost:3200/admin/costes -H "Authorization: Bearer $ADMIN_TOKEN"
 ## Pendiente antes de producción
 
 - [ ] Pasar `npm run evaluar` y revisar el informe; luego modo prueba con conversaciones reales en GHL.
-- [ ] Grabar los pasos del alta por navegador.
-- [ ] Festivos 2026-2027 en `config/festivos.json`.
+- [ ] Configurar el modelo y validar altas en AimHarder por sede con la cuenta y el navegador de esa integración.
+- [ ] Confirmar la cobertura de las solicitudes de prueba en Parla. El flujo existente pide confirmación al equipo.
 - [ ] Comprobar en GHL los nombres exactos de campos del webhook y de la plantilla `zapp_seguimiento_programado`.
 - [ ] Aprobación de Carlos → traspaso del número a GHL → `MODE=live`.

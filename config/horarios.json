@@ -1,5 +1,5 @@
 {
-  "_nota": "Horario habitual sacado de la API de AimHarder el 2026-11-19. Se regenera con npm run sync-aimharder. No confirma plazas libres.",
+  "_nota": "Horario habitual sacado de la API de AimHarder el 2026-11-20. Se regenera con npm run sync-aimharder. No confirma plazas libres.",
   "_plazas": "Academy 10 por clase (Las Rosas tiene alguna de 8); CrossFit 12 (Parla 14); HYROX 10-16.",
   "parla": {
     "academy": {

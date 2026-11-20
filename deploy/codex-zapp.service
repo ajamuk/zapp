@@ -1,0 +1,19 @@
+[Unit]
+Description=ZAPP · Sofía de CrossFit MetroPolitano
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/codex-hosting/apps/zapp/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/codex-hosting/zapp.env
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -21,17 +21,19 @@ sincronizar();
 setInterval(sincronizar, 4 * 3600 * 1000);
 const setter = new Setter({ repo, ghl: new Ghl(), aimharder, avisar: avisarEquipo });
 
-const app = crearApp({ setter, repo, aimharder, avisar: avisarEquipo });
+const app = crearApp({ setter, repo });
 app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
 });
 
 // Bucle: respuestas pendientes cada 5 s, seguimientos cada minuto.
-let ocupado = false;
-setInterval(async () => {
-  if (ocupado) return;
-  ocupado = true;
-  try { await setter.tick(); } finally { ocupado = false; }
-}, 5000);
-setInterval(() => procesarSeguimientos(setter).catch((e) => console.error('Seguimientos:', e)), 60000);
+if (config.ghlWebhookEnabled) {
+  let ocupado = false;
+  setInterval(async () => {
+    if (ocupado) return;
+    ocupado = true;
+    try { await setter.tick(); } finally { ocupado = false; }
+  }, 5000);
+  setInterval(() => procesarSeguimientos(setter).catch((e) => console.error('Seguimientos:', e)), 60000);
+}

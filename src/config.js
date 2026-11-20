@@ -22,6 +22,7 @@ export const config = {
   port: num('PORT', 3200),
   dbPath: path.resolve(root, env('DB_PATH', './data/setter.db')),
   tz: env('TZ', 'Europe/Madrid'),
+  ghlWebhookEnabled: env('GHL_WEBHOOK_ENABLED', 'true') === 'true',
   webhookSecret: env('WEBHOOK_SECRET'),
   adminToken: env('ADMIN_TOKEN'),
   ai: {

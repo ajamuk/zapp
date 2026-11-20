@@ -7,7 +7,7 @@ import { leerAjustes, guardarAjustes } from '../src/ajustes.js';
 
 config.adminToken = 'clave-test';
 
-async function servidor() {
+async function servidor(complete) {
   const repo = crearRepo(openDb(':memory:'));
   repo.upsertConv({ id: 'c1', contact_id: 'k1', channel: 'whatsapp', nombre: 'Ana', telefono: '+34611111111' });
   repo.updateConv('c1', { sede: 'parla', fase: 'f5 cierre', alta_estado: 'pendiente' });
@@ -16,7 +16,7 @@ async function servidor() {
   repo.addAlta('c1', { nombre_completo: 'Ana López', email: 'a@b.es', sede: 'parla', tarifa: 'academy_2', fecha_inicio: '2026-11-23' }, 'simulada', 'sin guardar');
   repo.schedule('c1', 'comercial-5h', new Date(Date.now() + 3600e3).toISOString());
   repo.upsertConv({ id: 'prueba-x', contact_id: 'prueba-x', channel: 'whatsapp' });
-  const srv = crearApp({ setter: {}, repo }).listen(0);
+  const srv = crearApp({ setter: {}, repo, complete }).listen(0);
   await new Promise((r) => srv.once('listening', r));
   const base = `http://127.0.0.1:${srv.address().port}`;
   const api = (ruta, o = {}) => fetch(base + ruta, { ...o, headers: { authorization: 'Bearer clave-test', 'content-type': 'application/json' } });
@@ -30,6 +30,47 @@ test('panel: la página se sirve y los datos piden la clave', async () => {
     assert.equal(p.status, 200);
     assert.match(await p.text(), /Panel de Sofía/);
     assert.equal((await fetch(base + '/admin/panel/estado')).status, 401);
+  } finally { srv.close(); }
+});
+
+test('MetroTools exige sesión administrativa del proxy y petición del panel', async () => {
+  const { srv, base } = await servidor();
+  const page = base + '/metrotools/';
+  const route = page + 'api/panel/estado';
+  const admin = { authorization: 'Bearer clave-test', 'x-cfmpo-admin': '1' };
+  const browser = { 'x-metrotools-client': 'zapp' };
+  try {
+    assert.equal((await fetch(page)).status, 403);
+    assert.equal((await fetch(page, { headers: { ...admin, 'x-cfmpo-admin': '0' } })).status, 403);
+    assert.equal((await fetch(page, { headers: { 'x-cfmpo-admin': '1' } })).status, 403);
+    const ok = await fetch(page, { headers: admin });
+    assert.equal(ok.status, 200);
+    assert.match(await ok.text(), /metro-os\/v4.4.0\/metro-platform.js/);
+    assert.equal((await fetch(route, { headers: admin })).status, 403);
+    const data = await fetch(route, { headers: { ...admin, ...browser } });
+    assert.equal(data.status, 200);
+    assert.equal(data.headers.get('cache-control'), 'private, no-store');
+  } finally { srv.close(); }
+});
+
+test('el simulador mantiene el historial ficticio fuera de la base operativa', async () => {
+  const complete = async ({ messages }) => ({
+    content: [{ type: 'tool_use', name: 'responder', input: {
+      mensajes: [messages.length === 1 ? 'hola' : 'seguimos'], fase: 'f1 apertura', sede: 'parla',
+    } }],
+  });
+  const { srv, api, repo } = await servidor(complete);
+  const post = (ruta, datos) => api(ruta, { method: 'POST', body: JSON.stringify({ sesion: 'aislada', ...datos }) });
+  try {
+    for (const resultado of ['hola', 'seguimos']) {
+      const response = await post('/admin/probar', { texto: 'quiero entrenar en parla' });
+      assert.equal(response.status, 200);
+      assert.deepEqual((await response.json()).mensajes, [resultado]);
+    }
+    assert.equal(repo.getConv('prueba-aislada'), undefined);
+    assert.equal(repo.db.prepare('SELECT count(*) n FROM ai_runs').get().n, 0);
+    assert.equal((await post('/admin/probar/reiniciar')).status, 200);
+    assert.deepEqual((await (await post('/admin/probar', { texto: 'hola' })).json()).mensajes, ['hola']);
   } finally { srv.close(); }
 });
 
