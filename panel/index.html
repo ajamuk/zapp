@@ -119,6 +119,119 @@
   .mes { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .mes b { min-width: 130px; text-align: center; }
   .nota { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  /* Vistas y filtros */
+  .vistas { display: flex; gap: 6px; flex-wrap: wrap; padding: 2px 0 8px; margin-bottom: 4px; }
+  #raiz .vistas button { white-space: nowrap; min-height: 36px; padding: 5px 11px; font-size: 13px; }
+  #raiz .vistas button.propia { border-color: #9fbf8f; }
+  #raiz .vistas button.activo { background: var(--green); border-color: var(--green); color: #fff; }
+  .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 99px; background: #0000000f; font-size: 12px; text-align: center; }
+  .activo .n { background: #ffffff33; }
+  #raiz button.suave { background: transparent; border-style: dashed; }
+  .barra-filtros { display: flex; gap: 8px; margin-bottom: 10px; }
+  .barra-filtros input { flex: 1; min-width: 0; }
+  .panel-filtros { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 10px; }
+  .panel-filtros fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  .panel-filtros legend { font-weight: 600; font-size: 13px; margin-bottom: 6px; padding: 0; }
+  .chips-f { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  #raiz .ch { min-height: 34px; padding: 4px 11px; border-radius: 99px; font-weight: 500; background: var(--panel); font-size: 13px; }
+  #raiz .ch.on { background: var(--green); color: #fff; border-color: var(--green); }
+  #raiz .ch.etq-f { border-color: color-mix(in srgb, var(--c) 45%, transparent); color: var(--c); }
+  #raiz .ch.etq-f.on { background: var(--c); color: #fff; border-color: var(--c); }
+  #raiz .ch.etq-f.no { background: #fff; color: var(--red); border-color: var(--red); text-decoration: line-through; }
+  .modo-etq { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--muted); margin-left: 6px; }
+  .fila-f { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .fila-f label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+  .acciones-f { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .guardar-vista { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .activos { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  #raiz .activo-f { min-height: 30px; padding: 3px 10px; border-radius: 99px; font-size: 12px; background: #e4f1df; border-color: #b9d4af; }
+  #raiz .activo-f.limpiar { background: transparent; }
+  .ayuda { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-right: 5px; vertical-align: middle; }
+  /* Etiquetas */
+  .etq { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, #fff); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .etq-hilo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+  .p-analisis .etq-hilo { padding: 0; border: 0; }
+  .etq-q { display: inline-flex; align-items: center; }
+  #raiz button.x { min-height: 28px; min-width: 28px; padding: 0 6px; border: 0; background: transparent; color: var(--muted); font-weight: 400; }
+  #raiz button.x:hover { color: var(--red); }
+  .etq-hilo select { min-height: 32px; padding: 3px 8px; font-size: 13px; }
+  .cab-seccion { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .cab-seccion h2 { margin: 0 !important; }
+  .intro { color: var(--muted); max-width: 820px; margin: 0 0 16px; }
+  .etq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px; }
+  .etq-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 8px; align-content: start; }
+  .etq-card.inactiva { opacity: .65; }
+  .etq-card header { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .etq-card .etq { font-size: 13px; padding: 3px 10px; }
+  .etq-card p, .etq-card ul { margin: 0; font-size: 13px; }
+  .etq-card ul { padding-left: 18px; }
+  .criterio { color: var(--violet); }
+  .acc { display: flex; gap: 4px; flex-wrap: wrap; }
+  .etq-card footer { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .etq-card footer a { color: var(--green); font-weight: 600; font-size: 13px; margin-left: auto; }
+  #raiz .etq-card footer button { min-height: 36px; padding: 5px 11px; font-size: 13px; }
+  .editor { display: grid; gap: 14px; max-width: 860px; }
+  .editor section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .editor h3 { margin: 0 0 10px !important; }
+  .editor h4 { margin: 14px 0 8px; font-size: 14px; }
+  .editor textarea, .p-form textarea { width: 100%; font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 8px 10px; background: var(--panel); color: inherit; resize: vertical; }
+  .editor #enom { flex: 1; min-width: 200px; }
+  .colores { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  #raiz .colores button { width: 34px; min-height: 34px; height: 34px; padding: 0; border-radius: 50%; border: 3px solid transparent; }
+  #raiz .colores button.on { border-color: var(--text); box-shadow: inset 0 0 0 2px #fff; }
+  .check { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; cursor: pointer; flex-wrap: wrap; }
+  .check input { accent-color: var(--green); width: 17px; height: 17px; }
+  .regla-f { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 10px; background: var(--panel2); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .regla-f input:not([type="number"]) { flex: 1; min-width: 140px; }
+  .anadir-regla { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); }
+  #raiz .anadir-regla button { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+  .cond { margin-bottom: 10px; } .cond b { display: block; font-size: 13px; margin-bottom: 6px; }
+  /* Probar IA */
+  .probar2 { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; gap: 12px; height: max(460px, calc(100dvh - 260px)); }
+  .probar2 > * { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-height: 0; overflow: auto; }
+  .p-lista { display: flex; flex-direction: column; }
+  .p-nueva { display: grid; gap: 6px; padding: 10px; border-bottom: 1px solid var(--line); }
+  #plista { flex: 1; overflow: auto; }
+  .p-item { display: flex; border-bottom: 1px solid var(--line); }
+  .p-item.activo { background: var(--panel2); }
+  #raiz .p-abrir { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; border: 0; border-radius: 0; background: transparent; padding: 10px 6px 10px 12px; font-weight: 400; }
+  .p-abrir .fila { display: flex; justify-content: space-between; gap: 6px; }
+  .p-abrir .ult { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #raiz .peligro-t { margin: 8px; color: var(--red); }
+  .p-chat { display: flex; flex-direction: column; }
+  .p-chat .cab { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .p-botones, .p-exp { display: flex; gap: 6px; flex-wrap: wrap; }
+  #raiz .p-botones button { min-height: 36px; padding: 5px 10px; font-size: 13px; }
+  .p-sim { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+  .p-sim label { display: grid; gap: 3px; font-size: 12px; font-weight: 600; }
+  .p-sim .ayuda { flex-basis: 100%; margin: 0; }
+  .p-msgs { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .probar2.movil .p-msgs { width: 375px; max-width: 100%; margin: 0 auto; border-inline: 1px solid var(--line); background: #efeae2; }
+  .p-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); align-items: end; }
+  .p-form textarea { min-height: 42px; max-height: 140px; resize: none; }
+  .p-analisis { padding: 12px 14px; font-size: 13px; }
+  .p-analisis h3 { margin: 0 0 8px !important; }
+  .p-analisis section { border-top: 1px solid var(--line); padding: 9px 0; }
+  .p-analisis h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+  .p-analisis p { margin: 4px 0; }
+  .p-analisis .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .herr, .fu { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+  .herr summary { cursor: pointer; }
+  .fu li { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  #raiz .fu button { min-height: 32px; padding: 3px 10px; font-size: 12px; }
+  .aviso-mini { background: #fdf6e7; color: var(--amber); padding: 6px 8px; border-radius: 6px; }
+  #raiz .aviso-mini button { min-height: 30px; padding: 2px 8px; font-size: 12px; margin-left: 4px; }
+  .burbuja.b-sistema.error { color: var(--red); }
+  @media (max-width: 1180px) { .probar2 { grid-template-columns: 220px minmax(0, 1fr); } .p-analisis { grid-column: 1 / -1; max-height: none; } .probar2 { height: auto; } .p-chat { height: max(460px, calc(100dvh - 300px)); } }
+  @media (max-width: 760px) {
+    .probar2 { grid-template-columns: minmax(0, 1fr); }
+    .probar2.con-prueba .p-lista, .probar2:not(.con-prueba) .p-chat, .probar2:not(.con-prueba) .p-analisis { display: none; }
+    .guardar-vista { margin-left: 0; }
+    .p-chat { height: calc(100dvh - 220px); }
+  }
+  @media (min-width: 761px) { #pvolver { display: none; } }
+  @media (max-width: 760px) { #pmovil { display: none; } }
 </style>
 </head>
 <body>
@@ -142,7 +255,7 @@ if (integrado) {
 }
 let token = '';
 if (!integrado) try { token = localStorage.getItem('sofia_panel') || ''; } catch {}
-const estado = { seccion: location.hash.slice(1) || 'resumen', filtro: 'todos', q: '', conv: null, dias: 1, info: null, prueba: { sesion: 'panel-' + Math.random().toString(36).slice(2, 7), mensajes: [] } };
+const estado = { seccion: location.hash.slice(1).split('/')[0] || 'resumen', filtro: 'todos', q: '', conv: null, dias: 1, info: null, prueba: { sesion: 'panel-' + Math.random().toString(36).slice(2, 7), mensajes: [] } };
 
 async function api(ruta, opciones = {}) {
   const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
@@ -170,10 +283,10 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
 
 async function iniciar() {
-  estado.seccion = location.hash.slice(1) || 'resumen';
+  estado.seccion = location.hash.slice(1).split('/')[0] || 'resumen';
   $('#raiz').innerHTML = '<main id="main" tabindex="-1"><div class="vacio" role="status">Cargando ZAPP…</div></main>';
   try {
     estado.info = await api('/panel/estado');
@@ -197,8 +310,9 @@ async function iniciar() {
 }
 
 window.addEventListener('hashchange', () => {
-  const id = location.hash.slice(1);
+  const id = location.hash.slice(1).split('/')[0];
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
+  if (id !== 'etiquetas') estado.editEtq = null;
   estado.seccion = id || 'resumen';
   pintar();
 });
@@ -210,7 +324,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, chats, altas, seguimientos, probar, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, chats, etiquetas, altas, seguimientos, probar, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -317,24 +431,149 @@ const chipsConv = (c) => [
   c.seguimientos_pendientes ? '<span class="chip">follow-up</span>' : '',
 ].join('');
 
+// ---------- Chats: vistas y filtros ----------
+const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
+const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
+const vacios = (c) => !Object.keys(c || {}).filter((k) => k !== 'modo').length;
+const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
+
+async function cargarOpciones() { estado.opciones = await api('/panel/opciones'); return estado.opciones; }
+
+function resumenCriterios(c, opciones) {
+  const etqN = (id) => opciones.etiquetas.find((e) => e.id === id);
+  const out = [];
+  for (const e of c.estado || []) out.push(['estado', e, ESTADO_TXT[e] || e]);
+  for (const id of c.etiquetas || []) { const e = etqN(id); if (e) out.push(['etiquetas', id, `${c.modo === 'todas' ? 'Lleva' : 'Lleva'} «${e.nombre}»`]); }
+  for (const id of c.sin_etiquetas || []) { const e = etqN(id); if (e) out.push(['sin_etiquetas', id, `Sin «${e.nombre}»`]); }
+  if (c.sin_ninguna) out.push(['sin_ninguna', true, 'Sin etiquetas']);
+  for (const s of c.sede || []) out.push(['sede', s, s === 'sin_sede' ? 'Sin sede' : SEDES[s] || s]);
+  for (const s of c.canal || []) out.push(['canal', s, CANAL[s] || s]);
+  for (const s of c.fase || []) out.push(['fase', s, s === 'sin_fase' ? 'Sin fase' : s]);
+  if (c.actividad) out.push(['actividad', c.actividad, c.actividad === 1 ? 'Activos hoy' : `Activos ${c.actividad} días`]);
+  if (c.espera) out.push(['espera', c.espera, c.espera === 'equipo' ? 'Esperan nuestra respuesta' : 'Esperamos al lead']);
+  return out;
+}
+
+function quitarCriterio(c, clave, valor) {
+  const n = { ...c };
+  if (Array.isArray(n[clave])) { n[clave] = n[clave].filter((x) => x !== valor); if (!n[clave].length) delete n[clave]; } else delete n[clave];
+  if ((n.etiquetas || []).length < 2) delete n.modo;
+  return n;
+}
+
 async function chats() {
-  const cont = estado.info.contadores;
-  const F = [['todos', 'Todos'], ['ia_activa', 'IA activa'], ['pausadas', 'Pausadas'], ['derivadas', 'Derivadas'], ['seguimiento', 'Seguimiento'], ['prueba', 'Clase prueba'], ['alta', 'Alta'], ['socios', 'Socios']];
-  $('#main').innerHTML = `<h2>Chats</h2><div class="filtros">${F.map(([k, t]) => `<button data-f="${k}" class="${estado.filtro === k ? 'activo' : ''}">${t} ${cont[k] ?? ''}</button>`).join('')}
-    <input id="q" aria-label="Buscar chat o mensaje" placeholder="Buscar chat o mensaje" value="${esc(estado.q)}" style="flex:1;min-width:160px"></div>
+  const [vistas, opciones] = await Promise.all([api('/panel/vistas'), cargarOpciones()]);
+  if (estado.seccion !== 'chats') return;
+  estado.vistas = vistas;
+  if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = 'todos'; estado.crit = {}; }
+  estado.crit ??= { ...(vistas.find((v) => String(v.id) === String(estado.vista))?.criterios || {}) };
+  $('#main').innerHTML = `<h2>Chats</h2>
+    <div class="vistas" role="tablist" aria-label="Vistas de chats">${vistas.map((v) => `<button role="tab" data-v="${esc(v.id)}" aria-selected="${String(v.id) === String(estado.vista)}" class="${String(v.id) === String(estado.vista) ? 'activo' : ''} ${v.propia ? 'propia' : ''}" title="${v.propia ? 'Vista creada por vosotros' : 'Vista del sistema'}">${v.propia ? '★ ' : ''}${esc(v.nombre)} <span class="n">${v.total}</span></button>`).join('')}
+      <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
+    <div class="barra-filtros">
+      <input id="q" type="search" aria-label="Buscar chat o mensaje" placeholder="Buscar nombre, teléfono o mensaje" value="${esc(estado.q)}">
+      <button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button>
+    </div>
+    <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
+    <div id="activos" class="activos"></div>
     <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="lista" id="lista"><div class="vacio">Cargando…</div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
-  $('#main').querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { estado.filtro = b.dataset.f; estado.conv = null; chats(); });
+  $('#main').querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
+    estado.vista = b.dataset.v; estado.crit = { ...(vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.conv = null; chats();
+  });
+  $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; chats(); };
+  $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; lista(); }, 300); };
+  pintarFiltros();
   await lista();
   if (estado.seccion === 'chats' && estado.conv) await abrir(estado.conv);
 }
 
+function pintarFiltros() {
+  const c = estado.crit; const o = estado.opciones;
+  const vista = estado.vistas.find((v) => String(v.id) === String(estado.vista));
+  const cambiado = JSON.stringify(normalizar(c)) !== JSON.stringify(normalizar(vista?.criterios || {}));
+  const chip = (clave, valor, texto, activo, extra = '') => `<button type="button" class="ch ${activo ? 'on' : ''}" aria-pressed="${activo}" data-k="${clave}" data-val="${esc(valor)}" ${extra}>${texto}</button>`;
+  const en = (k, v) => (c[k] || []).map(String).includes(String(v));
+  const grupo = (titulo, html) => `<fieldset><legend>${titulo}</legend><div class="chips-f">${html}</div></fieldset>`;
+  $('#pfil').innerHTML = `
+    ${grupo('Estado', Object.entries(ESTADO_TXT).map(([k, t]) => chip('estado', k, t, en('estado', k))).join(''))}
+    ${grupo(`Etiquetas <span class="ayuda">clic: lleva · otro clic: no lleva · otro: quitar</span>`, (o.etiquetas.length ? o.etiquetas.map((e) => {
+      const inc = en('etiquetas', e.id), exc = en('sin_etiquetas', e.id);
+      return `<button type="button" class="ch etq-f ${inc ? 'on' : exc ? 'no' : ''}" style="--c:${esc(e.color)}" data-etq="${e.id}" aria-label="${esc(e.nombre)}: ${inc ? 'lleva' : exc ? 'no lleva' : 'sin filtrar'}">${exc ? '⊘ ' : ''}${esc(e.nombre)}</button>`;
+    }).join('') : '<span class="ayuda">Aún no hay etiquetas. Créalas en la pestaña Etiquetas.</span>')
+      + chip('sin_ninguna', 'true', 'Sin ninguna etiqueta', Boolean(c.sin_ninguna))
+      + ((c.etiquetas || []).length > 1 ? `<span class="modo-etq">Coinciden: ${chip('modo', 'alguna', 'alguna', c.modo !== 'todas')}${chip('modo', 'todas', 'todas', c.modo === 'todas')}</span>` : ''))}
+    ${grupo('Sede', [...Object.entries(SEDES), ['sin_sede', 'Sin sede']].map(([k, t]) => chip('sede', k, t, en('sede', k))).join(''))}
+    ${grupo('Canal', Object.entries(CANAL).map(([k, t]) => chip('canal', k, t, en('canal', k))).join(''))}
+    ${grupo('Fase', [...FASES.map((f) => [f, f]), ['sin_fase', 'Sin fase']].map(([k, t]) => chip('fase', k, t, en('fase', k))).join(''))}
+    <div class="fila-f">
+      <label>Actividad <select id="fact"><option value="">Cualquiera</option>${[[1, 'Hoy'], [3, '3 días'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<option value="${d}" ${Number(c.actividad) === d ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>Quién debe contestar <select id="fesp"><option value="">Cualquiera</option><option value="equipo" ${c.espera === 'equipo' ? 'selected' : ''}>Nosotros (último mensaje del lead)</option><option value="lead" ${c.espera === 'lead' ? 'selected' : ''}>El lead (último mensaje nuestro)</option></select></label>
+    </div>
+    <div class="acciones-f">
+      <button type="button" id="flimpiar" ${vacios(c) ? 'disabled' : ''}>Quitar filtros</button>
+      ${vista?.propia ? `<button type="button" id="factualizar" class="${cambiado ? 'primario' : ''}" ${cambiado ? '' : 'disabled'}>Guardar cambios en «${esc(vista.nombre)}»</button>
+        <button type="button" id="frenombrar">Renombrar</button><button type="button" id="fborrar" class="peligro">Borrar vista</button>` : ''}
+      <span class="guardar-vista"><input id="fnombre" placeholder="Nombre de la vista nueva" aria-label="Nombre de la vista nueva" maxlength="40"><button type="button" id="fguardar" class="${estado.creandoVista || (cambiado && !vista?.propia) ? 'primario' : ''}">Guardar como vista</button></span>
+    </div>`;
+  const aplicar = (n) => { estado.crit = n; estado.conv = null; pintarFiltros(); lista(); };
+  $('#pfil').querySelectorAll('[data-k]').forEach((b) => b.onclick = () => {
+    const k = b.dataset.k, v = b.dataset.val; const n = { ...c };
+    if (k === 'sin_ninguna') { n.sin_ninguna ? delete n.sin_ninguna : (n.sin_ninguna = true); }
+    else if (k === 'modo') n.modo = v;
+    else { const l = new Set((n[k] || []).map(String)); l.has(v) ? l.delete(v) : l.add(v); n[k] = [...l]; if (!n[k].length) delete n[k]; }
+    aplicar(n);
+  });
+  $('#pfil').querySelectorAll('[data-etq]').forEach((b) => b.onclick = () => {
+    const id = Number(b.dataset.etq); const n = { ...c };
+    const inc = new Set(n.etiquetas || []), exc = new Set(n.sin_etiquetas || []);
+    if (inc.has(id)) { inc.delete(id); exc.add(id); } else if (exc.has(id)) exc.delete(id); else inc.add(id);
+    n.etiquetas = [...inc]; n.sin_etiquetas = [...exc];
+    for (const k of ['etiquetas', 'sin_etiquetas']) if (!n[k].length) delete n[k];
+    if ((n.etiquetas || []).length < 2) delete n.modo;
+    aplicar(n);
+  });
+  $('#fact').onchange = (e) => { const n = { ...c }; e.target.value ? n.actividad = Number(e.target.value) : delete n.actividad; aplicar(n); };
+  $('#fesp').onchange = (e) => { const n = { ...c }; e.target.value ? n.espera = e.target.value : delete n.espera; aplicar(n); };
+  $('#flimpiar').onclick = () => aplicar({});
+  $('#fguardar').onclick = async () => {
+    const nombre = $('#fnombre').value.trim();
+    if (!nombre) { $('#fnombre').focus(); $('#fnombre').placeholder = 'Escribe un nombre para la vista'; return; }
+    const { id } = await api('/panel/vistas', { method: 'POST', body: JSON.stringify({ nombre, criterios: c }) });
+    estado.vista = String(id); estado.creandoVista = false; estado.panelFiltros = false; chats();
+  };
+  $('#factualizar') && ($('#factualizar').onclick = async () => { await api('/panel/vistas/' + vista.id, { method: 'PUT', body: JSON.stringify({ nombre: vista.nombre, criterios: c }) }); chats(); });
+  $('#frenombrar') && ($('#frenombrar').onclick = () => {
+    const sp = $('#frenombrar'); sp.outerHTML = `<span class="guardar-vista"><input id="frn" value="${esc(vista.nombre)}" aria-label="Nuevo nombre" maxlength="40"><button type="button" id="frnok" class="primario">Guardar nombre</button></span>`;
+    $('#frn').focus();
+    $('#frnok').onclick = async () => { await api('/panel/vistas/' + vista.id, { method: 'PUT', body: JSON.stringify({ nombre: $('#frn').value, criterios: vista.criterios }) }); chats(); };
+  });
+  $('#fborrar') && ($('#fborrar').onclick = async () => {
+    const b = $('#fborrar');
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Pulsa otra vez para borrar'; return; }
+    await api('/panel/vistas/' + vista.id, { method: 'DELETE' }); estado.vista = 'todos'; estado.crit = {}; chats();
+  });
+  // Filtros activos como chips quitables
+  const act = resumenCriterios(c, estado.opciones);
+  $('#activos').innerHTML = act.length ? act.map(([k, v, t]) => `<button type="button" class="activo-f" data-qk="${k}" data-qv="${esc(v)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ✕</button>`).join('') + (act.length > 1 ? '<button type="button" class="activo-f limpiar" id="qall">Quitar todos</button>' : '') : '';
+  $('#activos').querySelectorAll('[data-qk]').forEach((b) => b.onclick = () => {
+    const k = b.dataset.qk; let v = b.dataset.qv; if (['etiquetas', 'sin_etiquetas'].includes(k)) v = Number(v);
+    aplicar(quitarCriterio(c, k, v));
+  });
+  $('#qall') && ($('#qall').onclick = () => aplicar({}));
+  const bfil = $('#bfil'); if (bfil) bfil.innerHTML = `Filtros${act.length ? ` <span class="n">${act.length}</span>` : ''}`;
+}
+
+const normalizar = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k, v]) => (Array.isArray(v) ? v.length : v) && !(k === 'modo' && (c.etiquetas || []).length < 2)).map(([k, v]) => [k, Array.isArray(v) ? [...v].map(String).sort() : v]).sort());
+
 async function lista() {
-  const filas = await api(`/panel/conversaciones?filtro=${estado.filtro}&q=${encodeURIComponent(estado.q)}`);
-  if (!$('#lista')) return;
+  const pedido = JSON.stringify([estado.crit, estado.q]);
+  const filas = await api(`/panel/conversaciones?criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`);
+  if (!$('#lista') || pedido !== JSON.stringify([estado.crit, estado.q])) return;
   $('#lista').innerHTML = filas.length ? filas.map((c) => `<button type="button" class="item ${estado.conv === c.id ? 'activo' : ''}" data-id="${esc(c.id)}">
     <div class="fila"><span class="nom">${esc(c.nombre || c.telefono || 'Sin nombre')}</span><span class="chip">${hora(c.ultimo_at || c.updated_at)}</span></div>
-    <div class="ult">${c.ultimo_autor === 'ia' ? '✓ ' : ''}${esc(c.ultimo_texto || '')}</div><div class="chips">${chipsConv(c)}</div></button>`).join('') : '<div class="vacio">No hay chats aquí</div>';
+    <div class="ult">${c.ultimo_autor === 'lead' ? '<b class="punto" title="Espera respuesta"></b>' : c.ultimo_autor === 'ia' ? '✓ ' : ''}${esc(c.ultimo_texto || '')}</div>
+    <div class="chips">${c.etiquetas.map((e) => pill(e)).join('')}${chipsConv(c)}</div></button>`).join('') : `<div class="vacio">${vacios(estado.crit) && !estado.q ? 'No hay chats todavía' : 'Ningún chat cumple estos filtros'}</div>`;
   $('#lista').querySelectorAll('.item').forEach((el) => el.onclick = () => abrir(el.dataset.id));
 }
 
@@ -346,20 +585,160 @@ async function abrir(id) {
   if (estado.seccion !== 'chats' || estado.conv !== id) return;
   const c = d.conv;
   const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
+  const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
   $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">Volver a chats</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
       <div class="chips" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipsConv(c)}</div>${c.pause_reason ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.pause_reason)}</div>` : ''}</div>
       <div>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
+    <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
+      ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
     <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${esc(x.texto)}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
     <div class="pie">${[
+      c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
       d.seguimientos.length ? '<b>Follow-ups</b><br>' + d.seguimientos.map((s) => `${esc(s.regla_id)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}`).join('<br>') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
-    ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía y pausarla en este chat.'}</div>`;
+    ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = 1e9;
   $('#bv').onclick = () => { estado.conv = null; $('#ch').classList.remove('con-hilo'); };
-  const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); await lista(); abrir(id); };
+  const recargar = async () => { await lista(); abrir(id); };
+  const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
   $('#bact') && ($('#bact').onclick = () => accion('reanudar'));
   $('#bpau') && ($('#bpau').onclick = () => accion('pausar'));
+  $('#addetq') && ($('#addetq').onchange = async (e) => { if (!e.target.value) return; await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas`, { method: 'POST', body: JSON.stringify({ etiqueta: Number(e.target.value) }) }); recargar(); });
+  $('#hilo').querySelectorAll('[data-quitar]').forEach((b) => b.onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas/${b.dataset.quitar}`, { method: 'DELETE' }); recargar(); });
+}
+
+// ---------- Etiquetas ----------
+const ACCIONES = [
+  ['pausar_ia', '⏸️ Pausar a Sofía', 'Sofía deja de contestar en ese chat.'],
+  ['reanudar_ia', '▶️ Reanudar a Sofía', 'Vuelve a contestar si estaba pausada o derivada.'],
+  ['forzar_respuesta', '⚡ Forzar respuesta', 'Sofía contesta ya (respeta su horario). No actúa con reglas de inactividad.'],
+  ['derivar', '🙋 Derivar al equipo', 'Pausa a Sofía y marca el chat como derivado.'],
+  ['avisar', '🔔 Avisar al equipo', 'Manda un aviso por Telegram cuando se pone.'],
+  ['ghl', '🏷️ Copiar a GHL', 'Pone la misma etiqueta (tag) al contacto en GHL.'],
+];
+const REGLA_NUEVA = { texto: { tipo: 'texto', quien: 'lead', operador: 'contiene', patron: '' }, adjunto: { tipo: 'adjunto', quien: 'lead', media: 'cualquiera' }, inactividad: { tipo: 'inactividad', horas: 24 }, fase: { tipo: 'fase', fase: 'f5 cierre' }, sede: { tipo: 'sede', sede: 'parla' } };
+
+async function etiquetas() {
+  const r = await api('/panel/etiquetas');
+  if (estado.seccion !== 'etiquetas') return;
+  estado.catalogo = r;
+  if (estado.editEtq) return editorEtiqueta(estado.editEtq === 'nueva' ? null : r.etiquetas.find((e) => e.id === estado.editEtq));
+  const m = $('#main');
+  m.innerHTML = `<div class="cab-seccion"><h2>Etiquetas</h2><button class="primario" id="enueva">+ Nueva etiqueta</button></div>
+    <p class="intro">Ponlas a mano en cada chat, deja que se pongan solas con reglas (palabras, adjuntos, inactividad, fase o sede) o escribe un criterio para que las ponga Sofía. Al ponerse pueden pausar o reanudar a Sofía, derivar, avisar al equipo y copiarse a GHL. Luego filtra los chats por ellas.</p>
+    ${r.etiquetas.length ? `<div class="etq-grid">${r.etiquetas.map((e) => `<article class="etq-card ${e.activa ? '' : 'inactiva'}">
+      <header>${pill(e)}<span class="chip">${e.chats} chat${e.chats === 1 ? '' : 's'}</span>${e.activa ? '' : '<span class="chip ambar">desactivada</span>'}</header>
+      ${e.criterio_ia ? `<p class="criterio">✨ Sofía: ${esc(e.criterio_ia)}</p>` : ''}
+      ${e.reglas_texto.length ? `<ul class="reglas">${e.reglas_texto.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      ${!e.criterio_ia && !e.reglas.length ? '<p class="ayuda">Solo a mano</p>' : ''}
+      ${condicionesTexto(e, r.etiquetas)}
+      <div class="acc">${ACCIONES.filter(([k]) => e.acciones[k] && k !== 'ghl').map(([, t]) => `<span class="chip">${t}</span>`).join('')}${e.acciones.ghl ? '' : '<span class="chip">sin copiar a GHL</span>'}</div>
+      <footer><button data-ed="${e.id}">Editar</button>${e.reglas.some((x) => x.tipo !== 'inactividad') ? `<button data-ap="${e.id}" title="Busca en los chats que ya existen los que cumplen sus reglas">Aplicar a chats de antes</button>` : ''}
+        <a href="#chats" data-fil="${e.id}">Ver chats</a></footer></article>`).join('')}</div>`
+      : '<div class="vacio">Todavía no hay etiquetas. Crea la primera: por ejemplo «Interesado en Hyrox» con un criterio para Sofía, o «Lesión» con la regla «si el lead escribe la palabra lesión».</div>'}`;
+  $('#enueva').onclick = () => { estado.editEtq = 'nueva'; etiquetas(); };
+  m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editEtq = Number(b.dataset.ed); etiquetas(); });
+  m.querySelectorAll('[data-fil]').forEach((a) => a.onclick = () => { estado.vista = 'todos'; estado.crit = { etiquetas: [Number(a.dataset.fil)] }; estado.conv = null; });
+  m.querySelectorAll('[data-ap]').forEach((b) => b.onclick = async () => {
+    const e = r.etiquetas.find((x) => x.id === Number(b.dataset.ap));
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = `¿Buscar en todos los chats y poner «${e.nombre}»?`; b.classList.add('primario'); return; }
+    b.disabled = true; b.textContent = 'Buscando…';
+    const out = await api(`/panel/etiquetas/${e.id}/aplicar`, { method: 'POST' });
+    b.textContent = out.aplicadas ? `Puesta en ${out.aplicadas} chat${out.aplicadas === 1 ? '' : 's'}` : 'Ningún chat nuevo la cumple';
+    setTimeout(etiquetas, 1800);
+  });
+}
+
+function condicionesTexto(e, todas) {
+  const n = (ids) => ids.map((id) => todas.find((x) => x.id === id)?.nombre).filter(Boolean).map((x) => `«${esc(x)}»`).join(', ');
+  return [e.solo_si.length ? `<p class="ayuda">Solo si ya lleva ${n(e.solo_si)}</p>` : '', e.nunca_si.length ? `<p class="ayuda">Nunca si lleva ${n(e.nunca_si)}</p>` : ''].join('');
+}
+
+function editorEtiqueta(e) {
+  const otras = estado.catalogo.etiquetas.filter((x) => x.id !== e?.id);
+  const d = e ? JSON.parse(JSON.stringify(e)) : { nombre: '', color: estado.catalogo.colores[0], criterio_ia: '', reglas: [], solo_si: [], nunca_si: [], acciones: { ghl: true }, activa: true };
+  d.usarIA = Boolean(d.criterio_ia);
+  const m = $('#main');
+  const pintar = () => {
+    m.innerHTML = `<div class="cab-seccion"><h2>${e ? `Editar «${esc(e.nombre)}»` : 'Nueva etiqueta'}</h2><button id="evolver">Volver</button></div>
+    <form id="fe" class="editor">
+      <section><h3>Nombre y color</h3>
+        <div class="fila-f"><input id="enom" value="${esc(d.nombre)}" maxlength="40" placeholder="Ej: Interesado en Hyrox" aria-label="Nombre" required>
+        <span class="vista-previa">${pill({ nombre: d.nombre || 'Vista previa', color: d.color })}</span></div>
+        <div class="colores" role="radiogroup" aria-label="Color">${estado.catalogo.colores.map((c) => `<button type="button" role="radio" aria-checked="${c === d.color}" aria-label="Color ${c}" data-col="${c}" style="background:${c}" class="${c === d.color ? 'on' : ''}"></button>`).join('')}</div>
+      </section>
+      <section><h3>¿Cuándo se pone?</h3><p class="ayuda">Siempre se puede poner a mano. Además, de forma automática:</p>
+        <label class="check"><input type="checkbox" id="eia" ${d.usarIA ? 'checked' : ''}> ✨ Que la ponga Sofía cuando se cumpla un criterio</label>
+        ${d.usarIA ? `<textarea id="ecrit" rows="3" maxlength="600" placeholder="Ej: el lead pregunta por Hyrox o dice que quiere competir">${esc(d.criterio_ia || '')}</textarea>
+          <p class="ayuda">Escríbelo como se lo explicarías a una persona. Sofía lo revisa en cada respuesta.</p>` : ''}
+        <h4>Reglas automáticas <span class="ayuda">(basta con que se cumpla una)</span></h4>
+        <div id="ereglas">${d.reglas.map((r, i) => filaRegla(r, i)).join('') || '<p class="ayuda">Sin reglas.</p>'}</div>
+        <div class="anadir-regla">+ Regla: ${Object.entries({ texto: 'Texto', adjunto: 'Adjunto', inactividad: 'Inactividad', fase: 'Fase', sede: 'Sede' }).map(([k, t]) => `<button type="button" data-nr="${k}">${t}</button>`).join('')}</div>
+      </section>
+      ${otras.length ? `<section><h3>Condiciones <span class="ayuda">(para reglas y Sofía; a mano se pone siempre)</span></h3>
+        ${['solo_si', 'nunca_si'].map((k) => `<div class="cond"><b>${k === 'solo_si' ? 'Solo si ya lleva' : 'Nunca si lleva'}</b><div class="chips-f">${otras.map((o) => `<button type="button" class="ch etq-f ${d[k].includes(o.id) ? 'on' : ''}" style="--c:${esc(o.color)}" data-cond="${k}" data-id="${o.id}" aria-pressed="${d[k].includes(o.id)}">${esc(o.nombre)}</button>`).join('')}</div></div>`).join('')}
+      </section>` : ''}
+      <section><h3>Al ponerse</h3>
+        ${ACCIONES.map(([k, t, ayuda]) => `<label class="check"><input type="checkbox" data-acc="${k}" ${d.acciones[k] ? 'checked' : ''}> ${t} <span class="ayuda">${ayuda}</span></label>`).join('')}
+      </section>
+      <section><label class="check"><input type="checkbox" id="eact" ${d.activa ? 'checked' : ''}> Activa <span class="ayuda">(si la desactivas, las reglas y Sofía dejan de ponerla)</span></label></section>
+      <p class="error" id="eerr" role="alert"></p>
+      <div class="acciones-f"><button class="primario">${e ? 'Guardar cambios' : 'Crear etiqueta'}</button><button type="button" id="ecanc">Cancelar</button>
+        ${e ? '<button type="button" id="eborrar" class="peligro">Borrar etiqueta</button>' : ''}</div>
+    </form>`;
+    const leer = () => {
+      d.nombre = $('#enom').value; if ($('#ecrit')) d.criterio_ia = $('#ecrit').value;
+      m.querySelectorAll('[data-acc]').forEach((c) => d.acciones[c.dataset.acc] = c.checked); d.activa = $('#eact').checked;
+      m.querySelectorAll('[data-r]').forEach((el) => { const [i, campo] = el.dataset.r.split('.'); d.reglas[i][campo] = campo === 'horas' ? Number(el.value) : el.value; });
+    };
+    const re = () => { leer(); pintar(); };
+    $('#enom').oninput = () => { m.querySelector('.vista-previa').innerHTML = pill({ nombre: $('#enom').value || 'Vista previa', color: d.color }); };
+    m.querySelectorAll('[data-col]').forEach((b) => b.onclick = () => { d.color = b.dataset.col; re(); });
+    $('#eia').onchange = (ev) => { leer(); d.usarIA = ev.target.checked; if (!d.usarIA) d.criterio_ia = ''; pintar(); $('#ecrit')?.focus(); };
+    m.querySelectorAll('[data-nr]').forEach((b) => b.onclick = () => { leer(); d.reglas.push({ ...REGLA_NUEVA[b.dataset.nr] }); pintar(); });
+    m.querySelectorAll('[data-delr]').forEach((b) => b.onclick = () => { leer(); d.reglas.splice(Number(b.dataset.delr), 1); pintar(); });
+    m.querySelectorAll('[data-r]').forEach((el) => el.onchange = () => { if (el.tagName === 'SELECT') re(); });
+    m.querySelectorAll('[data-cond]').forEach((b) => b.onclick = () => {
+      leer(); const k = b.dataset.cond, otro = k === 'solo_si' ? 'nunca_si' : 'solo_si', id = Number(b.dataset.id);
+      d[k] = d[k].includes(id) ? d[k].filter((x) => x !== id) : [...d[k], id]; d[otro] = d[otro].filter((x) => x !== id); pintar();
+    });
+    m.querySelectorAll('[data-acc]').forEach((c) => c.onchange = () => {
+      leer();
+      if (c.dataset.acc === 'pausar_ia' && c.checked) { d.acciones.reanudar_ia = false; d.acciones.forzar_respuesta = false; }
+      if ((c.dataset.acc === 'reanudar_ia' || c.dataset.acc === 'forzar_respuesta') && c.checked) d.acciones.pausar_ia = false;
+      pintar();
+    });
+    const salir = () => { estado.editEtq = null; etiquetas(); };
+    $('#evolver').onclick = salir; $('#ecanc').onclick = salir;
+    $('#eborrar') && ($('#eborrar').onclick = async () => {
+      const b = $('#eborrar');
+      if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = `¿Borrar? Se quitará de ${e.chats} chat${e.chats === 1 ? '' : 's'} (no de GHL)`; return; }
+      await api('/panel/etiquetas/' + e.id, { method: 'DELETE' }); salir();
+    });
+    $('#fe').onsubmit = async (ev) => {
+      ev.preventDefault(); leer();
+      const cuerpo = { nombre: d.nombre, color: d.color, criterio_ia: d.usarIA ? d.criterio_ia : '', reglas: d.reglas, solo_si: d.solo_si, nunca_si: d.nunca_si, acciones: d.acciones, activa: d.activa };
+      if (d.usarIA && !String(d.criterio_ia).trim()) { $('#eerr').textContent = 'Escribe el criterio para Sofía o desmarca esa opción.'; return; }
+      try {
+        await api(e ? '/panel/etiquetas/' + e.id : '/panel/etiquetas', { method: e ? 'PUT' : 'POST', body: JSON.stringify(cuerpo) });
+        salir();
+      } catch (err) { $('#eerr').textContent = err.message; }
+    };
+  };
+  pintar();
+}
+
+function filaRegla(r, i) {
+  const sel = (campo, ops) => `<select data-r="${i}.${campo}" aria-label="${campo}">${ops.map(([v, t]) => `<option value="${esc(v)}" ${String(r[campo]) === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const quien = sel('quien', [['lead', 'el lead'], ['nosotros', 'nosotros'], ['cualquiera', 'cualquiera']]);
+  let cuerpo = '';
+  if (r.tipo === 'texto') cuerpo = `Si ${quien} ${sel('operador', [['contiene', 'escribe la palabra'], ['exacto', 'escribe exactamente'], ['empieza', 'empieza con'], ['termina', 'termina con']])} <input data-r="${i}.patron" value="${esc(r.patron)}" placeholder="palabra o frase" aria-label="Texto a buscar" maxlength="200">`;
+  if (r.tipo === 'adjunto') cuerpo = `Si ${quien} envía ${sel('media', [['cualquiera', 'cualquier adjunto'], ['imagen', 'una imagen'], ['audio', 'un audio'], ['video', 'un vídeo'], ['documento', 'un documento']])}`;
+  if (r.tipo === 'inactividad') cuerpo = `Si el lead no responde a nuestro último mensaje en <input type="number" min="1" max="1440" data-r="${i}.horas" value="${esc(r.horas)}" aria-label="Horas" style="width:80px"> horas`;
+  if (r.tipo === 'fase') cuerpo = `Si Sofía pone el chat en la fase ${sel('fase', FASES.map((f) => [f, f]))}`;
+  if (r.tipo === 'sede') cuerpo = `Si la sede del lead es ${sel('sede', Object.entries(SEDES))}`;
+  return `<div class="regla-f">${cuerpo}<button type="button" class="x" data-delr="${i}" aria-label="Quitar regla">✕</button></div>`;
 }
 
 async function altas() {
@@ -396,31 +775,153 @@ async function seguimientos() {
   $('#main').querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); seguimientos(); });
 }
 
-function probar() {
+// ---------- Probar IA ----------
+const HERR = { consultar_horarios: '🕒 Consultó horarios', consultar_tarifas: '💶 Consultó tarifas', calcular_primer_recibo: '🧮 Calculó el primer recibo', preparar_alta: '📝 Preparó un alta', reservar_prueba_parla: '📅 Pidió clase de prueba', derivar_a_equipo: '🙋 Derivó al equipo' };
+const resumirJson = (o) => esc(Object.entries(o || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')).slice(0, 400);
+const fechaLocal = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+async function probar() {
   const p = estado.prueba;
+  const [listaP] = await Promise.all([api('/probar/conversaciones'), estado.opciones ? null : cargarOpciones()]);
+  if (estado.seccion !== 'probar') return;
+  p.lista = listaP;
+  const desdeHash = location.hash.split('/')[1];
+  if (desdeHash && listaP.some((c) => c.id === desdeHash)) p.id = desdeHash;
+  if (p.id && !listaP.some((c) => c.id === p.id)) p.id = null;
   const disponible = estado.info.modelo_configurado;
-  $('#main').innerHTML = `<h2>Probar IA</h2><p style="color:var(--muted);margin-top:-8px">Habla con Sofía como si fueras un lead. No toca GHL, AimHarder ni a ningún cliente: las altas y avisos solo se muestran aquí.</p>
-    ${disponible ? '' : '<div class="aviso" role="status">Para probar respuestas falta configurar la clave de Anthropic en el VPS.</div>'}
-    <div class="probar"><div class="msgs" id="pm" style="overflow:auto;padding:14px;display:flex;flex-direction:column;gap:6px"></div>
-    <form id="pf"><select id="pc" aria-label="Canal de la prueba" ${disponible ? '' : 'disabled'}><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select><input id="pt" aria-label="Mensaje de prueba" ${disponible ? '' : 'disabled'} placeholder="Escribe como un lead…" autocomplete="off"><button class="primario" ${disponible ? '' : 'disabled'}>Enviar</button><button type="button" id="pr" ${disponible ? '' : 'disabled'}>Reiniciar</button></form></div>`;
-  const pintarP = () => { if (!$('#pm')) return; $('#pm').innerHTML = p.mensajes.map((m) => `<div class="burbuja ${m.c}">${esc(m.t)}</div>`).join('') || '<div class="vacio">Escribe el primer mensaje</div>'; $('#pm').scrollTop = 1e9; };
-  pintarP();
-  $('#pr').onclick = async () => { await api('/probar/reiniciar', { method: 'POST', body: JSON.stringify({ sesion: p.sesion }) }); p.mensajes = []; pintarP(); };
-  $('#pf').onsubmit = async (e) => {
-    e.preventDefault(); const t = $('#pt').value.trim(); if (!t) return;
-    const controles = [...e.currentTarget.elements];
-    const canal = $('#pc').value;
-    controles.forEach((el) => el.disabled = true);
-    $('#pt').value = ''; p.mensajes.push({ c: 'b-lead', t }); p.mensajes.push({ c: 'b-sistema', t: 'Sofía está escribiendo…' }); pintarP();
-    try {
-      const r = await api('/probar', { method: 'POST', body: JSON.stringify({ sesion: p.sesion, texto: t, canal }) });
-      p.mensajes.pop();
-      for (const m of r.mensajes) p.mensajes.push({ c: 'b-ia', t: m });
-      for (const x of r.efectos.filter((x) => x.startsWith('['))) p.mensajes.push({ c: 'b-sistema', t: x });
-    } catch (err) { p.mensajes.pop(); p.mensajes.push({ c: 'b-sistema error', t: 'Error: ' + err.message }); }
-    controles.forEach((el) => el.disabled = false);
-    pintarP();
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Probar IA</h2><span class="ayuda">Nada sale a GHL, AimHarder ni a ningún lead. Las etiquetas son las reales.</span></div>
+    ${disponible ? '' : '<div class="aviso" role="status">Para que Sofía responda falta configurar la clave de Anthropic en el VPS. Puedes preparar pruebas igualmente.</div>'}
+    <div class="probar2 ${p.id ? 'con-prueba' : ''} ${p.movil ? 'movil' : ''}" id="p2">
+      <aside class="p-lista"><div class="p-nueva"><select id="pcanal" aria-label="Canal de la prueba nueva"><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select><button class="primario" id="pnueva">+ Nueva prueba</button></div>
+        <div id="plista"></div>${listaP.length ? '<button id="pborrartodo" class="suave peligro-t">Borrar todas</button>' : ''}</aside>
+      <section class="p-chat" id="pchat"><div class="vacio">Crea una prueba o elige una de la lista.<br><span class="ayuda">Elige WhatsApp o Instagram y escribe como si fueras un lead.</span></div></section>
+      <aside class="p-analisis" id="panal"></aside>
+    </div>`;
+  pintarListaP();
+  $('#pnueva').onclick = async () => { const d = await api('/probar/conversaciones', { method: 'POST', body: JSON.stringify({ canal: $('#pcanal').value }) }); p.id = d.conv.id; p.datos = d; history.replaceState(null, '', '#probar/' + p.id); probar(); };
+  $('#pborrartodo') && ($('#pborrartodo').onclick = async () => {
+    const b = $('#pborrartodo'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = `¿Borrar las ${listaP.length} pruebas?`; return; }
+    await api('/probar/conversaciones', { method: 'DELETE' }); p.id = null; history.replaceState(null, '', '#probar'); probar();
+  });
+  if (p.id) await abrirPrueba(p.id);
+}
+
+function pintarListaP() {
+  const p = estado.prueba;
+  $('#plista').innerHTML = p.lista.length ? p.lista.map((c) => `<div class="p-item ${c.id === p.id ? 'activo' : ''}"><button type="button" class="p-abrir" data-p="${esc(c.id)}">
+      <span class="fila"><b>${esc(c.nombre)}</b><span class="chip">${esc(CANAL[c.canal] || c.canal)}</span></span>
+      <span class="ult">${esc(c.ultimo?.texto || 'Sin mensajes')}</span>
+      <span class="ayuda">${c.mensajes} msgs${c.fase ? ' · ' + esc(c.fase) : ''} · ${hora(c.updated_at)}</span></button>
+      <button type="button" class="x" data-pdel="${esc(c.id)}" aria-label="Borrar ${esc(c.nombre)}">✕</button></div>`).join('') : '<div class="vacio">Sin pruebas</div>';
+  $('#plista').querySelectorAll('[data-p]').forEach((b) => b.onclick = () => { p.id = b.dataset.p; history.replaceState(null, '', '#probar/' + p.id); $('#p2').classList.add('con-prueba'); pintarListaP(); abrirPrueba(p.id); });
+  $('#plista').querySelectorAll('[data-pdel]').forEach((b) => b.onclick = async () => {
+    await api('/probar/conversaciones/' + encodeURIComponent(b.dataset.pdel), { method: 'DELETE' });
+    if (p.id === b.dataset.pdel) { p.id = null; history.replaceState(null, '', '#probar'); }
+    probar();
+  });
+}
+
+async function abrirPrueba(id) {
+  const d = await api('/probar/conversaciones/' + encodeURIComponent(id));
+  if (estado.seccion !== 'probar' || estado.prueba.id !== id) return;
+  pintarPrueba(d);
+}
+
+function pintarPrueba(d, escribiendo = false) {
+  const p = estado.prueba; p.datos = d;
+  const c = d.conv; const disponible = estado.info.modelo_configurado;
+  const sim = c.simulacion || {};
+  const ETQ = { lead: 'Lead', ia: 'Sofía', sistema: 'Sistema', humano: 'Equipo' };
+  $('#pchat').innerHTML = `<div class="cab"><div><button class="volver" id="pvolver">Pruebas</button> <b>${esc(c.nombre)}</b> <span class="chip">${esc(CANAL[c.canal])}</span>
+      <div class="ayuda">${sim.fecha ? `🕒 La IA cree que es ${new Date(d.ahora).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'Hora real'}${sim.telefono ? ` · 📱 ${esc(sim.telefono)}` : ''}</div></div>
+      <div class="p-botones">
+        <button type="button" id="psim" aria-expanded="${Boolean(p.verSim)}">Simular…</button>
+        <button type="button" id="pinicia" ${disponible && !escribiendo ? '' : 'disabled'} title="Sofía escribe el primer mensaje (flujo outbound)">IA inicia</button>
+        <button type="button" id="pmovil" aria-pressed="${Boolean(p.movil)}">${p.movil ? 'Vista escritorio' : 'Vista móvil'}</button>
+        <button type="button" id="pexp">Exportar</button>
+        <button type="button" id="plink" title="Copia un enlace directo a esta prueba">Copiar enlace</button>
+      </div></div>
+    ${p.verSim ? `<form class="p-sim" id="psimf"><label>Teléfono simulado <input id="pstel" value="${esc(sim.telefono || '')}" placeholder="+34 600 000 000" inputmode="tel"></label>
+      <label>Fecha y hora <input id="psfecha" type="datetime-local" value="${sim.fecha ? fechaLocal(sim.fecha) : ''}"></label>
+      <label>Nombre <input id="psnom" value="${esc(c.nombre)}" maxlength="60"></label>
+      <button class="primario">Aplicar</button><button type="button" id="psreal">Hora y teléfono reales</button>
+      <p class="ayuda">Con el teléfono de un socio, Sofía lo detecta como socio (índice real de AimHarder). La fecha cambia el «hoy» de Sofía y su horario.</p></form>` : ''}
+    <div class="msgs p-msgs" id="pm">${d.mensajes.map((m) => `<div class="burbuja b-${esc(m.autor)}">${esc(m.texto)}<div class="meta">${esc(ETQ[m.autor] || m.autor)} · ${hora(m.created_at)}</div></div>`).join('') || '<div class="vacio">Escribe el primer mensaje como si fueras un lead, o pulsa «IA inicia».</div>'}
+      ${escribiendo ? '<div class="burbuja b-sistema" role="status">Sofía está escribiendo…</div>' : ''}</div>
+    <form id="pf" class="p-form"><textarea id="pt" rows="1" aria-label="Mensaje de prueba" placeholder="Escribe como un lead de ${esc(CANAL[c.canal])}…" title="Intro envía · Mayús+Intro, salto de línea" ${disponible && !escribiendo ? '' : 'disabled'}></textarea><button class="primario" ${disponible && !escribiendo ? '' : 'disabled'}>Enviar</button></form>`;
+  $('#pm').scrollTop = 1e9;
+  pintarAnalisis(d, escribiendo);
+  const enviar = async (ruta, cuerpo) => {
+    pintarPrueba(d, true);
+    try { const nd = await api(ruta, { method: 'POST', body: JSON.stringify(cuerpo || {}) }); if (p.id === c.id) pintarPrueba(nd); }
+    catch (err) { const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id)).catch(() => d); if (p.id === c.id) { pintarPrueba(nd); $('#pm').insertAdjacentHTML('beforeend', `<div class="burbuja b-sistema error">${esc(err.message)}</div>`); } }
+    actualizarListaP();
   };
+  $('#pvolver').onclick = () => { $('#p2').classList.remove('con-prueba'); };
+  $('#pf').onsubmit = (e) => { e.preventDefault(); const t = $('#pt').value.trim(); if (!t) return; d.mensajes.push({ autor: 'lead', texto: t, created_at: new Date().toISOString() }); enviar(`/probar/conversaciones/${encodeURIComponent(c.id)}/mensaje`, { texto: t }); };
+  $('#pt').onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#pf').requestSubmit(); } };
+  $('#pt').oninput = (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(140, e.target.scrollHeight) + 'px'; };
+  if (!escribiendo) $('#pt')?.focus({ preventScroll: true });
+  $('#pinicia').onclick = () => enviar(`/probar/conversaciones/${encodeURIComponent(c.id)}/iniciar`);
+  $('#psim').onclick = () => { p.verSim = !p.verSim; pintarPrueba(d); };
+  $('#pmovil').onclick = () => { p.movil = !p.movil; $('#p2').classList.toggle('movil', p.movil); pintarPrueba(d); };
+  $('#plink').onclick = async () => { const url = location.href.split('#')[0] + '#probar/' + c.id; try { await navigator.clipboard.writeText(url); $('#plink').textContent = 'Enlace copiado'; } catch { prompt('Copia el enlace', url); } };
+  $('#pexp').onclick = () => {
+    const b = $('#pexp');
+    b.outerHTML = `<span class="p-exp"><button type="button" data-exp="1">Con análisis</button><button type="button" data-exp="0">Solo el chat</button></span>`;
+    $('#pchat').querySelectorAll('[data-exp]').forEach((x) => x.onclick = () => descargar(`/probar/conversaciones/${encodeURIComponent(c.id)}/exportar?analisis=${x.dataset.exp}`, `prueba_sofia_${c.canal}_${c.id}.txt`));
+  };
+  $('#psimf') && ($('#psimf').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = $('#psfecha').value;
+    const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ telefono: $('#pstel').value, fecha: f ? new Date(f).toISOString() : '', nombre: $('#psnom').value }) });
+    p.verSim = false; pintarPrueba(nd); actualizarListaP();
+  });
+  $('#psreal') && ($('#psreal').onclick = async () => { const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ telefono: '', fecha: '' }) }); p.verSim = false; pintarPrueba(nd); });
+}
+
+async function actualizarListaP() {
+  const p = estado.prueba;
+  p.lista = await api('/probar/conversaciones').catch(() => p.lista);
+  if ($('#plista')) pintarListaP();
+}
+
+function pintarAnalisis(d, escribiendo) {
+  const c = d.conv; const t = c.ultimo_turno; const p = estado.prueba;
+  const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
+  const bloque = (titulo, html) => html ? `<section><h4>${titulo}</h4>${html}</section>` : '';
+  $('#panal').innerHTML = `<h3>Análisis</h3>
+    ${bloque('Estado', `<div class="chips">${c.fase ? `<span class="chip">${esc(c.fase)}</span>` : '<span class="chip">sin fase</span>'}${c.sede ? `<span class="chip azul">${esc(SEDES[c.sede] || c.sede)}</span>` : ''}${c.tipo === 'socio' ? '<span class="chip violeta">socio</span>' : ''}${c.prueba_reservada ? '<span class="chip">prueba pedida</span>' : ''}${c.alta_estado ? `<span class="chip ambar">alta ${esc(c.alta_estado)}</span>` : ''}</div>
+      ${c.ai_paused || c.derivado ? `<p class="aviso-mini">Sofía en pausa: ${esc(c.pause_reason || '')} <button type="button" id="preanudar">Reanudar</button></p>` : ''}`)}
+    ${bloque('Etiquetas', `<div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-pq="${e.id}" aria-label="Quitar ${esc(e.nombre)}">✕</button></span>`).join('') || '<span class="ayuda">Ninguna todavía</span>'}
+      ${disponibles.length ? `<select id="padd" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>`)}
+    ${bloque('Lo que ha entendido', c.analisis ? `<p>${esc(c.analisis)}</p>` : '<p class="ayuda">Aparece tras la primera respuesta de Sofía.</p>')}
+    ${bloque('Siguiente paso', c.siguiente_paso ? `<p>${esc(c.siguiente_paso)}</p>` : '')}
+    ${bloque('Último turno', t ? `<ul class="herr">${t.herramientas.map((h) => `<li><details><summary>${HERR[h.nombre] || esc(h.nombre)}</summary><div class="ayuda">Pidió: ${resumirJson(h.entrada)}</div><div class="ayuda">Respuesta: ${resumirJson(h.resultado)}</div></details></li>`).join('') || '<li class="ayuda">Contestó sin consultar herramientas</li>'}</ul>
+      ${t.etiquetas?.length ? `<p class="ayuda">✨ Etiquetas puestas: ${t.etiquetas.map(esc).join(', ')}</p>` : ''}${t.tags_ghl?.length ? `<p class="ayuda">Tags en GHL: ${t.tags_ghl.map(esc).join(', ')}</p>` : ''}` : '')}
+    ${bloque('Follow-ups', `<p class="ayuda">En producción salen solos si el lead no contesta. «Forzar» lo lanza ya: Sofía decide si se cumple su condición.</p>
+      <ul class="fu">${d.seguimientos.map((s) => `<li><span>${esc(s.nombre)} <span class="ayuda">· ${minutos(s.minutos)}${s.activo ? '' : ' · desactivado'}</span></span><button type="button" data-fu="${esc(s.id)}" ${estado.info.modelo_configurado && !escribiendo ? '' : 'disabled'}>Forzar</button></li>`).join('')}</ul>`)}
+    ${bloque('Altas simuladas', d.altas.map((a) => `<p><span class="chip ambar">${esc(a.estado)}</span> ${esc(a.datos.nombre_completo || '')} · ${esc(a.datos.tarifa || '')} · ${esc(SEDES[a.datos.sede] || a.datos.sede || '')}</p>`).join(''))}`;
+  const recargar = (nd) => { if (p.id === c.id) pintarPrueba(nd); };
+  $('#padd') && ($('#padd').onchange = async (e) => { if (!e.target.value) return; try { recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/etiquetas`, { method: 'POST', body: JSON.stringify({ etiqueta: Number(e.target.value) }) })); } catch (err) { alertaP(err.message); } });
+  $('#panal').querySelectorAll('[data-pq]').forEach((b) => b.onclick = async () => recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/etiquetas/${b.dataset.pq}`, { method: 'DELETE' })));
+  $('#preanudar') && ($('#preanudar').onclick = async () => recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/reanudar`, { method: 'POST' })));
+  $('#panal').querySelectorAll('[data-fu]').forEach((b) => b.onclick = async () => {
+    pintarPrueba(d, true);
+    try { recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/seguimiento`, { method: 'POST', body: JSON.stringify({ regla: b.dataset.fu }) })); }
+    catch (err) { recargar(await api('/probar/conversaciones/' + encodeURIComponent(c.id))); alertaP(err.message); }
+  });
+}
+
+function alertaP(texto) { $('#pm')?.insertAdjacentHTML('beforeend', `<div class="burbuja b-sistema error" role="alert">${esc(texto)}</div>`); }
+
+async function descargar(ruta, nombre) {
+  const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
+  const r = await fetch((integrado ? './api' : '/admin') + ruta, { headers: cabecera, cache: 'no-store' });
+  if (!r.ok) return alertaP('No se ha podido exportar.');
+  const url = URL.createObjectURL(await r.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: nombre });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 async function ajustes() {

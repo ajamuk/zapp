@@ -86,7 +86,7 @@ export const TOOLS = [
   },
   {
     name: 'responder',
-    description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 a 4 burbujas), etiquetas y fase.',
+    description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 a 4 burbujas), etiquetas, fase y una nota interna corta para el equipo.',
     input_schema: {
       type: 'object',
       properties: {
@@ -94,6 +94,8 @@ export const TOOLS = [
         sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas', 'el_canaveral', 'desconocida'] },
         fase: { type: 'string', enum: ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'] },
         etiquetas: { type: 'array', items: { type: 'string' } },
+        analisis: { type: 'string', description: 'Nota interna (no se envía): qué sabes del lead y en qué punto está, en una o dos frases.' },
+        siguiente_paso: { type: 'string', description: 'Nota interna (no se envía): qué buscas conseguir con el próximo mensaje.' },
       },
       required: ['mensajes', 'fase'],
     },
@@ -107,7 +109,7 @@ const getClient = () => (client ??= new Anthropic({ apiKey: config.ai.apiKey }))
  * Ejecuta un turno: llama al modelo, resuelve herramientas y devuelve la entrada de `responder`.
  * `complete` se puede sustituir en tests.
  */
-export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage }) {
+export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta }) {
   const llamar = complete || ((req) => getClient().messages.create(req));
   const conv = [...messages];
   for (let paso = 0; paso < maxPasos; paso++) {
@@ -130,6 +132,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     for (const u of usos) {
       let out;
       try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
+      onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
       resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
     }
     conv.push({ role: 'user', content: resultados });

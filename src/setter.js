@@ -3,6 +3,7 @@ import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, n
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
+import { tipoAdjunto } from './etiquetas.js';
 
 const TAGS = knowledge.etiquetas;
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
@@ -15,10 +16,11 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - aimharder: { buscarSocioPorTelefono, prepararAlta }
  * - avisar(texto, {sede}): aviso al equipo (Telegram)
  * - complete: sustituto de la llamada al modelo (tests)
+ * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, now, sleep, live, random });
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, now, sleep, live, random });
   }
 
   // ---------- Entrada ----------
@@ -34,8 +36,9 @@ export class Setter {
     if (!evt.userId) return { ignorado: 'saliente sin usuario (sistema o plantilla)' };
     const conv = this.repo.getConv(evt.conversationId);
     if (!conv) return { ignorado: 'conversación desconocida' };
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto });
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) });
     if (!ins) return { ignorado: 'duplicado' };
+    await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) }));
     // Si una persona del equipo escribe, la IA se aparta de esa conversación.
     this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: 'humano escribió', respond_at: null });
     this.repo.cancelScheduled(conv.id, 'humano escribió');
@@ -44,7 +47,8 @@ export class Setter {
 
   async onInbound(evt) {
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (evt.adjuntos?.length ? '[adjunto]' : '') });
+    const adjunto = tipoAdjunto(evt.adjuntos);
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto });
     if (!ins) return { ignorado: 'duplicado' };
     const ahora = this.now();
     this.repo.updateConv(conv.id, { last_inbound_at: ahora.toISOString() });
@@ -58,6 +62,8 @@ export class Setter {
     } else if (tags.includes(TAGS.control.pausar_ia)) {
       this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: 'etiqueta parar ia' });
     }
+    // Etiquetas por reglas de texto/adjunto (pueden pausar, derivar o forzar la respuesta)
+    await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'lead', texto: evt.texto, adjunto }));
 
     // ¿Socio o lead? Solo la primera vez.
     if (!conv.tipo) {
@@ -123,6 +129,7 @@ export class Setter {
       `- Nombre del perfil: ${conv.nombre || 'desconocido'}.`,
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
       `- Alta: ${conv.alta_estado || 'no iniciada'}. Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`,
+      this.etiquetas?.contextoIA(conv.id) || '',
       extra,
     ].filter(Boolean).join('\n');
   }
@@ -148,13 +155,14 @@ export class Setter {
     if (!conv || conv.ai_paused || conv.derivado) return null;
     const system = systemBlocks(knowledge.prompt, knowledge.negocio, this.contexto(conv, extraContexto));
     const messages = this.mensajesModelo(this.repo.history(convId));
-    const efectos = { tags: new Set(), derivado: false };
+    const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
 
     let respuesta;
     try {
       ({ respuesta } = await runTurn({
         system, messages, complete: this.complete,
         ejecutarHerramienta: (n, i) => this.herramienta(conv, n, i, efectos),
+        onHerramienta: (h) => efectos.herramientas.push(h),
         onUsage: (u, ms) => this.repo.logRun({
           conversation_id: convId, motivo, modelo: config.ai.model, ms,
           tokens_in: u.input_tokens || 0, tokens_out: u.output_tokens || 0,
@@ -173,7 +181,9 @@ export class Setter {
     if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
     if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
     if (motivo === 'respuesta' && mensajes.length && !efectos.derivado && this.live) this.programarSeguimientos(conv);
-    return { ...respuesta, mensajes };
+    const turno = { at: this.now().toISOString(), motivo, herramientas: efectos.herramientas, etiquetas: efectos.etiquetas, tags_ghl: [...efectos.tags], derivado: efectos.derivado };
+    this.repo.updateConv(convId, { ultimo_turno: JSON.stringify(turno) });
+    return { ...respuesta, mensajes, turno };
   }
 
   async aplicarRespuesta(conv, r, efectos) {
@@ -186,8 +196,20 @@ export class Setter {
       await this.safe(() => this.ghl.assign(conv.contact_id, config.ghl.users[sede]));
     }
     if (r.fase && r.fase !== 'cerrada') efectos.tags.add(r.fase);
-    for (const t of r.etiquetas || []) efectos.tags.add(String(t).toLowerCase());
+    if (r.analisis) patch.analisis = String(r.analisis).slice(0, 800);
+    if (r.siguiente_paso) patch.siguiente_paso = String(r.siguiente_paso).slice(0, 400);
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
+    // Etiquetas del catálogo con criterio IA: las pone el etiquetador (con sus condiciones y acciones).
+    // El resto siguen yendo a GHL como tags, como siempre.
+    let libres = r.etiquetas || [];
+    if (this.etiquetas) {
+      const res = (await this.safe(() => this.etiquetas.deSofia(conv.id, libres))) || { puestas: [], libres };
+      efectos.etiquetas.push(...res.puestas);
+      libres = res.libres;
+      const porEstado = await this.safe(() => this.etiquetas.alCambiarEstado(conv.id));
+      if (porEstado) efectos.etiquetas.push(...porEstado);
+    }
+    for (const t of libres) efectos.tags.add(String(t).toLowerCase());
     // Quita la fase anterior para que solo quede una etiqueta de embudo
     const viejas = TAGS.embudo.filter((f) => f !== r.fase && conv.fase === f);
     if (viejas.length) await this.safe(() => this.ghl.removeTags(conv.contact_id, viejas));
@@ -214,6 +236,7 @@ export class Setter {
       const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto: mensajes[i] });
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[i] });
       ids.push(r?.messageId || null);
+      await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'ia', texto: mensajes[i] }));
     }
     this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
     return ids;

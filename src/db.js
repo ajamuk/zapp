@@ -74,6 +74,34 @@ CREATE TABLE IF NOT EXISTS altas (
   detalle TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS etiquetas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  color TEXT NOT NULL DEFAULT '#386b36',
+  criterio_ia TEXT,                 -- si tiene texto, Sofía la pone cuando se cumple
+  reglas TEXT NOT NULL DEFAULT '[]',     -- JSON: reglas automáticas (texto, adjunto, inactividad, fase, sede)
+  solo_si TEXT NOT NULL DEFAULT '[]',    -- JSON: ids; regla/IA solo la ponen si el chat ya lleva alguna
+  nunca_si TEXT NOT NULL DEFAULT '[]',   -- JSON: ids; regla/IA no la ponen si el chat lleva alguna
+  acciones TEXT NOT NULL DEFAULT '{}',   -- JSON: pausar_ia, reanudar_ia, forzar_respuesta, derivar, avisar, ghl
+  activa INTEGER NOT NULL DEFAULT 1,
+  orden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS conv_etiquetas (
+  conversation_id TEXT NOT NULL,
+  etiqueta_id INTEGER NOT NULL,
+  origen TEXT NOT NULL,             -- manual | regla | ia
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (conversation_id, etiqueta_id)
+);
+CREATE INDEX IF NOT EXISTS conv_etiquetas_etq ON conv_etiquetas(etiqueta_id);
+CREATE TABLE IF NOT EXISTS vistas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,
+  criterios TEXT NOT NULL,          -- JSON: ver panel.js (filtrosSql)
+  orden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON
@@ -86,7 +114,26 @@ export function openDb(dbPath) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA);
+  migrar(db);
   return db;
+}
+
+/** Columnas añadidas después de crear la base: se añaden si faltan. */
+const COLUMNAS_NUEVAS = {
+  conversations: {
+    analisis: 'TEXT',             // lo que Sofía ha entendido del lead (último turno)
+    siguiente_paso: 'TEXT',       // qué busca conseguir en el siguiente mensaje
+    ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno
+    simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
+  },
+  messages: { adjunto: 'TEXT' },  // imagen | audio | video | documento
+};
+
+function migrar(db) {
+  for (const [tabla, cols] of Object.entries(COLUMNAS_NUEVAS)) {
+    const existen = new Set(db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name));
+    for (const [col, tipo] of Object.entries(cols)) if (!existen.has(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
+  }
 }
 
 export function repo(db) {
@@ -113,9 +160,9 @@ export function repo(db) {
     },
     addMessage(m) {
       try {
-        return db.prepare(`INSERT INTO messages (conversation_id, external_id, autor, texto, tipo, enviado, created_at)
-          VALUES (@conversation_id, @external_id, @autor, @texto, @tipo, @enviado, @created_at)`)
-          .run({ external_id: null, tipo: 'texto', enviado: 1, created_at: now(), ...m });
+        return db.prepare(`INSERT INTO messages (conversation_id, external_id, autor, texto, tipo, enviado, adjunto, created_at)
+          VALUES (@conversation_id, @external_id, @autor, @texto, @tipo, @enviado, @adjunto, @created_at)`)
+          .run({ external_id: null, tipo: 'texto', enviado: 1, adjunto: null, created_at: now(), ...m });
       } catch (e) {
         if (String(e.message).includes('UNIQUE')) return null; // duplicado: GHL reintenta webhooks
         throw e;

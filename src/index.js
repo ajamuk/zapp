@@ -7,6 +7,7 @@ import { Setter } from './setter.js';
 import { aplicarAjustes } from './ajustes.js';
 import { procesarSeguimientos } from './followups.js';
 import { crearApp } from './server.js';
+import { Etiquetador } from './etiquetas.js';
 
 const repo = crearRepo(openDb(config.dbPath));
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
@@ -20,9 +21,11 @@ sincronizarSiHaceFalta(repo)
   .then((r) => console.log(r ? `Socios sincronizados: ${JSON.stringify(r)}` : 'Socios al día (menos de 4 h): no se descargan al arrancar.'))
   .catch(avisoSync);
 setInterval(() => sincronizarSocios(repo).then((r) => console.log('Socios sincronizados:', JSON.stringify(r))).catch(avisoSync), 4 * 3600 * 1000);
-const setter = new Setter({ repo, ghl: new Ghl(), aimharder, avisar: avisarEquipo });
+const ghl = new Ghl();
+const etiquetas = new Etiquetador({ repo, ghl, avisar: avisarEquipo });
+const setter = new Setter({ repo, ghl, aimharder, avisar: avisarEquipo, etiquetas });
 
-const app = crearApp({ setter, repo });
+const app = crearApp({ setter, repo, etiquetas });
 app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
@@ -37,4 +40,6 @@ if (config.ghlWebhookEnabled) {
     try { await setter.tick(); } finally { ocupado = false; }
   }, 5000);
   setInterval(() => procesarSeguimientos(setter).catch((e) => console.error('Seguimientos:', e)), 60000);
+  // Etiquetas con regla de inactividad («si no responde en X h»)
+  setInterval(() => etiquetas.revisarInactividad().catch((e) => console.error('Etiquetas (inactividad):', e)), 5 * 60000);
 }

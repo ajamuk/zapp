@@ -9,6 +9,8 @@ import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
 import { openDb, repo as crearRepo } from './db.js';
+import { routerProbar, GhlCaptura } from './probar.js';
+import * as etq from './etiquetas.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const metroPanel = readFileSync(panelPath, 'utf8').replace('<!-- metrotools-assets -->', `
@@ -21,19 +23,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-/** GHL de mentira para el chat de pruebas: guarda lo que se enviaría. */
-class GhlCaptura {
-  constructor() { this.salida = []; }
-  async sendMessage({ texto }) { this.salida.push(texto); return { messageId: null }; }
-  async sendTemplate({ variables }) { this.salida.push(`[plantilla] ${variables[0]}`); return {}; }
-  async addTags(_, t) { this.salida.push(`[etiquetas] ${t.join(', ')}`); }
-  async removeTags() {}
-  async assign() {}
-  async addNote() {}
-  async getContact() { return { contact: {} }; }
-}
-
-export function crearApp({ setter, repo, complete, embudoOpciones }) {
+export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo }) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   const pruebas = crearRepo(openDb(':memory:'));
@@ -94,6 +84,9 @@ export function crearApp({ setter, repo, complete, embudoOpciones }) {
     res.json({ ok: true });
   });
 
+  // Probar IA con conversaciones guardadas (pruebas.db)
+  admin.use('/probar', routerProbar({ repo, pruebas: pruebasRepo, complete }));
+
   admin.get('/costes', (req, res) => res.json(repo.costes(Number(req.query.dias) || 7)));
 
   admin.post('/conversaciones/:id/reanudar', (req, res) => {
@@ -137,6 +130,47 @@ export function crearApp({ setter, repo, complete, embudoOpciones }) {
     repo.finishScheduled(Number(req.params.id), 'cancelado', 'cancelado desde el panel');
     res.json({ ok: true });
   });
+  // ---------- Etiquetas ----------
+  const errorUsuario = (res, e) => res.status(400).json({ error: e.message });
+  admin.get('/panel/etiquetas', (_req, res) => res.json({ etiquetas: etq.listar(db, { conUso: true }).map((e) => ({ ...e, reglas_texto: e.reglas.map(etq.describirRegla) })), colores: etq.COLORES }));
+  admin.post('/panel/etiquetas', (req, res) => { try { res.status(201).json(etq.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/etiquetas/orden', (req, res) => { etq.reordenar(db, (req.body?.ids || []).map(Number)); res.json({ ok: true }); });
+  admin.put('/panel/etiquetas/:id', (req, res) => {
+    try {
+      const e = etq.actualizar(db, Number(req.params.id), req.body || {});
+      return e ? res.json(e) : res.status(404).json({ error: 'La etiqueta no existe.' });
+    } catch (e) { errorUsuario(res, e); }
+  });
+  admin.delete('/panel/etiquetas/:id', (req, res) => { etq.borrar(db, Number(req.params.id)); res.json({ ok: true }); });
+  // «Aplicar a chats de antes»: busca en el historial los chats que cumplen sus reglas
+  admin.post('/panel/etiquetas/:id/aplicar', async (req, res) => {
+    if (!etq.obtener(db, Number(req.params.id))) return res.status(404).json({ error: 'La etiqueta no existe.' });
+    res.json(await etiquetas.aplicarAAnteriores(Number(req.params.id)));
+  });
+  admin.post('/panel/conversaciones/:id/etiquetas', async (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    const r = await etiquetas.poner(req.params.id, Number(req.body?.etiqueta), 'manual');
+    if (!r.puesta && r.motivo === 'no existe') return res.status(404).json({ error: 'La etiqueta no existe.' });
+    res.json({ ...r, etiquetas: etq.deChats(db, [req.params.id])[req.params.id] || [] });
+  });
+  admin.delete('/panel/conversaciones/:id/etiquetas/:etq', async (req, res) => {
+    await etiquetas.quitar(req.params.id, Number(req.params.etq));
+    res.json({ etiquetas: etq.deChats(db, [req.params.id])[req.params.id] || [] });
+  });
+
+  // ---------- Vistas (filtros guardados) ----------
+  admin.get('/panel/vistas', (_req, res) => res.json(panel.vistas(db)));
+  admin.post('/panel/vistas', (req, res) => { try { res.status(201).json({ id: panel.guardarVista(db, req.body || {}) }); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/vistas/orden', (req, res) => { panel.reordenarVistas(db, (req.body?.ids || []).map(Number)); res.json({ ok: true }); });
+  admin.put('/panel/vistas/:id', (req, res) => { try { res.json({ id: panel.guardarVista(db, { ...req.body, id: Number(req.params.id) }) }); } catch (e) { errorUsuario(res, e); } });
+  admin.delete('/panel/vistas/:id', (req, res) => res.json({ ok: panel.borrarVista(db, Number(req.params.id)) }));
+  admin.get('/panel/opciones', (_req, res) => res.json({
+    etiquetas: etq.listar(db).map(({ id, nombre, color }) => ({ id, nombre, color })),
+    sedes: ['parla', 'getafe', 'las_rosas', 'el_canaveral'], canales: ['whatsapp', 'instagram'],
+    fases: ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'],
+    estados: Object.keys(panel.ESTADOS),
+  }));
+
   admin.get('/panel/ajustes', (_req, res) => res.json(leerAjustes(repo)));
   admin.put('/panel/ajustes', (req, res) => {
     try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }

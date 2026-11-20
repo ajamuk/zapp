@@ -4,6 +4,18 @@ import { leerAjustes } from './ajustes.js';
 
 const VENTANA_MS = 24 * 3600 * 1000;
 
+/** Instrucciones para que Sofía decida y redacte un seguimiento. */
+export function contextoSeguimiento(regla) {
+  return [
+    `# Tarea: seguimiento «${regla.nombre}»`,
+    'El lead no ha contestado a tu último mensaje. Decide si enviar este seguimiento.',
+    `Condición para enviarlo: ${regla.condicion}`,
+    'Si la condición NO se cumple, llama a `responder` con `mensajes` vacío.',
+    `Si se cumple, escribe un único mensaje. Instrucciones: ${regla.instrucciones}`,
+    `Estilo: ${knowledge.followups.estiloComun}`,
+  ].join('\n');
+}
+
 /**
  * Procesa los seguimientos vencidos. Para cada uno, la IA decide si la condición se cumple
  * (si no, devuelve cero mensajes) y redacta el texto.
@@ -32,14 +44,7 @@ export async function procesarSeguimientos(setter) {
       continue;
     }
 
-    const extra = [
-      `# Tarea: seguimiento «${regla.nombre}»`,
-      'El lead no ha contestado a tu último mensaje. Decide si enviar este seguimiento.',
-      `Condición para enviarlo: ${regla.condicion}`,
-      'Si la condición NO se cumple, llama a `responder` con `mensajes` vacío.',
-      `Si se cumple, escribe un único mensaje. Instrucciones: ${regla.instrucciones}`,
-      `Estilo: ${knowledge.followups.estiloComun}`,
-    ].join('\n');
+    const extra = contextoSeguimiento(regla);
 
     try {
       if (fueraVentana) {

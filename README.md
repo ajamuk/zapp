@@ -37,8 +37,8 @@ npm run sync-aimharder                    # horarios desde AimHarder + aviso si 
 
 ## Probar a Sofía
 
-La pestaña **Probar IA** del panel usa la misma lógica conversacional con GHL y AimHarder simulados.
-Requiere `ANTHROPIC_API_KEY`. Guarda el historial de prueba en memoria hasta que se reinicia el servicio o la conversación.
+La pestaña **Probar IA** del panel usa la misma lógica conversacional con GHL y AimHarder simulados y las etiquetas reales.
+Requiere `ANTHROPIC_API_KEY`. Las pruebas se guardan en `data/pruebas.db` (otra base: nunca se mezclan con los chats reales).
 El simulador HTML independiente se puede regenerar con `npm run build-simulador`.
 
 ## Instalación en el VPS
