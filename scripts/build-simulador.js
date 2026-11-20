@@ -3,11 +3,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../src/config.js';
+import { knowledge } from '../src/knowledge.js';
 
 const c = (f) => fs.readFileSync(path.join(config.root, 'config', f), 'utf8');
 const datos = {
   prompt: c('prompt-sofia.md'),
-  negocio: c('negocio.md'),
+  negocio: knowledge.negocio,
   horarios: JSON.parse(c('horarios.json')),
   tarifas: JSON.parse(c('tarifas.json')),
 };

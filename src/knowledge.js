@@ -5,12 +5,32 @@ import { config } from './config.js';
 const read = (f) => fs.readFileSync(path.join(config.root, 'config', f), 'utf8');
 const readJson = (f) => JSON.parse(read(f));
 
+const festivos = readJson('festivos.json');
+
+/** Lista de festivos por sede (comunes + locales), ordenada, para la base de conocimiento. */
+export function festivosDeSede(sede, f = festivos) {
+  return [...f.comunes, ...(f.locales[sede] || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+
+export function textoFestivos(f = festivos) {
+  const fmt = (x) => {
+    const d = new Date(`${x.fecha}T12:00:00Z`);
+    const dia = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+    return `- ${dia}: ${x.nombre}`;
+  };
+  const nombres = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas' };
+  return ['## Festivos (el box cierra)', '',
+    'Si preguntan por un día concreto, comprueba si está aquí. Si no está, ese día se abre con el horario habitual.', '',
+    ...Object.entries(nombres).flatMap(([k, n]) => [`### ${n}`, ...festivosDeSede(k, f).map(fmt), ...(f.pendientes?.[k] ? [`- Pendiente: ${f.pendientes[k]} Si preguntan por esas fechas, dilo y que se confirma más adelante.`] : []), '']),
+  ].join('\n');
+}
+
 export const knowledge = {
   prompt: read('prompt-sofia.md'),
-  negocio: read('negocio.md'),
+  negocio: `${read('negocio.md')}\n\n${textoFestivos()}`,
   horarios: readJson('horarios.json'),
   tarifas: readJson('tarifas.json'),
-  festivos: readJson('festivos.json'),
+  festivos,
   followups: readJson('followups.json'),
   etiquetas: readJson('etiquetas.json'),
 };
@@ -106,5 +126,5 @@ export function calcularPrimerRecibo({ sede, tarifa, fecha_inicio }) {
 }
 
 export function esFestivo(sede, fechaIso) {
-  return (knowledge.festivos[normalizarSede(sede)] || []).includes(fechaIso);
+  return festivosDeSede(normalizarSede(sede)).some((x) => x.fecha === fechaIso);
 }

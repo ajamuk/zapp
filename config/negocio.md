@@ -72,7 +72,7 @@ Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consul
 - Las clases se abren para reservar 4 días antes a las 22:00 y se pueden reservar hasta 1 minuto antes.
 - No hay turno fijo: cada día se elige la hora en la app.
 - Los entrenamientos se publican el día anterior a las 22:00. Cada jueves se manda en el grupo de WhatsApp del box un resumen de la semana siguiente.
-- No se cierra en agosto. Los festivos del calendario del centro se cierran. **[CONFIRMAR]** fechas de festivos 2026-2027 en `config/festivos.json`.
+- No se cierra en agosto. Los festivos se cierran: la lista por sede está al final de esta base de conocimiento.
 
 ## Clase de prueba
 

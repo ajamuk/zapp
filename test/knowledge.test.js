@@ -39,3 +39,13 @@ test('primer recibo prorrateado: caso real de Zapp (Las Rosas, Academy 3 días, 
   assert.equal(calcularPrimerRecibo({ sede: 'parla', tarifa: 'academy_3', fecha_inicio: '2026-12-01' }).primer_recibo, 95);
   assert.equal(calcularPrimerRecibo({ sede: 'parla', tarifa: 'X', fecha_inicio: '2026-12-01' }).ok, false);
 });
+
+test('festivos por sede: comunes + locales del municipio', async () => {
+  const { esFestivo, knowledge } = await import('../src/knowledge.js');
+  assert.equal(esFestivo('getafe', '2027-05-17'), true);
+  assert.equal(esFestivo('parla', '2027-05-17'), false);
+  assert.equal(esFestivo('las rosas', '2027-11-09'), true);
+  assert.equal(esFestivo('parla', '2026-12-08'), true);
+  assert.match(knowledge.negocio, /### Getafe[\s\S]*lunes, 17 de mayo de 2027/);
+  assert.match(knowledge.negocio, /Pendiente: Festivos locales de 2027/);
+});
