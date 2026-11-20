@@ -10,6 +10,8 @@ import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
 import { textoPrevisto, programarManual, cancelarCita, destinatarios, validarLanzamiento, cancelarLanzamiento } from './followups.js';
 import * as reglasSeg from './reglas.js';
+import * as reportes from './reportes.js';
+import * as documentos from './documentos.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
@@ -25,7 +27,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios }) {
   const app = express();
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
@@ -88,8 +90,12 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
     res.json({ ok: true });
   });
 
+  // Los reportes se analizan en segundo plano (varias llamadas al modelo); el panel va mirando el estado
+  const analizarFondo = (id) => { reportes.analizar(repo.db, id, { complete, completeJSON }).catch((e) => console.error('Reporte:', e.message)); };
+  const sinModelo = (res) => (!config.ai.apiKey && !complete ? (res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' }), true) : false);
+
   // Probar IA con conversaciones guardadas (pruebas.db)
-  admin.use('/probar', routerProbar({ repo, pruebas: pruebasRepo, complete, medios }));
+  admin.use('/probar', routerProbar({ repo, pruebas: pruebasRepo, complete, medios, analizarReporte: (id) => analizarFondo(id) }));
 
   admin.get('/costes', (req, res) => res.json(repo.costes(Number(req.query.dias) || 7)));
 
@@ -142,6 +148,59 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
     if (!setter?.redactar || (!config.ai.apiKey && !complete)) return res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' });
     try { res.json(await textoPrevisto(setter, s, { forzar: req.body?.rehacer === true })); } catch (e) { console.error('Previa seguimiento:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
   });
+  // ---------- Reportes ----------
+  admin.get('/panel/reportes', (req, res) => res.json({
+    reportes: reportes.listar(db, { estado: req.query.estado || null }),
+    contadores: Object.fromEntries(db.prepare('SELECT estado, count(*) n FROM reportes GROUP BY estado').all().map((r) => [r.estado, r.n])),
+    estados: reportes.ESTADOS,
+  }));
+  admin.get('/panel/reportes/:id', (req, res) => {
+    const r = reportes.obtener(db, Number(req.params.id));
+    return r ? res.json(r) : res.status(404).json({ error: 'Ese reporte no existe.' });
+  });
+  // Reporte de una respuesta de un chat real. Body: { message_id, que_fallo, que_esperaba?, texto_exacto? }
+  admin.post('/panel/conversaciones/:id/reportar', (req, res) => {
+    if (sinModelo(res)) return;
+    const b = req.body || {};
+    const msg = db.prepare("SELECT id, texto FROM messages WHERE id = ? AND conversation_id = ? AND autor = 'ia'").get(Number(b.message_id), req.params.id);
+    if (!msg) return res.status(404).json({ error: 'Ese mensaje no existe.' });
+    try {
+      const snap = reportes.instantanea(db, req.params.id, msg.id);
+      const id = reportes.crear(db, { ...b, origen: 'chat', conversation_id: req.params.id, message_id: msg.id, respuesta_ia: msg.texto, contexto: snap.mensajes, meta: snap.meta });
+      analizarFondo(id);
+      res.status(201).json({ id });
+    } catch (e) { errorUsuario(res, e); }
+  });
+  // Reporte general (sin chat): algo que Sofía debería hacer distinto
+  admin.post('/panel/reportes', (req, res) => {
+    if (sinModelo(res)) return;
+    try { const id = reportes.crear(db, { ...req.body, origen: 'general' }); analizarFondo(id); res.status(201).json({ id }); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.post('/panel/reportes/:id/responder', (req, res) => {
+    try { reportes.responder(db, Number(req.params.id), req.body?.respuesta); analizarFondo(Number(req.params.id)); res.json({ ok: true }); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.post('/panel/reportes/:id/reanalizar', (req, res) => {
+    if (sinModelo(res)) return;
+    if (!reportes.obtener(db, Number(req.params.id))) return res.status(404).json({ error: 'Ese reporte no existe.' });
+    analizarFondo(Number(req.params.id)); res.json({ ok: true });
+  });
+  admin.post('/panel/reportes/:id/aplicar', (req, res) => {
+    try { res.json(reportes.aplicar(db, Number(req.params.id), { aunqueFallido: req.body?.aunque === true })); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.post('/panel/reportes/:id/descartar', (req, res) => { reportes.descartar(db, Number(req.params.id)); res.json({ ok: true }); });
+
+  // ---------- Instrucciones de Sofía (prompt y base de conocimiento, con versiones) ----------
+  admin.get('/panel/instrucciones', (_req, res) => res.json(Object.fromEntries(Object.entries(documentos.DOCS).map(([doc, d]) => [doc, { nombre: d.nombre, versiones: documentos.versiones(db, doc) }]))));
+  admin.get('/panel/instrucciones/:id', (req, res) => {
+    const d = documentos.obtener(db, Number(req.params.id));
+    return d ? res.json(d) : res.status(404).json({ error: 'Esa versión no existe.' });
+  });
+  admin.post('/panel/instrucciones', (req, res) => {
+    const b = req.body || {};
+    try { res.status(201).json(documentos.crearVersion(db, b.doc, b.texto, { nota: b.nota || 'Editado desde el panel', autor: 'panel', produccion: b.produccion === true })); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.post('/panel/instrucciones/:id/activar', (req, res) => { try { res.json(documentos.activar(db, Number(req.params.id))); } catch (e) { errorUsuario(res, e); } });
+
   // ---------- Reglas de seguimiento (editables) ----------
   admin.get('/panel/reglas', (_req, res) => res.json({ reglas: reglasSeg.listar(db), etiquetas: etq.listar(db).map(({ id, nombre, color }) => ({ id, nombre, color })) }));
   admin.post('/panel/reglas', (req, res) => { try { res.status(201).json(reglasSeg.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });

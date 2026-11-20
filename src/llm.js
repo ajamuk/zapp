@@ -158,6 +158,23 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
   throw new Error('Demasiados pasos de herramientas sin respuesta final');
 }
 
+/**
+ * Llamada que devuelve un objeto JSON con el esquema dado (structured outputs). Se usa para el optimizador de
+ * reportes, que no habla con leads. `complete` se puede sustituir en tests.
+ */
+export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000 }) {
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }));
+  const res = await llamar({
+    model: modelo, max_tokens: maxTokens, system,
+    messages: [{ role: 'user', content: contenido }],
+    output_config: { format: { type: 'json_schema', schema } },
+  });
+  if (res.stop_reason === 'refusal') throw new Error('El modelo se ha negado a analizarlo');
+  if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó');
+  const texto = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+  try { return JSON.parse(texto); } catch { throw new Error('El modelo no devolvió un JSON válido'); }
+}
+
 /** Bloques de sistema con caché: el prompt y la base de conocimiento casi no cambian. */
 export function systemBlocks(prompt, negocio, contexto) {
   return [

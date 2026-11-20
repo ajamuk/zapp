@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { sembrarReglas } from './reglas.js';
+import { sembrarDocumentos } from './documentos.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -135,6 +136,39 @@ CREATE TABLE IF NOT EXISTS lanzamientos (
   total INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS documentos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc TEXT NOT NULL,                -- prompt | negocio
+  version INTEGER NOT NULL,
+  texto TEXT NOT NULL,
+  nota TEXT,
+  autor TEXT,                       -- inicial | panel | reporte
+  reporte_id INTEGER,
+  estado TEXT NOT NULL,             -- produccion | borrador | archivada
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS reportes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  origen TEXT NOT NULL,             -- chat | prueba | general
+  conversation_id TEXT,
+  message_id INTEGER,
+  respuesta_ia TEXT,                -- la respuesta de Sofía que se reporta
+  contexto TEXT,                    -- JSON: la conversación hasta ese momento (por si se borra la prueba)
+  que_fallo TEXT NOT NULL,
+  que_esperaba TEXT,
+  texto_exacto TEXT,                -- si quieren que diga exactamente esto
+  estado TEXT NOT NULL DEFAULT 'recibido', -- recibido | analizando | duda | propuesto | aplicado | sin_cambio | no_prompt | fallido | descartado | error
+  clasificacion TEXT,
+  explicacion TEXT,
+  pregunta TEXT,
+  respuesta_usuario TEXT,
+  propuesta TEXT,                   -- JSON: { doc, cambios: [{ buscar, reemplazar }], resumen, version_base }
+  comprobacion TEXT,                -- JSON: { antes, despues, arreglado, motivo, intentos }
+  version_aplicada INTEGER,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON
@@ -149,6 +183,7 @@ export function openDb(dbPath) {
   db.exec(SCHEMA);
   migrar(db);
   sembrarReglas(db);
+  sembrarDocumentos(db);
   return db;
 }
 

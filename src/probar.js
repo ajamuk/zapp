@@ -12,6 +12,8 @@ import { Etiquetador } from './etiquetas.js';
 import { buscarSocioPorTelefono } from './aimharder/index.js';
 import { reglaDe, textoPrevisto } from './followups.js';
 import * as reglasSeg from './reglas.js';
+import * as reportes from './reportes.js';
+import * as documentos from './documentos.js';
 import { leerAjustes } from './ajustes.js';
 import fs from 'node:fs';
 import { carpetaMedios, procesarSubida } from './medios.js';
@@ -57,7 +59,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
     const avisar = async (t) => { ghl.salida.push(`[aviso equipo] ${t}`); };
     const etiquetas = new Etiquetador({ repo: pruebas(), catalogo: repo.db, ghl, avisar, now });
     const setter = new Setter({
-      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas, catalogo: repo.db, ...(opciones.medios?.setter ? { medios: opciones.medios.setter } : {}),
+      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas, catalogo: repo.db, borradores: json(conv?.simulacion, {}).borradores || null, ...(opciones.medios?.setter ? { medios: opciones.medios.setter } : {}),
       aimharder: {
         buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), // índice real, solo lectura
         prepararAlta: async () => ({ estado: 'simulada', detalle: 'chat de pruebas: no se guarda en AimHarder' }),
@@ -92,6 +94,10 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
           || (x.tipo === 'etiqueta' && db.prepare('SELECT 1 FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').get(id, x.etiquetaId))))
         .map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, tipo: x.tipo, dias: x.dias, despuesDe: x.despuesDe, activo: x.activo, modo: x.modo })),
       prueba_fecha: c.prueba_fecha,
+      instrucciones: Object.fromEntries(Object.keys(documentos.DOCS).map((doc) => {
+        const b = json(c.simulacion, {}).borradores?.[doc]; const v = b ? documentos.obtener(repo.db, b) : documentos.enProduccion(repo.db, doc);
+        return [doc, v ? { id: v.id, version: v.version, estado: v.estado } : null];
+      })),
       retomar: json(c.retomar, null),
       ahora: ahoraDe(c)().toISOString(),
     };
@@ -161,6 +167,12 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
       patch.simulacion = JSON.stringify(nueva);
       patch.telefono = nueva.telefono || null;
       patch.tipo = null; // vuelve a comprobar si es socio con el teléfono nuevo
+    }
+    if (b.borradores && typeof b.borradores === 'object') {
+      const s0 = json(pruebas().getConv(c.id).simulacion, {});
+      const bor = {};
+      for (const doc of Object.keys(documentos.DOCS)) { const id = Number(b.borradores[doc]); if (id && documentos.obtener(repo.db, id)?.doc === doc) bor[doc] = id; }
+      patch.simulacion = JSON.stringify({ ...(patch.simulacion ? JSON.parse(patch.simulacion) : s0), borradores: bor });
     }
     if (Object.keys(patch).length) pruebas().updateConv(c.id, patch);
     res.json(detalle(c.id));
@@ -302,6 +314,20 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
   r.delete('/conversaciones', (_req, res) => {
     borrar(pruebas().db.prepare('SELECT id FROM conversations').all().map((c) => c.id).filter((id) => !enCurso.has(id)));
     res.json({ ok: true });
+  });
+
+  // Reportar una respuesta de Sofía en una prueba. Body: { message_id, que_fallo, que_esperaba?, texto_exacto? }
+  r.post('/conversaciones/:id/reportar', (req, res) => {
+    if (sinModelo(res)) return;
+    const b = req.body || {};
+    const msg = pruebas().db.prepare("SELECT id, texto FROM messages WHERE id = ? AND conversation_id = ? AND autor = 'ia'").get(Number(b.message_id), req.params.id);
+    if (!msg) return res.status(404).json({ error: 'Ese mensaje no existe.' });
+    try {
+      const snap = reportes.instantanea(pruebas().db, req.params.id, msg.id);
+      const id = reportes.crear(repo.db, { ...b, origen: 'prueba', conversation_id: req.params.id, message_id: msg.id, respuesta_ia: msg.texto, contexto: snap.mensajes, meta: snap.meta });
+      opciones.analizarReporte?.(id);
+      res.status(201).json({ id });
+    } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   r.get('/conversaciones/:id/exportar', (req, res) => {

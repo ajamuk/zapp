@@ -7,6 +7,8 @@ import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita } from './followups.js';
+import { textosActivos } from './documentos.js';
+import { textoFestivos } from './knowledge.js';
 
 const TAGS = knowledge.etiquetas;
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
@@ -22,9 +24,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, now, sleep, live, random });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random });
   }
 
   // ---------- Entrada ----------
@@ -137,6 +139,15 @@ export class Setter {
     }
   }
 
+  /**
+   * Bloques de sistema con las instrucciones vigentes (versión en producción, o los borradores si es una prueba).
+   * `docs` permite forzar otros textos (la comprobación de un reporte).
+   */
+  sistema(conv, extraContexto = '', docs = null) {
+    const t = docs || textosActivos(this.catalogo, this.borradores || {});
+    return systemBlocks(t.prompt ?? knowledge.prompt, `${t.negocio ?? knowledge.negocio.split('\n\n## Festivos')[0]}\n\n${textoFestivos()}`, this.contexto(conv, extraContexto));
+  }
+
   contexto(conv, extra = '') {
     const hoy = hoyLocal(this.now());
     return [
@@ -193,7 +204,7 @@ export class Setter {
   async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
-    const system = systemBlocks(knowledge.prompt, knowledge.negocio, this.contexto(conv, extraContexto));
+    const system = this.sistema(conv, extraContexto);
     const messages = await this.mensajesModelo(this.repo.history(convId));
     const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
 
@@ -339,10 +350,10 @@ export class Setter {
    * Redacta un mensaje sin enviarlo ni cambiar nada (para preparar el texto de un seguimiento).
    * Solo puede usar herramientas de consulta. Devuelve el texto ('' si Sofía decide no enviar nada).
    */
-  async redactar(convId, extraContexto = '') {
+  async redactar(convId, extraContexto = '', { docs = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv) return '';
-    const system = systemBlocks(knowledge.prompt, knowledge.negocio, this.contexto(conv, extraContexto));
+    const system = this.sistema(conv, extraContexto, docs);
     const messages = await this.mensajesModelo(this.repo.history(convId));
     const consulta = { consultar_horarios: consultarHorarios, consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
     const { respuesta } = await runTurn({

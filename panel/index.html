@@ -259,6 +259,37 @@
   .fila-f label.check { display: flex; font-weight: 400; }
   .hilo .pie { max-height: 300px; }
   .editor .ch input[type="radio"] { display: none; }
+  .burbuja { position: relative; }
+  #raiz button.rep { position: absolute; top: -8px; right: -8px; min-height: 24px; min-width: 24px; padding: 0; border-radius: 50%; font-size: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); opacity: 0; transition: opacity .15s; }
+  .burbuja:hover button.rep, #raiz button.rep:focus-visible { opacity: 1; }
+  @media (hover: none) { #raiz button.rep { opacity: .7; } }
+  .form-rep { display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin: 2px 0 6px; align-self: stretch; }
+  .form-rep textarea { width: 100%; font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 6px 8px; }
+  .form-rep.ok { color: var(--green); }
+  a.boton { display: inline-flex; align-items: center; min-height: 42px; padding: 8px 14px; border: 1px solid #becdb8; border-radius: 7px; background: var(--panel2); color: #294f2a; font-weight: 600; text-decoration: none; }
+  .lista-rep { display: grid; gap: 8px; }
+  .item-rep { display: grid; gap: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; color: inherit; text-decoration: none; }
+  .item-rep:hover { border-color: var(--green); }
+  .item-rep .fila { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+  .ficha-rep { display: grid; gap: 12px; max-width: 980px; }
+  .ficha-rep section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .ficha-rep h3 { margin: 0 0 8px !important; display: flex; gap: 8px; align-items: center; }
+  .mini-chat { display: flex; flex-direction: column; gap: 6px; background: var(--panel2); border-radius: 8px; padding: 10px; margin-top: 8px; }
+  .burbuja.reportada { outline: 2px solid var(--red); }
+  .antes-despues { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .antes-despues .burbuja { max-width: 100%; margin-top: 4px; }
+  @media (max-width: 640px) { .antes-despues { grid-template-columns: 1fr; } }
+  .diff { font: 12.5px/1.5 ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 8px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; }
+  .diff > div { padding: 1px 8px; }
+  .d-mas { background: #e3f4dd; color: #1f5a1d; } .d-menos { background: #fbe4e4; color: #8a2424; text-decoration: line-through; } .d-ig { color: var(--muted); } .d-sal { color: var(--muted); text-align: center; background: var(--panel2); }
+  .diff.palabras { padding: 8px 10px; font: 13px/1.6 system-ui, sans-serif; }
+  ins { background: #d4efc9; color: #1f5a1d; text-decoration: none; border-radius: 3px; }
+  del { background: #fbdcdc; color: #8a2424; border-radius: 3px; }
+  .doc { margin-bottom: 18px; }
+  .doc h3 { display: flex; gap: 8px; align-items: center; }
+  .texto-doc { white-space: pre-wrap; font: 12.5px/1.5 ui-monospace, Menlo, monospace; background: var(--panel2); padding: 10px; border-radius: 8px; max-height: 500px; overflow: auto; }
+  .editor-doc { display: grid; gap: 8px; margin-top: 10px; }
+  .editor-doc textarea { width: 100%; font: 13px/1.5 ui-monospace, Menlo, monospace; border: 1px solid #becdb8; border-radius: 7px; padding: 8px 10px; }
 </style>
 </head>
 <body>
@@ -310,7 +341,7 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 async function iniciar() {
   estado.seccion = location.hash.slice(1).split('/')[0] || 'resumen';
@@ -341,6 +372,7 @@ window.addEventListener('hashchange', () => {
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
   if (id !== 'etiquetas') estado.editEtq = null;
   if (id !== 'seguimientos') { estado.editRegla = null; estado.nuevoLanz = false; }
+  if (id === 'reportes' && estado.seccion === 'reportes') { pintar(); return; }
   estado.seccion = id || 'resumen';
   pintar();
 });
@@ -352,7 +384,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, chats, etiquetas, altas, seguimientos, probar, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, chats, etiquetas, altas, seguimientos, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -657,7 +689,7 @@ async function abrir(id) {
       <div>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
-    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
+    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
@@ -671,6 +703,7 @@ async function abrir(id) {
     ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = 1e9;
   cargarMedios($('#msgs'));
+  $('#msgs').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/panel/conversaciones/${encodeURIComponent(id)}`, Number(b.dataset.rep)));
   $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); abrir(id); });
   $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id).then(() => $('#ptxt')?.focus()); };
   $('#banprueba') && ($('#banprueba').onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); abrir(id); });
@@ -1032,6 +1065,170 @@ async function editorLanzamiento() {
   $('#fl').onsubmit = async (e) => { e.preventDefault(); try { await api('/panel/lanzamientos', { method: 'POST', body: JSON.stringify(datos()) }); salir(); } catch (err) { $('#lerr').textContent = err.message; } };
 }
 
+// ---------- Reportes e instrucciones ----------
+const COLOR_REP = { recibido: 'ambar', analizando: 'ambar', duda: 'violeta', propuesto: 'azul', aplicado: 'verde', sin_cambio: '', no_prompt: '', fallido: 'rojo', descartado: '', error: 'rojo' };
+const DOC_NOMBRE = { prompt: 'Prompt de Sofía', negocio: 'Base de conocimiento' };
+
+/** Diff por líneas (LCS) para enseñar qué cambia entre dos textos. */
+function diffLineas(a, b) {
+  const x = a.split('\n'), y = b.split('\n'), n = x.length, m = y.length;
+  if (n * m > 4e6) return [{ t: '=', l: '(texto demasiado largo para comparar)' }];
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (x[i] === y[j]) { out.push({ t: '=', l: x[i] }); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) out.push({ t: '-', l: x[i++] }); else out.push({ t: '+', l: y[j++] }); }
+  while (i < n) out.push({ t: '-', l: x[i++] }); while (j < m) out.push({ t: '+', l: y[j++] });
+  return out;
+}
+const htmlDiff = (d, contexto = 2) => {
+  const ver = d.map((x, k) => x.t !== '=' || d.slice(Math.max(0, k - contexto), k + contexto + 1).some((y) => y.t !== '='));
+  let html = '', saltado = false;
+  d.forEach((x, k) => { if (!ver[k]) { if (!saltado) html += '<div class="d-sal">⋯</div>'; saltado = true; return; } saltado = false; html += `<div class="d-${x.t === '+' ? 'mas' : x.t === '-' ? 'menos' : 'ig'}">${x.t === '=' ? '&nbsp;' : x.t} ${esc(x.l) || '&nbsp;'}</div>`; });
+  return `<div class="diff">${html || '<div class="d-ig">Sin cambios</div>'}</div>`;
+};
+
+/** Diff por palabras (para cambios dentro de un mismo párrafo): solo se marca lo que cambia. */
+function htmlDiffPalabras(a, b) {
+  const x = a.split(/(\s+)/), y = b.split(/(\s+)/), n = x.length, m = y.length;
+  if (n * m > 4e6) return htmlDiff(diffLineas(a, b));
+  const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  let html = ''; let i = 0, j = 0;
+  while (i < n && j < m) { if (x[i] === y[j]) { html += esc(x[i]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) html += `<del>${esc(x[i++])}</del>`; else html += `<ins>${esc(y[j++])}</ins>`; }
+  while (i < n) html += `<del>${esc(x[i++])}</del>`; while (j < m) html += `<ins>${esc(y[j++])}</ins>`;
+  return `<div class="diff palabras">${html}</div>`;
+}
+
+/** Formulario de reporte bajo una burbuja de Sofía. `ruta`: base del chat (real o prueba). */
+function abrirReporte(boton, ruta, messageId) {
+  const burbuja = boton.closest('.burbuja');
+  if (burbuja.nextElementSibling?.classList.contains('form-rep')) { burbuja.nextElementSibling.remove(); return; }
+  burbuja.insertAdjacentHTML('afterend', `<form class="form-rep"><b>⚑ Reportar esta respuesta</b>
+    <textarea name="f" rows="2" required placeholder="¿Qué ha fallado? Ej: promete los precios y no los da"></textarea>
+    <textarea name="e" rows="2" placeholder="¿Qué debería haber hecho? (opcional)"></textarea>
+    <textarea name="x" rows="2" placeholder="Texto exacto que querríais que dijera (opcional)"></textarea>
+    <div class="acciones-f"><button class="primario mini">Enviar reporte</button><button type="button" class="mini" data-cerrar>Cancelar</button></div><p class="error" role="alert"></p></form>`);
+  const f = burbuja.nextElementSibling;
+  f.querySelector('[data-cerrar]').onclick = () => f.remove();
+  f.querySelector('textarea').focus();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const { id } = await api(`${ruta}/reportar`, { method: 'POST', body: JSON.stringify({ message_id: messageId, que_fallo: f.f.value, que_esperaba: f.e.value, texto_exacto: f.x.value }) });
+      f.outerHTML = `<div class="form-rep ok">⚑ Reporte #${id} enviado. Sofía lo está analizando: <a href="#reportes/${id}">ver el reporte</a></div>`;
+    } catch (err) { f.querySelector('.error').textContent = err.message; }
+  };
+}
+const botonReporte = (m) => (m.autor === 'ia' && m.id ? `<button type="button" class="rep" data-rep="${m.id}" title="Reportar esta respuesta" aria-label="Reportar esta respuesta">⚑</button>` : '');
+
+async function reportes() {
+  const partes = location.hash.slice(1).split('/');
+  if (partes[1] === 'instrucciones') return instrucciones(partes[2]);
+  if (partes[1]) return fichaReporte(Number(partes[1]));
+  const datos = await api('/panel/reportes' + (estado.filtroRep ? `?estado=${estado.filtroRep}` : ''));
+  if (estado.seccion !== 'reportes') return;
+  const total = Object.values(datos.contadores).reduce((a, b) => a + b, 0);
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Reportes</h2><div class="acciones-f"><a class="boton" href="#reportes/instrucciones">Instrucciones de Sofía</a><button class="primario" id="rgen">+ Reporte general</button></div></div>
+    <p class="intro">Reporta cualquier respuesta de Sofía con el botón ⚑ (en Chats o en Probar IA) y cuenta qué falló. Sofía lo analiza con sus instrucciones: si hace falta, propone un cambio concreto, lo comprueba repitiendo la conversación y te lo deja listo para aplicar con un clic. Si le falta un dato, te pregunta. Nada cambia hasta que pulsas «Aplicar».</p>
+    <div id="rgenf"></div>
+    <div class="filtros"><button data-fe="" class="${estado.filtroRep ? '' : 'activo'}">Todos <span class="n">${total}</span></button>${Object.entries(datos.estados).filter(([k]) => datos.contadores[k]).map(([k, t]) => `<button data-fe="${k}" class="${estado.filtroRep === k ? 'activo' : ''}">${t} <span class="n">${datos.contadores[k]}</span></button>`).join('')}</div>
+    ${datos.reportes.length ? `<div class="lista-rep">${datos.reportes.map((r) => `<a class="item-rep" href="#reportes/${r.id}"><div class="fila"><b>#${r.id} · ${esc(r.que_fallo)}</b><span class="chip ${COLOR_REP[r.estado] || ''}">${esc(datos.estados[r.estado] || r.estado)}</span></div>
+      ${r.respuesta_ia ? `<div class="ayuda">Sofía: «${esc(r.respuesta_ia.slice(0, 160))}»</div>` : '<div class="ayuda">Reporte general</div>'}<div class="ayuda">${{ chat: 'Chat real', prueba: 'Probar IA', general: 'General' }[r.origen]} · ${hora(r.created_at)}${r.version_aplicada ? ` · aplicado en la versión ${r.version_aplicada}` : ''}</div></a>`).join('')}</div>` : '<div class="vacio">No hay reportes todavía. Reporta una respuesta con el botón ⚑ que aparece en cada mensaje de Sofía.</div>'}`;
+  $('#main').querySelectorAll('[data-fe]').forEach((b) => b.onclick = () => { estado.filtroRep = b.dataset.fe || null; reportes(); });
+  $('#rgen').onclick = () => {
+    $('#rgenf').innerHTML = `<form class="form-rep" id="fgen"><b>Reporte general</b><span class="ayuda">Algo que Sofía debería hacer o decir distinto, sin un chat concreto.</span>
+      <textarea name="f" rows="2" required placeholder="¿Qué hace mal o qué falta? Ej: no menciona que el parking es gratuito en Getafe"></textarea>
+      <textarea name="e" rows="2" placeholder="¿Qué debería hacer?"></textarea>
+      <div class="acciones-f"><button class="primario mini">Enviar</button><button type="button" class="mini" id="gcan">Cancelar</button></div><p class="error"></p></form>`;
+    $('#gcan').onclick = () => { $('#rgenf').innerHTML = ''; };
+    $('#fgen').onsubmit = async (e) => { e.preventDefault(); const f = e.target; try { const { id } = await api('/panel/reportes', { method: 'POST', body: JSON.stringify({ que_fallo: f.f.value, que_esperaba: f.e.value }) }); location.hash = `#reportes/${id}`; } catch (err) { f.querySelector('.error').textContent = err.message; } };
+  };
+}
+
+async function fichaReporte(id) {
+  const r = await api('/panel/reportes/' + id);
+  if (estado.seccion !== 'reportes' || location.hash !== `#reportes/${id}`) return;
+  const { estados } = estado.estadosRep ? { estados: estado.estadosRep } : await api('/panel/reportes?estado=__');
+  estado.estadosRep = estados;
+  const p = r.propuesta; const c = r.comprobacion;
+  const AUT = { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' };
+  const msgs = (r.contexto?.mensajes || []).slice(-8);
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Reporte #${r.id}</h2><a class="boton" href="#reportes">Volver</a></div>
+    <div class="ficha-rep">
+      <section><h3>Estado <span class="chip ${COLOR_REP[r.estado] || ''}">${esc(estados[r.estado] || r.estado)}</span></h3>
+        ${r.estado === 'analizando' || r.estado === 'recibido' ? '<p class="aviso-mini" role="status">Sofía está revisando el reporte, proponiendo un cambio y comprobándolo. Tarda uno o dos minutos; esta página se actualiza sola.</p>' : ''}
+        ${r.explicacion ? `<p>${esc(r.explicacion)}</p>` : ''}${r.error ? `<p class="error">${esc(r.error)}</p>` : ''}
+        ${r.estado === 'duda' ? `<form id="fresp" class="form-rep"><b>Pregunta:</b> ${esc(r.pregunta)}<textarea name="r" rows="2" required placeholder="Tu respuesta"></textarea><div class="acciones-f"><button class="primario mini">Responder</button></div><p class="error"></p></form>` : ''}
+        ${r.respuesta_usuario ? `<p class="ayuda">Respondiste: «${esc(r.respuesta_usuario)}»</p>` : ''}
+        ${r.version_aplicada ? `<p>✅ Aplicado en la versión ${r.version_aplicada} del ${esc(DOC_NOMBRE[p?.doc] || '')}. <a href="#reportes/instrucciones">Ver versiones</a></p>` : ''}
+      </section>
+      <section><h3>Lo que se reportó</h3><p><b>Qué falló:</b> ${esc(r.que_fallo)}</p>${r.que_esperaba ? `<p><b>Qué debería haber hecho:</b> ${esc(r.que_esperaba)}</p>` : ''}${r.texto_exacto ? `<p><b>Texto exacto:</b> «${esc(r.texto_exacto)}»</p>` : ''}
+        ${msgs.length ? `<div class="mini-chat">${msgs.map((m, k) => `<div class="burbuja b-${esc(m.autor)} ${k === msgs.length - 1 && m.autor === 'ia' ? 'reportada' : ''}">${esc(m.texto)}${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : ''}<div class="meta">${AUT[m.autor] || m.autor}</div></div>`).join('')}</div>` : ''}</section>
+      ${p ? `<section><h3>Cambio propuesto en «${esc(DOC_NOMBRE[p.doc])}»</h3>${p.resumen ? `<p><b>${esc(p.resumen)}</b></p>` : ''}
+        <p class="ayuda"><ins>verde</ins>: se añade · <del>rojo</del>: se quita</p>
+        ${p.cambios.map((x, k) => `<p class="ayuda">Cambio ${k + 1}${x.buscar ? '' : ' (se añade al final)'}</p>${htmlDiffPalabras(x.buscar, x.reemplazar)}`).join('')}</section>` : ''}
+      ${c ? `<section><h3>Comprobación ${c.arreglado ? '<span class="chip verde">funciona</span>' : '<span class="chip rojo">no lo arregla</span>'}</h3>
+        <div class="antes-despues"><div><b>Antes</b><div class="burbuja b-ia">${esc(c.antes) || '—'}</div></div><div><b>Con el cambio</b><div class="burbuja b-ia">${esc(c.despues) || '(no enviaría nada)'}</div></div></div>
+        <p class="ayuda">${esc(c.motivo)}${c.problemas_nuevos ? ` · Problemas: ${esc(c.problemas_nuevos)}` : ''}${c.intentos > 1 ? ` · ${c.intentos} intentos` : ''}</p></section>` : ''}
+      <p class="error" id="rerr" role="alert"></p>
+      <div class="acciones-f">
+        ${r.estado === 'propuesto' ? '<button class="primario" id="rapl">Aplicar el cambio</button>' : ''}
+        ${r.estado === 'fallido' && p ? '<button id="raplf">Aplicar igualmente</button>' : ''}
+        ${['propuesto', 'fallido', 'sin_cambio', 'no_prompt', 'error', 'descartado', 'duda'].includes(r.estado) ? '<button id="rrean">Volver a analizar</button>' : ''}
+        ${['propuesto', 'fallido', 'duda', 'error'].includes(r.estado) ? '<button class="peligro" id="rdesc">Descartar</button>' : ''}
+      </div></div>`;
+  const accion = async (ruta, body) => { try { await api(`/panel/reportes/${id}/${ruta}`, { method: 'POST', body: JSON.stringify(body || {}) }); fichaReporte(id); } catch (e) { $('#rerr').textContent = e.message; } };
+  $('#rapl') && ($('#rapl').onclick = () => accion('aplicar'));
+  $('#raplf') && ($('#raplf').onclick = () => accion('aplicar', { aunque: true }));
+  $('#rrean') && ($('#rrean').onclick = () => accion('reanalizar'));
+  $('#rdesc') && ($('#rdesc').onclick = () => accion('descartar'));
+  $('#fresp') && ($('#fresp').onsubmit = (e) => { e.preventDefault(); accion('responder', { respuesta: e.target.r.value }); });
+  if (['analizando', 'recibido'].includes(r.estado)) setTimeout(() => { if (location.hash === `#reportes/${id}`) fichaReporte(id); }, 4000);
+}
+
+async function instrucciones(abrirId) {
+  const datos = await api('/panel/instrucciones');
+  if (estado.seccion !== 'reportes') return;
+  const m = $('#main');
+  m.innerHTML = `<div class="cab-seccion"><h2>Instrucciones de Sofía</h2><a class="boton" href="#reportes">Volver a reportes</a></div>
+    <p class="intro">Sofía funciona con dos textos: su <b>prompt</b> (cómo se comporta) y la <b>base de conocimiento</b> (datos del negocio). Cada cambio crea una versión: puedes guardarla como borrador y probarla en Probar IA antes de ponerla en producción, y volver a cualquier versión anterior.</p>
+    ${Object.entries(datos).map(([doc, d]) => `<section class="doc"><h3>${esc(d.nombre)} <button class="mini" data-edit="${doc}">Editar</button></h3>
+      <div class="tabla"><table><tr><th>Versión</th><th>Estado</th><th>Cambio</th><th>Fecha</th><th></th></tr>${d.versiones.map((v) => `<tr><td>v${v.version}</td><td><span class="chip ${v.estado === 'produccion' ? 'verde' : v.estado === 'borrador' ? 'azul' : ''}">${{ produccion: 'en producción', borrador: 'borrador', archivada: 'anterior' }[v.estado]}</span></td>
+        <td>${esc(v.nota || '')}${v.reporte_id ? ` <a href="#reportes/${v.reporte_id}">#${v.reporte_id}</a>` : ''}</td><td>${hora(v.created_at)}</td>
+        <td class="acciones-f"><button class="mini" data-ver="${v.id}">Ver cambios</button>${v.estado !== 'produccion' ? `<button class="mini" data-act="${v.id}">${v.estado === 'borrador' ? 'Pasar a producción' : 'Volver a esta'}</button>` : ''}</td></tr>`).join('')}</table></div><div data-panel="${doc}"></div></section>`).join('')}`;
+  const prod = (doc) => datos[doc].versiones.find((v) => v.estado === 'produccion');
+  m.querySelectorAll('[data-act]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Sofía la usará ya'; b.classList.add('primario'); return; }
+    await api(`/panel/instrucciones/${b.dataset.act}/activar`, { method: 'POST' }); instrucciones();
+  });
+  m.querySelectorAll('[data-ver]').forEach((b) => b.onclick = async () => {
+    const v = await api('/panel/instrucciones/' + b.dataset.ver);
+    const p = await api('/panel/instrucciones/' + prod(v.doc).id);
+    const anterior = datos[v.doc].versiones.find((x) => x.version < v.version);
+    const base = v.estado === 'produccion' && anterior ? await api('/panel/instrucciones/' + anterior.id) : p;
+    const panelV = m.querySelector(`[data-panel="${v.doc}"]`);
+    if (base.id === v.id) { panelV.innerHTML = `<p class="ayuda">Es la primera versión: no hay nada con qué compararla.</p><pre class="texto-doc">${esc(v.texto)}</pre>`; return; }
+    panelV.innerHTML = `<p class="ayuda">v${v.version} comparada con ${base.id === p.id ? 'la versión en producción' : `la v${base.version}`}:</p>${htmlDiff(diffLineas(base.texto, v.texto))}<details><summary>Ver el texto completo de la v${v.version}</summary><pre class="texto-doc">${esc(v.texto)}</pre></details>`;
+  });
+  m.querySelectorAll('[data-edit]').forEach((b) => b.onclick = async () => {
+    const doc = b.dataset.edit; const actual = await api('/panel/instrucciones/' + prod(doc).id);
+    const panel = m.querySelector(`[data-panel="${doc}"]`);
+    panel.innerHTML = `<form class="editor-doc"><p class="ayuda">Editando a partir de la versión en producción (v${actual.version}).</p><textarea name="t" rows="24" spellcheck="false">${esc(actual.texto)}</textarea>
+      <input name="n" placeholder="Qué has cambiado (para el historial)" maxlength="200">
+      <div class="acciones-f"><button class="primario" data-modo="borrador">Guardar como borrador</button><button data-modo="prod">Guardar y poner en producción</button><button type="button" data-cancel>Cancelar</button></div><p class="error"></p></form>`;
+    const f = panel.querySelector('form');
+    f.querySelector('[data-cancel]').onclick = () => { panel.innerHTML = ''; };
+    let modo = 'borrador'; f.querySelectorAll('[data-modo]').forEach((x) => x.onclick = () => { modo = x.dataset.modo; });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      if (f.t.value === actual.texto) { f.querySelector('.error').textContent = 'No has cambiado nada.'; return; }
+      try { await api('/panel/instrucciones', { method: 'POST', body: JSON.stringify({ doc, texto: f.t.value, nota: f.n.value || 'Editado desde el panel', produccion: modo === 'prod' }) }); instrucciones(); }
+      catch (err) { f.querySelector('.error').textContent = err.message; }
+    };
+  });
+  if (abrirId) m.querySelector(`[data-ver="${abrirId}"]`)?.click();
+}
+
 // ---------- Probar IA ----------
 const HERR = { consultar_horarios: '🕒 Consultó horarios', consultar_tarifas: '💶 Consultó tarifas', calcular_primer_recibo: '🧮 Calculó el primer recibo', preparar_alta: '📝 Preparó un alta', reservar_prueba_parla: '📅 Pidió clase de prueba', derivar_a_equipo: '🙋 Derivó al equipo' };
 const resumirJson = (o) => esc(Object.entries(o || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')).slice(0, 400);
@@ -1090,6 +1287,7 @@ function pintarPrueba(d, escribiendo = false) {
   const sim = c.simulacion || {};
   const ETQ = { lead: 'Lead', ia: 'Sofía', sistema: 'Sistema', humano: 'Equipo' };
   $('#pchat').innerHTML = `<div class="cab"><div><button class="volver" id="pvolver">Pruebas</button> <b>${esc(c.nombre)}</b> <span class="chip">${esc(CANAL[c.canal])}</span>
+      ${['prompt', 'negocio'].some((doc) => d.instrucciones?.[doc] && d.instrucciones[doc].estado !== 'produccion') ? `<div class="chip azul" style="margin:3px 0">Probando ${['prompt', 'negocio'].filter((doc) => d.instrucciones?.[doc]?.estado !== 'produccion').map((doc) => `${doc === 'prompt' ? 'prompt' : 'base de conocimiento'} v${d.instrucciones[doc].version}`).join(' y ')}</div>` : ''}
       <div class="ayuda">${sim.fecha ? `🕒 La IA cree que es ${new Date(d.ahora).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : 'Hora real'}${sim.telefono ? ` · 📱 ${esc(sim.telefono)}` : ''}</div></div>
       <div class="p-botones">
         <button type="button" id="psim" aria-expanded="${Boolean(p.verSim)}">Simular…</button>
@@ -1101,9 +1299,10 @@ function pintarPrueba(d, escribiendo = false) {
     ${p.verSim ? `<form class="p-sim" id="psimf"><label>Teléfono simulado <input id="pstel" value="${esc(sim.telefono || '')}" placeholder="+34 600 000 000" inputmode="tel"></label>
       <label>Fecha y hora <input id="psfecha" type="datetime-local" value="${sim.fecha ? fechaLocal(sim.fecha) : ''}"></label>
       <label>Nombre <input id="psnom" value="${esc(c.nombre)}" maxlength="60"></label>
+      ${Object.entries(DOC_NOMBRE).map(([doc, n]) => `<label>${n} <select data-borr="${doc}">${(p.versiones?.[doc]?.versiones || []).filter((v) => v.estado !== 'archivada' || d.instrucciones?.[doc]?.id === v.id).map((v) => `<option value="${v.estado === 'produccion' ? '' : v.id}" ${d.instrucciones?.[doc]?.id === v.id ? 'selected' : ''}>v${v.version} · ${v.estado === 'produccion' ? 'producción' : v.estado}</option>`).join('')}</select></label>`).join('')}
       <button class="primario">Aplicar</button><button type="button" id="psreal">Hora y teléfono reales</button>
       <p class="ayuda">Con el teléfono de un socio, Sofía lo detecta como socio (índice real de AimHarder). La fecha cambia el «hoy» de Sofía y su horario.</p></form>` : ''}
-    <div class="msgs p-msgs" id="pm">${d.mensajes.map((m) => `<div class="burbuja b-${esc(m.autor)}">${medioHtml(m, `/probar/conversaciones/${encodeURIComponent(c.id)}`)}${esc(textoSinMarcador(m))}<div class="meta">${esc(ETQ[m.autor] || m.autor)} · ${hora(m.created_at)}</div></div>`).join('') || '<div class="vacio">Escribe el primer mensaje como si fueras un lead, o pulsa «IA inicia».</div>'}
+    <div class="msgs p-msgs" id="pm">${d.mensajes.map((m) => `<div class="burbuja b-${esc(m.autor)}">${botonReporte(m)}${medioHtml(m, `/probar/conversaciones/${encodeURIComponent(c.id)}`)}${esc(textoSinMarcador(m))}<div class="meta">${esc(ETQ[m.autor] || m.autor)} · ${hora(m.created_at)}</div></div>`).join('') || '<div class="vacio">Escribe el primer mensaje como si fueras un lead, o pulsa «IA inicia».</div>'}
       ${escribiendo ? '<div class="burbuja b-sistema" role="status">Sofía está escribiendo…</div>' : ''}</div>
     <form id="pf" class="p-form"><input type="file" id="pfile" accept="audio/*,image/*" hidden>
       <button type="button" id="padj" class="icono" title="Enviar una imagen o un audio como el lead" aria-label="Adjuntar imagen o audio" ${disponible && !escribiendo ? '' : 'disabled'}>📎</button>
@@ -1111,6 +1310,7 @@ function pintarPrueba(d, escribiendo = false) {
       <textarea id="pt" rows="1" aria-label="Mensaje de prueba" placeholder="Escribe como un lead de ${esc(CANAL[c.canal])}…" title="Intro envía · Mayús+Intro, salto de línea" ${disponible && !escribiendo ? '' : 'disabled'}></textarea><button class="primario" ${disponible && !escribiendo ? '' : 'disabled'}>Enviar</button></form>`;
   $('#pm').scrollTop = 1e9;
   cargarMedios($('#pm'));
+  $('#pm').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/probar/conversaciones/${encodeURIComponent(c.id)}`, Number(b.dataset.rep)));
   pintarAnalisis(d, escribiendo);
   const enviar = async (ruta, cuerpo) => {
     pintarPrueba(d, true);
@@ -1151,7 +1351,7 @@ function pintarPrueba(d, escribiendo = false) {
     };
     p.grabadora = rec; p.grabando = true; rec.start(); pintarPrueba(d);
   };
-  $('#psim').onclick = () => { p.verSim = !p.verSim; pintarPrueba(d); };
+  $('#psim').onclick = async () => { p.verSim = !p.verSim; if (p.verSim) p.versiones = await api('/panel/instrucciones').catch(() => null); pintarPrueba(d); };
   $('#pmovil').onclick = () => { p.movil = !p.movil; $('#p2').classList.toggle('movil', p.movil); pintarPrueba(d); };
   $('#plink').onclick = async () => { const url = location.href.split('#')[0] + '#probar/' + c.id; try { await navigator.clipboard.writeText(url); $('#plink').textContent = 'Enlace copiado'; } catch { prompt('Copia el enlace', url); } };
   $('#pexp').onclick = () => {
@@ -1162,7 +1362,8 @@ function pintarPrueba(d, escribiendo = false) {
   $('#psimf') && ($('#psimf').onsubmit = async (e) => {
     e.preventDefault();
     const f = $('#psfecha').value;
-    const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ telefono: $('#pstel').value, fecha: f ? new Date(f).toISOString() : '', nombre: $('#psnom').value }) });
+    const borradores = Object.fromEntries([...$('#psimf').querySelectorAll('[data-borr]')].map((x) => [x.dataset.borr, x.value ? Number(x.value) : null]));
+    const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ telefono: $('#pstel').value, fecha: f ? new Date(f).toISOString() : '', nombre: $('#psnom').value, borradores }) });
     p.verSim = false; pintarPrueba(nd); actualizarListaP();
   });
   $('#psreal') && ($('#psreal').onclick = async () => { const nd = await api('/probar/conversaciones/' + encodeURIComponent(c.id), { method: 'PATCH', body: JSON.stringify({ telefono: '', fecha: '' }) }); p.verSim = false; pintarPrueba(nd); });
