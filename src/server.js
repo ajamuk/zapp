@@ -7,6 +7,7 @@ import { Setter } from './setter.js';
 import path from 'node:path';
 import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
+import { embudo, mesActual } from './embudo.js';
 import { openDb, repo as crearRepo } from './db.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
@@ -32,7 +33,7 @@ class GhlCaptura {
   async getContact() { return { contact: {} }; }
 }
 
-export function crearApp({ setter, repo, complete }) {
+export function crearApp({ setter, repo, complete, embudoOpciones }) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
   const pruebas = crearRepo(openDb(':memory:'));
@@ -109,6 +110,11 @@ export function crearApp({ setter, repo, complete }) {
     ajustes: leerAjustes(repo), contadores: panel.contadores(db),
   }));
   admin.get('/panel/resumen', (req, res) => res.json(panel.resumen(db, req.query.dias)));
+  admin.get('/panel/embudo', async (req, res) => {
+    const mes = String(req.query.mes || mesActual());
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mes no válido.' });
+    res.json(await embudo(mes, embudoOpciones));
+  });
   admin.get('/panel/conversaciones', (req, res) => res.json(panel.conversaciones(db, req.query)));
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);

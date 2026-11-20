@@ -56,6 +56,10 @@ export const config = {
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
   },
+  embudo: {
+    // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
+    pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),
+  },
   telegram: {
     token: env('TELEGRAM_BOT_TOKEN'),
     chats: {

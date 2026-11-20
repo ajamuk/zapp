@@ -124,3 +124,20 @@ test('ajustes: se validan, se guardan y cambian el horario en memoria', async ()
     guardarAjustes(repo, { ia_activa: true, horaInicio: 8 });
   } finally { srv.close(); }
 });
+
+test('panel: embudo por sede pide la clave y valida el mes', async () => {
+  const repo = crearRepo(openDb(':memory:'));
+  const ghl = { req: async () => ({ contacts: [{ tags: ['parla'] }] }) };
+  const srv = crearApp({ setter: {}, repo, embudoOpciones: { ghl, dir: '/no-existe' } }).listen(0);
+  await new Promise((r) => srv.once('listening', r));
+  const base = `http://127.0.0.1:${srv.address().port}/admin/panel/embudo`;
+  const h = { headers: { authorization: 'Bearer clave-test' } };
+  try {
+    assert.equal((await fetch(base + '?mes=2026-09')).status, 401);
+    assert.equal((await fetch(base + '?mes=x', h)).status, 400);
+    const r = await (await fetch(base + '?mes=2026-09', h)).json();
+    assert.equal(r.sedes.find((s) => s.sede === 'parla').leads, 1);
+    const p = await (await fetch(`http://127.0.0.1:${srv.address().port}/panel`)).text();
+    assert.match(p, /Embudo por sede/);
+  } finally { srv.close(); }
+});

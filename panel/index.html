@@ -106,6 +106,19 @@
     .probar form button.primario { grid-area: 2 / 2; }
     .ajuste:has(input[type="number"]) { flex-wrap: wrap; }
   }
+  .embudos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .embudo { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .embudo h3 { margin: 0 0 12px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .embudo h3 .chip { font-weight: 600; }
+  .paso { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
+  .paso .et { font-size: 12px; color: var(--muted); line-height: 1.25; }
+  .paso .pista { display: flex; justify-content: center; }
+  .paso .barra { min-width: 42px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 15px; transition: width .3s; }
+  .paso .barra.cero { background: transparent !important; color: var(--muted); border: 1px dashed var(--line); }
+  .paso .tasa { grid-column: 2; text-align: center; font-size: 11px; color: var(--muted); margin: -4px 0 2px; }
+  .mes { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .mes b { min-width: 130px; text-align: center; }
+  .nota { color: var(--muted); font-size: 12px; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -157,7 +170,7 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['chats', 'Chats'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
 
 async function iniciar() {
   estado.seccion = location.hash.slice(1) || 'resumen';
@@ -197,7 +210,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, chats, altas, seguimientos, probar, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, chats, altas, seguimientos, probar, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -250,6 +263,47 @@ async function resumen() {
       ${tarjeta(miles((r.ia.entrada || 0) + (r.ia.cache || 0) + (r.ia.cache_escritura || 0)), 'Tokens de entrada')}
       ${tarjeta(miles(r.ia.salida), 'Tokens de salida')}
     </div>`;
+}
+
+const PASOS = [['leads', 'Leads nuevos', '#9fbf8f'], ['reservan', 'Reservan prueba', '#6f9e5e'], ['asisten', 'Asisten', '#4f8344'], ['pagan', 'Primer pago', '#2f5f2c']];
+const mesMas = (mes, d) => { const [a, m] = mes.split('-').map(Number); const f = new Date(Date.UTC(a, m - 1 + d, 1)); return f.toISOString().slice(0, 7); };
+const nombreMes = (mes) => { const t = new Date(mes + '-15T12:00:00Z').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }); return t[0].toUpperCase() + t.slice(1); };
+const pct = (a, b) => (b ? Math.round((a / b) * 100) + ' %' : '–');
+
+async function embudo() {
+  const hoy = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
+  estado.mes ||= hoy;
+  const m = $('#main');
+  m.innerHTML = `<h2>Embudo por sede</h2>
+    <div class="mes"><button id="mprev" aria-label="Mes anterior">‹</button><b>${esc(nombreMes(estado.mes))}</b>
+      <button id="mnext" aria-label="Mes siguiente" ${estado.mes >= hoy ? 'disabled' : ''}>›</button></div>
+    <div id="emb" class="vacio" role="status">Cargando…</div>`;
+  $('#mprev').onclick = () => { estado.mes = mesMas(estado.mes, -1); embudo(); };
+  $('#mnext').onclick = () => { estado.mes = mesMas(estado.mes, 1); embudo(); };
+  const pedido = estado.mes;
+  const r = await api('/panel/embudo?mes=' + pedido);
+  if (estado.seccion !== 'embudo' || estado.mes !== pedido || !$('#emb')) return;
+  const tot = PASOS.map(([k]) => r.sedes.reduce((s, x) => s + (x[k] || 0), 0));
+  const tarjetaSede = (titulo, valores) => {
+    const base = Math.max(1, valores[0] || 0, ...valores.map((v) => v || 0));
+    return `<div class="embudo"><h3>${esc(titulo)} <span class="chip verde">${pct(valores[3] || 0, valores[0] || 0)} conversión</span></h3>
+      ${PASOS.map(([, et, color], i) => {
+        const v = valores[i];
+        const ancho = v ? Math.max(14, (v / base) * 100) : 0;
+        return `${i ? `<div class="paso"><div class="tasa">↓ ${pct(v || 0, valores[i - 1] || 0)}</div></div>` : ''}
+        <div class="paso"><div class="et">${et}</div><div class="pista">
+          <div class="barra ${v ? '' : 'cero'}" style="width:${v ? ancho + '%' : '42px'};background:${color}" title="${et}: ${v ?? 'sin datos'}">${v ?? '–'}</div></div></div>`;
+      }).join('')}</div>`;
+  };
+  $('#emb').outerHTML = `
+    ${r.avisos.map((a) => `<div class="aviso">${esc(a)}</div>`).join('')}
+    <div class="embudos">
+      ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, PASOS.map(([k]) => x[k]))).join('')}
+      ${tarjetaSede('Total 3 sedes', tot)}
+    </div>
+    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
+    Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
+    Primer pago = alta pagada después de la clase de prueba.</p>`;
 }
 
 const chipsConv = (c) => [
