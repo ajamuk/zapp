@@ -49,3 +49,9 @@ test('festivos por sede: comunes + locales del municipio', async () => {
   assert.match(knowledge.negocio, /### Getafe[\s\S]*lunes, 17 de mayo de 2027/);
   assert.match(knowledge.negocio, /Pendiente: Festivos locales de 2027/);
 });
+
+test('prorrateo Parla Academy 2 días desde el 23 nov coincide con AimHarder (22,67 €)', async () => {
+  const { calcularPrimerRecibo } = await import('../src/knowledge.js');
+  const r = calcularPrimerRecibo({ sede: 'parla', tarifa: 'academy_2', fecha_inicio: '2026-11-23' });
+  assert.equal(r.primer_recibo, 22.67);
+});

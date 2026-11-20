@@ -12,7 +12,7 @@
     "parla": { "academy_2": 43187, "academy_3": 40913, "S": 39773, "M": 31088, "L": 31086, "XL": 31084, "bono10": 31091 },
     "las_rosas": { "academy_2": 57892, "academy_3": 38399, "S": 36993, "M": 31964, "L": 31963, "XL": 31849, "bono10": 32781 }
   },
-  "origen": { "instagram": "Instagram", "facebook": "Facebook", "whatsapp": "Otros (Especificar)" },
+  "origen": { "instagram": "Instagram", "facebook": "Facebook", "whatsapp": "whatsapp", "amigo": "Amigo" },
   "campos": {
     "nombre": "#clnom",
     "apellido1": "#clape1",

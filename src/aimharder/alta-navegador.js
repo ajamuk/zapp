@@ -99,7 +99,7 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
       const $ = window.jQuery;
       $(c.nacimiento).datepicker('setDate', f.nacimiento);
       $(c.alta).datepicker('setDate', new Date());
-      if (f.origen) { const o = [...document.querySelectorAll(`${c.origen} option`)].find((x) => x.text.trim() === f.origen); if (o) $(c.origen).val(o.value).change(); }
+      if (f.origen) { const o = [...document.querySelectorAll(`${c.origen} option`)].find((x) => x.text.trim().toLowerCase() === f.origen.toLowerCase()); if (o) $(c.origen).val(o.value).change(); }
     }, { c, f });
 
     // Tarifa: mismo camino que el botón «Nueva tarifa» → elegir tarifa → día de inicio → pago pendiente → Continuar
@@ -120,7 +120,14 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
         if (!o) return { ok: false, error: `Descuento «${f.descuento}» no existe en esta sede` };
         $(c.descuento).val(o.value).change();
       }
-      const pend = document.querySelector(c.pagoPendiente); if (pend) { pend.checked = true; $(pend).change(); }
+      // Forma de pago del primer recibo: «Pago manual» (el lead paga desde la app), estado «Pago pendiente»
+      const radio = (texto) => [...document.querySelectorAll('input[type=radio]')].find((r) => {
+        const l = r.id && document.querySelector(`label[for="${r.id}"]`);
+        return ((l && l.textContent) || r.parentElement?.textContent || '').trim().toLowerCase().startsWith(texto);
+      });
+      const manual = radio('pago manual'); if (manual) { manual.checked = true; $(manual).change(); }
+      const pend = document.querySelector(c.pagoPendiente) || radio('pago pendiente'); if (pend) { pend.checked = true; $(pend).change(); }
+      if (!pend || !pend.checked) return { ok: false, error: 'No se pudo marcar «Pago pendiente»' };
       window.guardaTarifa(false);
       const sel = window.tarifasSel || [];
       return { ok: sel.length > 0 && String(sel[0].id) === String(f.tarifaId), tarifa: sel[0]?.nom, desde: sel[0]?.desde, cantidad };
