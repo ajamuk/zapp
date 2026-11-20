@@ -58,6 +58,22 @@ export function clientesApi() {
 }
 
 /**
+ * Sedes cuyo índice de socios tiene más de `maxHoras` (o está vacío). Sirve para no volver a descargar
+ * todos los socios en cada reinicio: AimHarder limita las peticiones y el límite se comparte con otras apps.
+ */
+export function sedesPorSincronizar(repo, { maxHoras = 4, ahora = Date.now(), sedes = SEDES } = {}) {
+  const ultima = Object.fromEntries(repo.db.prepare('SELECT sede, max(actualizado) t FROM socios GROUP BY sede').all().map((r) => [r.sede, r.t]));
+  return sedes.filter((s) => !ultima[s] || ahora - Date.parse(ultima[s].replace(' ', 'T') + 'Z') > maxHoras * 3600 * 1000);
+}
+
+/** Sincroniza solo las sedes con datos viejos. Devuelve null si todas están al día. */
+export async function sincronizarSiHaceFalta(repo, { apis = clientesApi(), maxHoras = 4, ahora } = {}) {
+  const pendientes = sedesPorSincronizar(repo, { maxHoras, ahora, sedes: Object.keys(apis) });
+  if (!pendientes.length) return null;
+  return sincronizarSocios(repo, Object.fromEntries(pendientes.map((s) => [s, apis[s]])));
+}
+
+/**
  * La API no busca por teléfono: se descargan los clientes de cada sede (con sus tarifas vigentes)
  * y se guarda un índice teléfono → socio en SQLite. Se repite cada pocas horas.
  * Socio = tiene alguna tarifa vigente hoy. Con ficha pero sin tarifa = exsocio (se trata como lead).

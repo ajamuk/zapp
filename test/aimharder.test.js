@@ -55,3 +55,27 @@ test('lee el almacén compartido de aimharder-mcp', async () => {
   assert.equal(leerTokenCompartido(f, 'las_rosas'), 'tok');
   assert.throws(() => leerTokenCompartido(f, 'parla'), /no hay token de parla/);
 });
+
+test('al arrancar solo se sincronizan las sedes con socios de más de 4 h', async () => {
+  const { sedesPorSincronizar, sincronizarSiHaceFalta } = await import('../src/aimharder/index.js');
+  const repo = crearRepo(openDb(':memory:'));
+  const ahora = Date.parse('2026-11-20T12:00:00Z');
+  const fila = { telefono: '611111111', aimharder_id: 1, nombre: 'A', activo: 1, tarifa: 'L' };
+  repo.reemplazarSocios('parla', [{ ...fila, sede: 'parla' }]);
+  repo.reemplazarSocios('getafe', [{ ...fila, sede: 'getafe' }]);
+  repo.db.prepare("UPDATE socios SET actualizado = '2026-11-20 10:00:00' WHERE sede = 'parla'").run();
+  repo.db.prepare("UPDATE socios SET actualizado = '2026-11-20 06:00:00' WHERE sede = 'getafe'").run();
+  assert.deepEqual(sedesPorSincronizar(repo, { ahora }), ['getafe', 'las_rosas']);
+
+  const pedidas = [];
+  const fake = (sede) => ({ clientes: async () => { pedidas.push(sede); return []; } });
+  const apis = { parla: fake('parla'), getafe: fake('getafe'), las_rosas: fake('las_rosas') };
+  await sincronizarSiHaceFalta(repo, { apis, ahora });
+  assert.deepEqual(pedidas, ['getafe', 'las_rosas']);
+
+  repo.db.prepare("UPDATE socios SET actualizado = '2026-11-20 11:00:00'").run();
+  repo.reemplazarSocios('las_rosas', [{ ...fila, sede: 'las_rosas' }]);
+  repo.reemplazarSocios('getafe', [{ ...fila, sede: 'getafe' }]);
+  repo.db.prepare("UPDATE socios SET actualizado = '2026-11-20 11:00:00'").run();
+  assert.equal(await sincronizarSiHaceFalta(repo, { apis, ahora }), null);
+});

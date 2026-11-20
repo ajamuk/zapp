@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { Ghl } from './ghl.js';
-import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios } from './aimharder/index.js';
+import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta } from './aimharder/index.js';
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
 import { aplicarAjustes } from './ajustes.js';
@@ -13,12 +13,13 @@ aplicarAjustes(repo); // horario y retrasos guardados desde el panel
 const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador,
   fichaEnSede: async (tel, sede) => fichaEnSede(repo, tel, sede) };
 
-// Índice de socios desde AimHarder: al arrancar y cada 4 horas.
-const sincronizar = () => sincronizarSocios(repo)
-  .then((r) => console.log('Socios sincronizados:', JSON.stringify(r)))
-  .catch((e) => avisarEquipo(`No se pudo sincronizar socios de AimHarder: ${e.message}`));
-sincronizar();
-setInterval(sincronizar, 4 * 3600 * 1000);
+// Índice de socios desde AimHarder: cada 4 horas. Al arrancar solo se descargan las sedes con datos de más
+// de 4 horas, para que los reinicios no gasten el límite de peticiones (compartido con otras apps).
+const avisoSync = (e) => avisarEquipo(`No se pudo sincronizar socios de AimHarder: ${e.message}`);
+sincronizarSiHaceFalta(repo)
+  .then((r) => console.log(r ? `Socios sincronizados: ${JSON.stringify(r)}` : 'Socios al día (menos de 4 h): no se descargan al arrancar.'))
+  .catch(avisoSync);
+setInterval(() => sincronizarSocios(repo).then((r) => console.log('Socios sincronizados:', JSON.stringify(r))).catch(avisoSync), 4 * 3600 * 1000);
 const setter = new Setter({ repo, ghl: new Ghl(), aimharder, avisar: avisarEquipo });
 
 const app = crearApp({ setter, repo });
