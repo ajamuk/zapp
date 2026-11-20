@@ -4,10 +4,12 @@ import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios } from './aimharder/index.js';
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
+import { aplicarAjustes } from './ajustes.js';
 import { procesarSeguimientos } from './followups.js';
 import { crearApp } from './server.js';
 
 const repo = crearRepo(openDb(config.dbPath));
+aplicarAjustes(repo); // horario y retrasos guardados desde el panel
 const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador,
   fichaEnSede: async (tel, sede) => fichaEnSede(repo, tel, sede) };
 

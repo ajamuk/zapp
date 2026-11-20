@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede } from './knowledge.js';
 import { runTurn, systemBlocks } from './llm.js';
+import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
 
 const TAGS = knowledge.etiquetas;
@@ -104,8 +105,11 @@ export class Setter {
   /** Procesa las conversaciones cuya respuesta toca ya. Lo llama el bucle de index.js. */
   async tick() {
     const ahora = this.now();
+    const ajustes = leerAjustes(this.repo);
     for (const c of this.repo.dueResponses(ahora.toISOString())) {
       this.repo.updateConv(c.id, { respond_at: null });
+      // Sofía apagada (o el canal) desde el panel: contesta el equipo en GHL
+      if (!ajustes.ia_activa || !ajustes.canales[c.channel]) continue;
       try { await this.responder(c.id); } catch (e) { console.error(`Error respondiendo ${c.id}:`, e); }
     }
   }
@@ -226,9 +230,11 @@ export class Setter {
   }
 
   programarSeguimientos(conv) {
+    if (String(conv.id).startsWith('prueba-')) return; // chat de pruebas: sin seguimientos reales
     const base = this.now().getTime();
+    const activos = leerAjustes(this.repo).seguimientos;
     for (const regla of knowledge.followups.reglas) {
-      if (!regla.canales.includes(conv.channel)) continue;
+      if (!regla.canales.includes(conv.channel) || !activos[regla.id]) continue;
       this.repo.schedule(conv.id, regla.id, new Date(base + regla.minutos * 60000).toISOString());
     }
   }

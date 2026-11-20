@@ -1,5 +1,6 @@
 import { knowledge } from './knowledge.js';
 import { dentroDeHorario, siguienteApertura } from './horario.js';
+import { leerAjustes } from './ajustes.js';
 
 const VENTANA_MS = 24 * 3600 * 1000;
 
@@ -10,10 +11,13 @@ const VENTANA_MS = 24 * 3600 * 1000;
 export async function procesarSeguimientos(setter) {
   const { repo } = setter;
   const ahora = setter.now();
+  const ajustes = leerAjustes(repo);
   for (const s of repo.dueScheduled(ahora.toISOString())) {
     const regla = knowledge.followups.reglas.find((r) => r.id === s.regla_id);
     const conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    if (!ajustes.ia_activa || !ajustes.canales[conv.channel]) { repo.finishScheduled(s.id, 'omitido', 'Sofía desactivada desde el panel'); continue; }
+    if (!ajustes.seguimientos[regla.id]) { repo.finishScheduled(s.id, 'omitido', 'seguimiento desactivado desde el panel'); continue; }
     if (conv.ai_paused || conv.derivado) { repo.finishScheduled(s.id, 'omitido', 'IA pausada o derivada'); continue; }
     if (conv.alta_estado === 'pendiente') { repo.finishScheduled(s.id, 'omitido', 'alta pendiente'); continue; }
     if (!dentroDeHorario(ahora)) {

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sofía · Panel</title>
+<style>
+  :root {
+    --bg: #0f1418; --panel: #161d22; --panel2: #1c252b; --line: #26323a; --text: #e6ecef; --muted: #8a9aa4;
+    --green: #2fbf71; --amber: #e0a43a; --red: #e05a4f; --blue: #4ea1e0; --violet: #9d7be0; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel2); border-radius: 8px; padding: 6px 12px; }
+  button:hover { border-color: var(--muted); }
+  button.primario { background: var(--green); border-color: var(--green); color: #06130b; font-weight: 600; }
+  button.peligro { border-color: var(--red); color: var(--red); background: transparent; }
+  input, select, textarea { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .app { display: grid; grid-template-columns: 210px 1fr; min-height: 100vh; }
+  nav { background: var(--panel); border-right: 1px solid var(--line); padding: 18px 10px; position: sticky; top: 0; height: 100vh; }
+  nav .marca { font-weight: 700; font-size: 18px; padding: 0 10px 4px; }
+  nav .modo { margin: 0 10px 16px; font-size: 12px; }
+  nav a { display: flex; justify-content: space-between; gap: 8px; padding: 9px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+  nav a.activo, nav a:hover { background: var(--panel2); color: var(--text); }
+  nav .salir { position: absolute; bottom: 16px; left: 10px; right: 10px; }
+  main { padding: 22px; min-width: 0; }
+  h1 { font-size: 20px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 22px 0 10px; color: var(--muted); font-weight: 600; }
+  .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .tarjeta { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+  .tarjeta .n { font-size: 26px; font-weight: 700; }
+  .tarjeta .l { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .chip.verde { color: var(--green); border-color: #2fbf7155; } .chip.ambar { color: var(--amber); border-color: #e0a43a55; }
+  .chip.rojo { color: var(--red); border-color: #e05a4f55; } .chip.azul { color: var(--blue); border-color: #4ea1e055; } .chip.violeta { color: var(--violet); border-color: #9d7be055; }
+  .filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filtros button.activo { background: var(--text); color: var(--bg); }
+  .chats { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 14px; height: calc(100vh - 150px); }
+  .lista { overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .item { padding: 11px 13px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .item:hover, .item.activo { background: var(--panel2); }
+  .item .fila { display: flex; justify-content: space-between; gap: 8px; }
+  .item .nom { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .ult { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 5px; }
+  .item .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .hilo { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+  .hilo .cab { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .hilo .msgs { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .burbuja { max-width: 75%; padding: 7px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
+  .burbuja .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .b-lead { align-self: flex-start; background: var(--panel2); }
+  .b-ia { align-self: flex-end; background: #17402b; }
+  .b-ia.borrador { background: transparent; border: 1px dashed #2fbf7188; }
+  .b-humano { align-self: flex-end; background: #1d3550; }
+  .b-sistema { align-self: center; background: transparent; color: var(--muted); font-size: 12px; }
+  .hilo .pie { border-top: 1px solid var(--line); padding: 10px 14px; font-size: 12px; color: var(--muted); max-height: 180px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .vacio { color: var(--muted); padding: 30px; text-align: center; }
+  .ajuste { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+  .ajuste .t { font-weight: 600; } .ajuste .d { color: var(--muted); font-size: 13px; }
+  .interruptor { position: relative; width: 44px; height: 24px; flex: none; }
+  .interruptor input { opacity: 0; width: 0; height: 0; }
+  .interruptor span { position: absolute; inset: 0; background: var(--line); border-radius: 99px; transition: .15s; }
+  .interruptor span::after { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
+  .interruptor input:checked + span { background: var(--green); }
+  .interruptor input:checked + span::after { transform: translateX(20px); }
+  .regla { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; }
+  .regla .cab { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .regla p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+  .barras { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .barras div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; align-items: stretch; }
+  .barras i { display: block; border-radius: 3px 3px 0 0; }
+  .probar { display: grid; grid-template-rows: 1fr auto; height: calc(100vh - 120px); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  .probar form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  .probar form input { flex: 1; }
+  .aviso { background: #2a2312; border: 1px solid #e0a43a55; color: var(--amber); padding: 10px 12px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; }
+  .error { color: var(--red); }
+  .login { max-width: 340px; margin: 18vh auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: grid; gap: 12px; }
+  .volver { display: none; }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; display: flex; gap: 4px; overflow-x: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+    nav .marca, nav .modo, nav .salir { display: none; }
+    nav a { white-space: nowrap; }
+    main { padding: 14px; }
+    .chats { grid-template-columns: 1fr; height: auto; }
+    .chats.con-hilo .lista { display: none; } .chats:not(.con-hilo) .hilo { display: none; }
+    .hilo { height: calc(100vh - 170px); } .volver { display: inline-block; }
+    .burbuja { max-width: 88%; }
+  }
+</style>
+</head>
+<body>
+<div id="raiz"></div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const SEDES = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
+const CANAL = { whatsapp: 'WhatsApp', instagram: 'Instagram' };
+const hora = (iso) => { if (!iso) return ''; const d = new Date(/Z$|T/.test(iso) ? iso : iso.replace(' ', 'T') + 'Z'); const hoy = new Date();
+  return d.toDateString() === hoy.toDateString() ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); };
+const minutos = (m) => m >= 1440 ? `${+(m / 1440).toFixed(1)} días` : m >= 60 ? `${+(m / 60).toFixed(1)} h` : `${m} min`;
+const miles = (n) => Number(n || 0).toLocaleString('es-ES');
+
+let token = '';
+try { token = localStorage.getItem('sofia_panel') || ''; } catch {}
+const estado = { seccion: location.hash.slice(1) || 'resumen', filtro: 'todos', q: '', conv: null, dias: 1, info: null, prueba: { sesion: 'panel-' + Math.random().toString(36).slice(2, 7), mensajes: [] } };
+
+async function api(ruta, opciones = {}) {
+  const r = await fetch('/admin' + ruta, { ...opciones, headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', ...(opciones.headers || {}) } });
+  if (r.status === 401) { salir(); throw new Error('no autorizado'); }
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function salir() { token = ''; try { localStorage.removeItem('sofia_panel'); } catch {} pintarLogin(); }
+
+function pintarLogin(error = '') {
+  $('#raiz').innerHTML = `<form class="login" id="fl"><b>Panel de Sofía</b><span style="color:var(--muted);font-size:13px">Clave de administración (ADMIN_TOKEN del servidor)</span>
+    <input type="password" id="tk" autocomplete="current-password" autofocus><button class="primario">Entrar</button><span class="error">${esc(error)}</span></form>`;
+  $('#fl').onsubmit = async (e) => {
+    e.preventDefault(); token = $('#tk').value.trim();
+    try { await api('/panel/estado'); try { localStorage.setItem('sofia_panel', token); } catch {} iniciar(); } catch { pintarLogin('Clave incorrecta'); }
+  };
+}
+
+const SECCIONES = [['resumen', 'Resumen'], ['chats', 'Chats'], ['altas', 'Altas'], ['seguimientos', 'Follow-ups'], ['probar', 'Probar IA'], ['ajustes', 'Ajustes']];
+
+async function iniciar() {
+  estado.seccion = location.hash.slice(1) || 'resumen';
+  try { estado.info = await api('/panel/estado'); } catch { return; }
+  const i = estado.info;
+  $('#raiz').innerHTML = `<div class="app"><nav>
+    <div class="marca">Sofía</div>
+    <div class="modo">${i.modo === 'live' ? '<span class="chip verde">enviando de verdad</span>' : '<span class="chip ambar">modo prueba · borradores</span>'}
+      ${i.ajustes.ia_activa ? '' : ' <span class="chip rojo">apagada</span>'}</div>
+    ${SECCIONES.map(([id, t]) => `<a href="#${id}" data-s="${id}">${t}${id === 'chats' ? `<span>${i.contadores.todos}</span>` : ''}</a>`).join('')}
+    <button class="salir" id="bsalir">Salir</button></nav><main id="main"></main></div>`;
+  $('#bsalir').onclick = salir;
+  pintar();
+}
+
+window.onhashchange = () => { if (!estado.info) return; estado.seccion = location.hash.slice(1) || 'resumen'; pintar(); };
+
+function pintar() {
+  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('activo', a.dataset.s === estado.seccion));
+  ({ resumen, chats, altas, seguimientos, probar, ajustes }[estado.seccion] || resumen)();
+}
+
+const tarjeta = (n, l, color = '') => `<div class="tarjeta"><div class="n" style="${color ? 'color:var(--' + color + ')' : ''}">${n ?? 0}</div><div class="l">${l}</div></div>`;
+
+async function resumen() {
+  const m = $('#main');
+  m.innerHTML = `<h1>Resumen</h1><div class="filtros">${[[1, 'Hoy'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<button data-d="${d}" class="${estado.dias === d ? 'activo' : ''}">${t}</button>`).join('')}</div><div id="rs" class="vacio">Cargando…</div>`;
+  m.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { estado.dias = Number(b.dataset.d); resumen(); });
+  const r = await api('/panel/resumen?dias=' + estado.dias);
+  const info = estado.info;
+  const max = Math.max(1, ...r.serie.map((x) => (x.lead || 0) + (x.ia || 0)));
+  $('#rs').outerHTML = `
+    ${info.modo !== 'live' ? '<div class="aviso">Modo prueba: Sofía no envía nada a los leads. Sus respuestas quedan como borrador (nota en GHL y línea discontinua en Chats) para compararlas con Zapp.</div>' : ''}
+    ${info.alta_en_pruebas ? '<div class="aviso">Altas en AimHarder en modo prueba: se rellenan sin guardar y el equipo las termina a mano.</div>' : ''}
+    <div class="tarjetas">
+      ${tarjeta(r.conversaciones.leads, 'Leads nuevos')}
+      ${tarjeta(r.conversaciones.socios, 'Socios que escribieron')}
+      ${tarjeta(r.atendidas, 'Chats atendidos por Sofía', 'green')}
+      ${tarjeta(r.mensajes.ia, 'Mensajes enviados')}
+      ${tarjeta(r.mensajes.borradores, 'Borradores (modo prueba)', 'amber')}
+      ${tarjeta(r.mensajes.equipo, 'Mensajes del equipo', 'blue')}
+      ${tarjeta(r.altas.preparada, 'Altas hechas', 'green')}
+      ${tarjeta((r.altas.pendiente || 0) + (r.altas.simulada || 0) + (r.altas.no_configurado || 0) + (r.altas.existente || 0), 'Altas para el equipo', 'amber')}
+      ${tarjeta(r.altas.fallida, 'Altas fallidas', 'red')}
+      ${tarjeta(r.seguimientos.enviado, 'Follow-ups enviados')}
+    </div>
+    <h2>Ahora mismo</h2>
+    <div class="tarjetas">
+      ${tarjeta(r.ahora.derivadas, 'Derivadas al equipo', 'violet')}
+      ${tarjeta(r.ahora.pausadas, 'Con Sofía en pausa', 'amber')}
+      ${tarjeta(r.ahora.altas_pendientes, 'Altas pendientes', 'amber')}
+      ${tarjeta(r.ahora.pruebas, 'Pruebas en Parla')}
+    </div>
+    ${r.serie.length > 1 ? `<h2>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h2><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead} lead · ${x.ia} Sofía">
+      <i style="height:${(x.ia || 0) / max * 70}px;background:var(--green)"></i><i style="height:${(x.lead || 0) / max * 70}px;background:var(--muted)"></i></div>`).join('')}</div>` : ''}
+    <h2>Embudo (leads con actividad en el periodo)</h2>
+    ${r.embudo.length ? `<table><tr><th>Fase</th><th>Leads</th></tr>${r.embudo.map((e) => `<tr><td>${esc(e.fase)}</td><td>${e.n}</td></tr>`).join('')}</table>` : '<div class="vacio">Sin datos todavía</div>'}
+    <h2>IA</h2>
+    <div class="tarjetas">
+      ${tarjeta(miles(r.ia.llamadas), 'Llamadas al modelo')}
+      ${tarjeta(r.ia.errores || 0, 'Errores', r.ia.errores ? 'red' : '')}
+      ${tarjeta(r.ia.ms ? (r.ia.ms / 1000).toFixed(1) + ' s' : '–', 'Tiempo medio por turno')}
+      ${tarjeta(miles((r.ia.entrada || 0) + (r.ia.cache || 0) + (r.ia.cache_escritura || 0)), 'Tokens de entrada')}
+      ${tarjeta(miles(r.ia.salida), 'Tokens de salida')}
+    </div>`;
+}
+
+const chipsConv = (c) => [
+  c.channel ? `<span class="chip">${CANAL[c.channel] || c.channel}</span>` : '',
+  c.sede ? `<span class="chip azul">${SEDES[c.sede] || c.sede}</span>` : '',
+  c.tipo === 'socio' ? '<span class="chip violeta">socio</span>' : '',
+  c.derivado ? '<span class="chip violeta">derivado</span>' : c.ai_paused ? '<span class="chip ambar">IA pausada</span>' : '<span class="chip verde">IA activa</span>',
+  c.fase ? `<span class="chip">${esc(c.fase)}</span>` : '',
+  c.alta_estado ? `<span class="chip ${c.alta_estado === 'preparada' ? 'verde' : c.alta_estado === 'fallida' ? 'rojo' : 'ambar'}">alta ${esc(c.alta_estado)}</span>` : '',
+  c.prueba_reservada ? '<span class="chip">prueba</span>' : '',
+  c.seguimientos_pendientes ? '<span class="chip">follow-up</span>' : '',
+].join('');
+
+async function chats() {
+  const cont = estado.info.contadores;
+  const F = [['todos', 'Todos'], ['ia_activa', 'IA activa'], ['pausadas', 'Pausadas'], ['derivadas', 'Derivadas'], ['seguimiento', 'Seguimiento'], ['prueba', 'Clase prueba'], ['alta', 'Alta'], ['socios', 'Socios']];
+  $('#main').innerHTML = `<div class="filtros">${F.map(([k, t]) => `<button data-f="${k}" class="${estado.filtro === k ? 'activo' : ''}">${t} ${cont[k] ?? ''}</button>`).join('')}
+    <input id="q" placeholder="Buscar chat o mensaje" value="${esc(estado.q)}" style="flex:1;min-width:160px"></div>
+    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="lista" id="lista"><div class="vacio">Cargando…</div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
+  $('#main').querySelectorAll('[data-f]').forEach((b) => b.onclick = () => { estado.filtro = b.dataset.f; estado.conv = null; chats(); });
+  let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; lista(); }, 300); };
+  await lista();
+  if (estado.conv) abrir(estado.conv);
+}
+
+async function lista() {
+  const filas = await api(`/panel/conversaciones?filtro=${estado.filtro}&q=${encodeURIComponent(estado.q)}`);
+  $('#lista').innerHTML = filas.length ? filas.map((c) => `<div class="item ${estado.conv === c.id ? 'activo' : ''}" data-id="${esc(c.id)}">
+    <div class="fila"><span class="nom">${esc(c.nombre || c.telefono || 'Sin nombre')}</span><span class="chip">${hora(c.ultimo_at || c.updated_at)}</span></div>
+    <div class="ult">${c.ultimo_autor === 'ia' ? '✓ ' : ''}${esc(c.ultimo_texto || '')}</div><div class="chips">${chipsConv(c)}</div></div>`).join('') : '<div class="vacio">No hay chats aquí</div>';
+  $('#lista').querySelectorAll('.item').forEach((el) => el.onclick = () => abrir(el.dataset.id));
+}
+
+async function abrir(id) {
+  estado.conv = id;
+  $('#ch').classList.add('con-hilo');
+  document.querySelectorAll('.item').forEach((el) => el.classList.toggle('activo', el.dataset.id === id));
+  const d = await api('/panel/conversaciones/' + encodeURIComponent(id));
+  const c = d.conv;
+  const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
+  $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">←</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
+      <div class="chips" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipsConv(c)}</div>${c.pause_reason ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.pause_reason)}</div>` : ''}</div>
+      <div>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
+    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${x.autor} ${x.enviado ? '' : 'borrador'}">${esc(x.texto)}<div class="meta">${ETQ[x.autor] || x.autor} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
+    <div class="pie">${[
+      d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
+      d.seguimientos.length ? '<b>Follow-ups</b><br>' + d.seguimientos.map((s) => `${esc(s.regla_id)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}`).join('<br>') : '',
+      d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
+    ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía y pausarla en este chat.'}</div>`;
+  $('#msgs').scrollTop = 1e9;
+  $('#bv').onclick = () => { estado.conv = null; $('#ch').classList.remove('con-hilo'); };
+  const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); await lista(); abrir(id); };
+  $('#bact') && ($('#bact').onclick = () => accion('reanudar'));
+  $('#bpau') && ($('#bpau').onclick = () => accion('pausar'));
+}
+
+async function altas() {
+  $('#main').innerHTML = '<h1>Altas</h1><div class="vacio">Cargando…</div>';
+  const filas = await api('/panel/altas');
+  const COLOR = { preparada: 'verde', fallida: 'rojo', rechazada: 'rojo' };
+  $('#main').innerHTML = `<h1>Altas</h1>${estado.info.alta_en_pruebas ? '<div class="aviso">El alta automática está en modo prueba: rellena AimHarder sin guardar y el equipo la termina a mano con los datos que recibe por Telegram.</div>' : ''}
+    ${filas.length ? `<div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Detalle</th></tr>${filas.map((a) => `<tr>
+      <td>${hora(a.created_at)}</td><td><a href="#chats" data-c="${esc(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo)}</a><br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
+      <td>${esc(SEDES[a.datos.sede] || a.datos.sede)} · ${esc(a.datos.tarifa)}</td><td>${esc(a.datos.fecha_inicio)}</td>
+      <td><span class="chip ${COLOR[a.estado] || 'ambar'}">${esc(a.estado)}</span></td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay altas</div>'}`;
+  $('#main').querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
+}
+
+async function seguimientos() {
+  $('#main').innerHTML = '<h1>Follow-ups</h1><div class="vacio">Cargando…</div>';
+  const [s, aj] = [await api('/panel/seguimientos'), estado.info.ajustes];
+  $('#main').innerHTML = `<h1>Follow-ups</h1>
+    <p style="color:var(--muted);margin-top:-8px">Cuentan desde el último mensaje de Sofía sin respuesta. Antes de enviar, Sofía comprueba la condición y, si no se cumple, no manda nada. Se cancelan si el lead contesta, si escribe alguien del equipo o si la conversación está pausada o derivada.</p>
+    ${s.reglas.map((r) => `<div class="regla"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${minutos(r.minutos)}</span> ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')} ${r.plantilla ? `<span class="chip">plantilla ${esc(r.plantilla)}</span>` : ''}</div>
+      <label class="interruptor"><input type="checkbox" data-r="${esc(r.id)}" ${aj.seguimientos[r.id] ? 'checked' : ''}><span></span></label></div>
+      <p><b>Cuándo:</b> ${esc(r.condicion)}</p><p><b>Qué dice:</b> ${esc(r.instrucciones)}</p>
+      <p>Últimos 7 días: ${r.enviado} enviados · ${r.omitido} no enviados · ${r.cancelado} cancelados${r.error ? ` · <span class="error">${r.error} con error</span>` : ''} · ${r.pendiente} programados</p></div>`).join('')}
+    <h2>Próximos</h2>
+    ${s.proximos.length ? `<table><tr><th>Cuándo</th><th>Chat</th><th>Follow-up</th><th></th></tr>${s.proximos.map((p) => `<tr><td>${hora(p.due_at)}</td><td>${esc(p.nombre || p.conversation_id)} <span class="chip">${CANAL[p.channel] || ''}</span></td><td>${esc((s.reglas.find((r) => r.id === p.regla_id) || {}).nombre || p.regla_id)}</td><td><button data-x="${p.id}">Cancelar</button></td></tr>`).join('')}</table>` : '<div class="vacio">No hay follow-ups programados</div>'}`;
+  $('#main').querySelectorAll('[data-r]').forEach((i) => i.onchange = async () => {
+    estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ seguimientos: { [i.dataset.r]: i.checked } }) });
+  });
+  $('#main').querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); seguimientos(); });
+}
+
+function probar() {
+  const p = estado.prueba;
+  $('#main').innerHTML = `<h1>Probar IA</h1><p style="color:var(--muted);margin-top:-8px">Habla con Sofía como si fueras un lead. No toca GHL, AimHarder ni a ningún cliente: las altas y avisos solo se muestran aquí.</p>
+    <div class="probar"><div class="msgs" id="pm" style="overflow:auto;padding:14px;display:flex;flex-direction:column;gap:6px"></div>
+    <form id="pf"><select id="pc"><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option></select><input id="pt" placeholder="Escribe como un lead…" autocomplete="off"><button class="primario">Enviar</button><button type="button" id="pr">Reiniciar</button></form></div>`;
+  const pintarP = () => { $('#pm').innerHTML = p.mensajes.map((m) => `<div class="burbuja ${m.c}">${esc(m.t)}</div>`).join('') || '<div class="vacio">Escribe el primer mensaje</div>'; $('#pm').scrollTop = 1e9; };
+  pintarP();
+  $('#pr').onclick = async () => { await api('/probar/reiniciar', { method: 'POST', body: JSON.stringify({ sesion: p.sesion }) }); p.mensajes = []; pintarP(); };
+  $('#pf').onsubmit = async (e) => {
+    e.preventDefault(); const t = $('#pt').value.trim(); if (!t) return;
+    $('#pt').value = ''; p.mensajes.push({ c: 'b-lead', t }); p.mensajes.push({ c: 'b-sistema', t: 'Sofía está escribiendo…' }); pintarP();
+    try {
+      const r = await api('/probar', { method: 'POST', body: JSON.stringify({ sesion: p.sesion, texto: t, canal: $('#pc').value }) });
+      p.mensajes.pop();
+      for (const m of r.mensajes) p.mensajes.push({ c: 'b-ia', t: m });
+      for (const x of r.efectos.filter((x) => x.startsWith('['))) p.mensajes.push({ c: 'b-sistema', t: x });
+    } catch (err) { p.mensajes.pop(); p.mensajes.push({ c: 'b-sistema error', t: 'Error: ' + err.message }); }
+    pintarP();
+  };
+}
+
+async function ajustes() {
+  const a = await api('/panel/ajustes'); const i = estado.info;
+  const sw = (id, on) => `<label class="interruptor"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span></span></label>`;
+  $('#main').innerHTML = `<h1>Ajustes</h1>
+    <div class="ajuste"><div><div class="t">Sofía activa</div><div class="d">Apagada, no contesta ni manda follow-ups: todo lo atiende el equipo en GHL.</div></div>${sw('ia', a.ia_activa)}</div>
+    <div class="ajuste"><div><div class="t">WhatsApp</div><div class="d">Sofía contesta en WhatsApp</div></div>${sw('cw', a.canales.whatsapp)}</div>
+    <div class="ajuste"><div><div class="t">Instagram</div><div class="d">Sofía contesta en Instagram</div></div>${sw('ci', a.canales.instagram)}</div>
+    <div class="ajuste"><div><div class="t">Horario de respuesta</div><div class="d">Fuera de la franja, los mensajes se guardan y Sofía contesta al empezar el siguiente turno (0 = medianoche; en Zapp: 8 a 0)</div></div>
+      <div style="display:flex;gap:6px;align-items:center"><input type="number" id="hi" min="0" max="23" value="${a.horaInicio}" style="width:64px"> a <input type="number" id="hf" min="0" max="23" value="${a.horaFin}" style="width:64px"></div></div>
+    <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Espera al azar antes de contestar, en segundos, como una persona que ve el mensaje y lo lee (en Zapp: 15 a 50)</div></div>
+      <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
+    <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo mientras el lead ve «escribiendo…». Cuanto más largo el mensaje, más tarda (en Zapp: 4)</div></div>
+      <input type="number" id="vel" min="1" max="20" value="${a.typingSpeed}" style="width:70px"></div>
+    <div style="display:flex;gap:10px;align-items:center;margin:14px 0"><button class="primario" id="bg">Guardar</button><span id="ok"></span></div>
+    <h2>Sistema</h2>
+    <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
+    <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.alta_en_pruebas ? 'Se rellena sin guardar; el equipo la termina.' : 'Se guarda y se verifica automáticamente.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'prueba' : 'automática'}</span></div>
+    <div class="ajuste"><div><div class="t">Modelo</div><div class="d">El que redacta las respuestas</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
+  $('#bg').onclick = async () => {
+    try {
+      estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({
+        ia_activa: $('#ia').checked, canales: { whatsapp: $('#cw').checked, instagram: $('#ci').checked },
+        horaInicio: Number($('#hi').value), horaFin: Number($('#hf').value), minDelay: Number($('#dmin').value), maxDelay: Number($('#dmax').value), typingSpeed: Number($('#vel').value),
+      }) });
+      $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>'; iniciar().then(() => { location.hash = 'ajustes'; });
+    } catch (e) { $('#ok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  };
+}
+
+token ? iniciar() : pintarLogin();
+</script>
+</body>
+</html>

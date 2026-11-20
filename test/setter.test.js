@@ -218,3 +218,14 @@ test('alta verificada: el sistema avisa al lead con sede, fecha e importe pendie
   assert.ok(textos.some((t) => /22,67 €/.test(t)));
   assert.match(llamadas.avisos.at(-1), /verificada en AimHarder/);
 });
+
+test('Sofía apagada desde el panel: no contesta y el chat queda para el equipo', async () => {
+  const { setter, repo, llamadas, avanzar } = montar({ respuestas: [[{ name: 'responder', input: { mensajes: ['hola'], fase: 'f1 apertura' } }]] });
+  const { guardarAjustes } = await import('../src/ajustes.js');
+  guardarAjustes(repo, { ia_activa: false });
+  await setter.handleWebhook(entrante('hola'));
+  avanzar(60000);
+  await setter.tick();
+  assert.equal(llamadas.requests.length, 0);
+  assert.equal(repo.getConv('c1').respond_at, null);
+});
