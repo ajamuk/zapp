@@ -12,6 +12,12 @@ import { textoPrevisto, programarManual, cancelarCita, destinatarios, validarLan
 import * as reglasSeg from './reglas.js';
 import * as reportes from './reportes.js';
 import * as documentos from './documentos.js';
+import * as recursosMod from './recursos.js';
+import * as alertas from './alertas.js';
+import * as meta from './meta.js';
+import * as actividad from './actividad.js';
+import { resumenInstrucciones } from './resumen.js';
+import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
@@ -27,7 +33,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null }) {
   const app = express();
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
@@ -38,6 +44,14 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   app.get('/panel', (_req, res) => res.sendFile(panelPath));
 
   app.get('/health', (_req, res) => res.json({ ok: true, modo: config.mode }));
+
+  // Recursos públicos para que GHL los descargue al enviarlos (código aleatorio; solo los activos)
+  app.get('/r/:token', (req, res) => {
+    const r = recursosMod.porToken(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
+    if (!r) return res.status(404).end();
+    res.set('Cache-Control', 'public, max-age=3600');
+    return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios());
+  });
 
   // Webhook de GHL (mensajes entrantes y salientes). Responde rápido; el trabajo se hace después.
   app.post('/webhooks/ghl', async (req, res) => {
@@ -54,6 +68,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.set('Cache-Control', 'private, no-store');
     next();
   });
+  admin.use(actividad.middleware(repo.db));
 
   // Chat de pruebas: habla con Sofía sin tocar GHL ni a ningún lead. Body: { sesion, texto, canal?, nombre? }
   admin.post('/probar', async (req, res) => {
@@ -110,7 +125,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     modo: config.mode, modelo: config.ai.model, alta_en_pruebas: config.aimharder.altaDryRun,
     modelo_configurado: Boolean(config.ai.apiKey), entrada_ghl: config.ghlWebhookEnabled,
     credenciales_alta: Boolean(config.aimharder.adminUser && config.aimharder.adminPassword),
-    ajustes: leerAjustes(repo), contadores: panel.contadores(db),
+    ajustes: leerAjustes(repo), contadores: panel.contadores(db), alertas: alertas.abiertas(db).length,
   }));
   admin.get('/panel/resumen', (req, res) => res.json(panel.resumen(db, req.query.dias)));
   admin.get('/panel/embudo', async (req, res) => {
@@ -127,6 +142,15 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);
     return d ? res.json(d) : res.status(404).json({ error: 'no existe' });
+  });
+  // ⚡ Forzar respuesta: Sofía contesta ya (respeta su horario)
+  admin.post('/panel/conversaciones/:id/forzar', (req, res) => {
+    const c = repo.getConv(req.params.id);
+    if (!c) return res.status(404).json({ error: 'no existe' });
+    if (c.ai_paused || c.derivado) return res.status(409).json({ error: 'Sofía está pausada en este chat: reactívala primero.' });
+    if (!config.ghlWebhookEnabled) return res.status(409).json({ error: 'La entrada de GHL está apagada: Sofía no está atendiendo chats.' });
+    repo.updateConv(c.id, { respond_at: new Date().toISOString() });
+    res.json({ ok: true });
   });
   admin.post('/panel/conversaciones/:id/pausar', (req, res) => {
     if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
@@ -148,6 +172,22 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     if (!setter?.redactar || (!config.ai.apiKey && !complete)) return res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' });
     try { res.json(await textoPrevisto(setter, s, { forzar: req.body?.rehacer === true })); } catch (e) { console.error('Previa seguimiento:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
   });
+  // ---------- Alertas del sistema ----------
+  admin.get('/panel/alertas', (_req, res) => res.json({ abiertas: alertas.abiertas(db), recientes: alertas.recientes(db) }));
+  admin.post('/panel/alertas/comprobar', async (_req, res) => res.json({ comprobaciones: await alertas.vigilar(db, { ghl: ghl || etiquetas.ghl }), abiertas: alertas.abiertas(db) }));
+  admin.post('/panel/alertas/:id/resolver', (req, res) => res.json({ ok: alertas.cerrarAMano(db, Number(req.params.id)) }));
+
+  admin.get('/panel/meta', (_req, res) => res.json({ configurado: meta.configurado(), modo: config.mode, prueba: Boolean(config.meta.testCode), eventos: meta.recientes(db), tipos: meta.EVENTOS }));
+
+  // ---------- Recursos ----------
+  admin.get('/panel/recursos', (_req, res) => res.json(recursosMod.listar(db).map((r) => ({ ...r, url: recursosMod.urlPublica(r) }))));
+  admin.post('/panel/recursos/adjunto', (req, res) => { try { res.status(201).json(recursosMod.crear(db, req.body || {}, { base: medios?.base })); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/recursos/:id', (req, res) => {
+    try { const r = recursosMod.actualizar(db, Number(req.params.id), req.body || {}); return r ? res.json(r) : res.status(404).json({ error: 'No existe.' }); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.delete('/panel/recursos/:id', (req, res) => res.json({ ok: recursosMod.borrar(db, Number(req.params.id), { base: medios?.base }) }));
+  admin.get('/panel/recursos/:id/archivo', (req, res) => { const r = recursosMod.obtener(db, Number(req.params.id)); return enviarMedio(res, r && { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios()); });
+
   // ---------- Reportes ----------
   admin.get('/panel/reportes', (req, res) => res.json({
     reportes: reportes.listar(db, { estado: req.query.estado || null }),
@@ -190,6 +230,19 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.post('/panel/reportes/:id/descartar', (req, res) => { reportes.descartar(db, Number(req.params.id)); res.json({ ok: true }); });
 
   // ---------- Instrucciones de Sofía (prompt y base de conocimiento, con versiones) ----------
+  admin.get('/panel/estadisticas', (req, res) => res.json(panel.estadisticas(db, { dias: req.query.dias, sede: req.query.sede || '', canal: req.query.canal || '' })));
+  admin.get('/panel/consumo', (req, res) => res.json(panel.consumo(db, { meses: req.query.meses })));
+  admin.get('/panel/exportar', (req, res) => {
+    const formato = req.query.formato === 'mensajes' ? 'mensajes' : 'chats';
+    res.type('text/csv; charset=utf-8').set('Content-Disposition', `attachment; filename="sofia_${formato}_${new Date().toISOString().slice(0, 10)}.csv"`)
+      .send(panel.exportar(db, { criterios: req.query.criterios, q: req.query.q || '', formato }));
+  });
+  admin.get('/panel/actividad', (req, res) => res.json({ actividad: actividad.listar(db, { quien: req.query.quien || '' }), personas: actividad.personas(db) }));
+  admin.post('/panel/instrucciones/resumen', async (req, res) => {
+    if (sinModelo(res)) return;
+    try { res.json(await resumenInstrucciones(db, { completeJSON, rehacer: req.body?.rehacer === true })); } catch (e) { console.error('Resumen:', e.message); res.status(502).json({ error: 'No se ha podido preparar el resumen.' }); }
+  });
+  admin.get('/panel/rendimiento', (req, res) => res.json(panel.rendimiento(db, req.query.dias)));
   admin.get('/panel/instrucciones', (_req, res) => res.json(Object.fromEntries(Object.entries(documentos.DOCS).map(([doc, d]) => [doc, { nombre: d.nombre, versiones: documentos.versiones(db, doc) }]))));
   admin.get('/panel/instrucciones/:id', (req, res) => {
     const d = documentos.obtener(db, Number(req.params.id));

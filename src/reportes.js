@@ -11,6 +11,9 @@ import { Setter } from './setter.js';
 import { pedirJSON } from './llm.js';
 import * as docs from './documentos.js';
 
+/** Apunta en ai_runs lo que gasta el optimizador (para Consumo). */
+const registrar = (db, id, motivo) => (u, modelo) => db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms)
+  VALUES (?, ?, ?, ?, ?, ?, ?, 0)`).run(`reporte-${id}`, motivo, modelo, u.input_tokens || 0, u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0, u.output_tokens || 0);
 const json = (t, d = null) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 export const ESTADOS = {
   recibido: 'Recibido', analizando: 'Analizando…', duda: 'Necesita un dato', propuesto: 'Cambio listo para aplicar', aplicado: 'Aplicado',
@@ -125,7 +128,13 @@ export async function repetir(r, textos, { complete, catalogo }) {
   while (previos.length && previos.at(-1).autor === 'ia') previos.pop();
   for (const m of previos) tmp.addMessage({ conversation_id: 'reporte', autor: m.autor, texto: m.texto, adjunto: m.adjunto || null, transcripcion: m.transcripcion || null });
   const setter = new Setter({ repo: tmp, catalogo, complete, live: true, sleep: async () => {}, ghl: {}, aimharder: {} });
-  return setter.redactar('reporte', '', { docs: textos });
+  const texto = await setter.redactar('reporte', '', { docs: textos });
+  // Lo que gastó Sofía al repetir la conversación se apunta en la base real (Consumo)
+  for (const x of tmp.db.prepare('SELECT * FROM ai_runs').all()) {
+    catalogo.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error)
+      VALUES (?, 'reporte-comprobacion', ?, ?, ?, ?, ?, ?, ?)`).run(`reporte-${r.id}`, x.modelo, x.tokens_in, x.tokens_cache_read, x.tokens_cache_write, x.tokens_out, x.ms, x.error);
+  }
+  return texto;
 }
 
 /** Analiza un reporte de principio a fin. Guarda cada paso en la base para que el panel lo vaya viendo. */
@@ -138,7 +147,7 @@ export async function analizar(db, id, { complete, completeJSON } = {}) {
     const versionBase = { prompt: docs.enProduccion(db, 'prompt')?.version, negocio: docs.enProduccion(db, 'negocio')?.version };
     let previo = null;
     for (let intento = 1; intento <= 2; intento++) {
-      let d = await pedirJSON({ system: SISTEMA_DIAGNOSTICO, contenido: contenidoDiagnostico(r, base, previo), schema: ESQUEMA_DIAGNOSTICO, complete: completeJSON });
+      let d = await pedirJSON({ system: SISTEMA_DIAGNOSTICO, contenido: contenidoDiagnostico(r, base, previo), schema: ESQUEMA_DIAGNOSTICO, complete: completeJSON, onUsage: registrar(db, id, 'reporte') });
       if (d.clasificacion === 'duda') {
         actualizar(db, id, { estado: 'duda', clasificacion: 'duda', explicacion: d.explicacion, pregunta: d.pregunta || '¿Puedes darnos algo más de detalle?' });
         return obtener(db, id);
@@ -151,7 +160,7 @@ export async function analizar(db, id, { complete, completeJSON } = {}) {
       let nuevo;
       try { nuevo = docs.aplicarCambios(base[d.documento], d.cambios); }
       catch (e) {
-        d = await pedirJSON({ system: SISTEMA_DIAGNOSTICO, contenido: `${contenidoDiagnostico(r, base, previo)}\n\n<error_de_tu_propuesta>${e.message} Copia «buscar» literalmente del documento.</error_de_tu_propuesta>`, schema: ESQUEMA_DIAGNOSTICO, complete: completeJSON });
+        d = await pedirJSON({ system: SISTEMA_DIAGNOSTICO, contenido: `${contenidoDiagnostico(r, base, previo)}\n\n<error_de_tu_propuesta>${e.message} Copia «buscar» literalmente del documento.</error_de_tu_propuesta>`, schema: ESQUEMA_DIAGNOSTICO, complete: completeJSON, onUsage: registrar(db, id, 'reporte') });
         if (d.clasificacion !== 'cambiar' || !d.cambios?.length) throw new Error('No se ha podido preparar un cambio que encaje en las instrucciones.');
         nuevo = docs.aplicarCambios(base[d.documento], d.cambios); // si vuelve a fallar, el error se guarda en el reporte
       }
@@ -161,7 +170,7 @@ export async function analizar(db, id, { complete, completeJSON } = {}) {
       // Comprobación
       const despues = await repetir(r, { ...base, [d.documento]: nuevo }, { complete, catalogo: db });
       const juicio = await pedirJSON({
-        system: SISTEMA_JUEZ, schema: ESQUEMA_JUEZ, complete: completeJSON,
+        system: SISTEMA_JUEZ, schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: registrar(db, id, 'reporte'),
         contenido: `<conversacion>\n${conversacionTexto((r.contexto.mensajes || []).slice(0, -1))}\n</conversacion>\n<reporte>\nQué falló: ${r.que_fallo}\n${r.que_esperaba ? `Qué esperaban: ${r.que_esperaba}\n` : ''}${r.texto_exacto ? `Texto exacto: «${r.texto_exacto}»\n` : ''}${r.respuesta_usuario ? `Aclaración: ${r.respuesta_usuario}\n` : ''}</reporte>\n<respuesta_reportada>\n${r.respuesta_ia || ''}\n</respuesta_reportada>\n<respuesta_nueva>\n${despues || '(no envía nada)'}\n</respuesta_nueva>`,
       });
       const comprobacion = { antes: r.respuesta_ia || '', despues, arreglado: Boolean(juicio.arreglado && !juicio.problemas_nuevos), motivo: juicio.motivo, problemas_nuevos: juicio.problemas_nuevos, intentos: intento };

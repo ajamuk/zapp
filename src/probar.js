@@ -25,6 +25,7 @@ export class GhlCaptura {
   constructor() { this.salida = []; }
   async sendMessage({ texto }) { this.salida.push(texto); return { messageId: null }; }
   async sendTemplate({ variables }) { this.salida.push(`[plantilla] ${variables[0]}`); return {}; }
+  async enviarAdjunto({ url }) { this.salida.push(`[GHL] adjunto: ${url}`); return { messageId: null }; }
   async enviarPorPlantilla({ texto }) { this.salida.push(`[plantilla de WhatsApp] ${texto}`); return { messageId: null }; }
   async addTags(_, t) { this.salida.push(`[GHL] etiquetas: ${t.join(', ')}`); }
   async removeTags(_, t) { this.salida.push(`[GHL] quita etiquetas: ${t.join(', ')}`); }

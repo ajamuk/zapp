@@ -4,6 +4,7 @@ import { knowledge } from './knowledge.js';
 import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
+import * as recursosMod from './recursos.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
@@ -147,6 +148,7 @@ export async function procesarSeguimientos(setter) {
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null);
       repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.live ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
+      if (regla.recursoId && !plantilla) { const rec = recursosMod.obtener(setter.catalogo, regla.recursoId); if (rec?.activo) await setter.enviarRecursos(conv, [rec]); }
       if (regla.ponerEtiqueta) await setter.safe(() => setter.etiquetas?.poner(conv.id, regla.ponerEtiqueta, 'regla'));
     } catch (e) {
       repo.finishScheduled(s.id, 'error', e.message);

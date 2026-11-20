@@ -169,6 +169,50 @@ CREATE TABLE IF NOT EXISTS reportes (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS alertas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clave TEXT NOT NULL,              -- un problema concreto (se agrupan las repeticiones)
+  tipo TEXT NOT NULL,               -- ghl | aimharder | ia | cola | seguimientos | medios | servidor | …
+  nivel TEXT NOT NULL DEFAULT 'error', -- error | aviso
+  titulo TEXT NOT NULL,
+  detalle TEXT,
+  veces INTEGER NOT NULL DEFAULT 1,
+  primera TEXT NOT NULL DEFAULT (datetime('now')),
+  ultima TEXT NOT NULL DEFAULT (datetime('now')),
+  resuelta_at TEXT,
+  resolucion TEXT
+);
+CREATE INDEX IF NOT EXISTS alertas_abiertas ON alertas(clave, resuelta_at);
+CREATE TABLE IF NOT EXISTS recursos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  descripcion TEXT NOT NULL,        -- cuándo enviarlo (lo lee Sofía)
+  tipo TEXT NOT NULL,               -- imagen | video | documento | audio
+  media_ruta TEXT NOT NULL,
+  mime TEXT,
+  tamano INTEGER,
+  token TEXT NOT NULL UNIQUE,       -- para la URL pública /r/<token>
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS meta_eventos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,           -- chat:evento (una vez por chat y evento)
+  evento TEXT NOT NULL,
+  valor REAL,
+  moneda TEXT,
+  estado TEXT NOT NULL,             -- enviado | simulado | sin_configurar | error
+  respuesta TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS actividad (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL DEFAULT (datetime('now')),
+  quien TEXT NOT NULL,
+  accion TEXT NOT NULL,
+  ruta TEXT
+);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON
@@ -196,6 +240,7 @@ const COLUMNAS_NUEVAS = {
     simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
     retomar: 'TEXT',              // JSON: { fecha, motivo, at } cuando el lead lo deja para más adelante
     prueba_fecha: 'TEXT',         // instante de la clase de prueba pedida (para los recordatorios)
+    prompt_v: 'INTEGER',          // versión del prompt con la que Sofía empezó este chat (rendimiento por versión)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -205,6 +250,9 @@ const COLUMNAS_NUEVAS = {
     media_error: 'TEXT',
   },
   conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
+  reglas_seguimiento: { recurso_id: 'INTEGER' },
+  documentos: { resumen: 'TEXT', resumen_negocio_v: 'INTEGER' }, // resumen legible del prompt (Mi Setter IA)
+  ai_runs: { prompt_v: 'INTEGER', negocio_v: 'INTEGER' },  // archivo que se adjunta al enviarlo
   scheduled: {
     tipo: 'TEXT',                  // silencio | etiqueta | cita | largo-plazo | manual | lanzamiento
     texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
@@ -284,9 +332,9 @@ export function repo(db) {
     finishScheduled: (id, estado, detalle = null) =>
       db.prepare('UPDATE scheduled SET estado = ?, detalle = ? WHERE id = ?').run(estado, detalle, id),
     logRun: (r) =>
-      db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error)
-        VALUES (@conversation_id, @motivo, @modelo, @tokens_in, @tokens_cache_read, @tokens_cache_write, @tokens_out, @ms, @error)`)
-        .run({ tokens_in: 0, tokens_cache_read: 0, tokens_cache_write: 0, tokens_out: 0, ms: 0, error: null, ...r }),
+      db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error, prompt_v, negocio_v)
+        VALUES (@conversation_id, @motivo, @modelo, @tokens_in, @tokens_cache_read, @tokens_cache_write, @tokens_out, @ms, @error, @prompt_v, @negocio_v)`)
+        .run({ conversation_id: null, tokens_in: 0, tokens_cache_read: 0, tokens_cache_write: 0, tokens_out: 0, ms: 0, error: null, prompt_v: null, negocio_v: null, ...r }),
     reemplazarSocios: db.transaction((sede, filas) => {
       db.prepare('DELETE FROM socios WHERE sede = ?').run(sede);
       const ins = db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)');

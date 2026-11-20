@@ -223,3 +223,111 @@ export function seguimientos(db) {
   }));
   return { reglas, proximos, lanzamientos };
 }
+
+/**
+ * Rendimiento por versión del prompt: de los leads cuyo chat empezó con cada versión, cuántos contestaron a Sofía,
+ * pidieron clase de prueba, dejaron el alta (hecha o para el equipo), fueron derivados o lo dejaron para más adelante.
+ */
+export function rendimiento(db, dias = 90) {
+  const filas = db.prepare(`SELECT c.prompt_v v, count(*) chats,
+      sum(EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead'
+        AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia'))) contestan,
+      sum(c.prueba_reservada = 1) prueba, sum(IFNULL(c.alta_estado, '') IN ('preparada', 'pendiente')) alta, sum(c.derivado = 1) derivados,
+      sum(c.retomar IS NOT NULL) mas_adelante,
+      min(c.created_at) desde, max(c.created_at) hasta
+    FROM conversations c WHERE c.prompt_v IS NOT NULL AND c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio'
+      AND datetime(c.created_at) >= datetime('now', ?) GROUP BY c.prompt_v ORDER BY c.prompt_v DESC`).all(`-${Math.max(1, Math.min(365, Number(dias) || 90))} days`);
+  const notas = Object.fromEntries(db.prepare("SELECT version, nota FROM documentos WHERE doc = 'prompt'").all().map((d) => [d.version, d.nota]));
+  return filas.map((f) => ({ ...f, nota: notas[f.v] || '', errores: db.prepare("SELECT count(*) n FROM ai_runs WHERE prompt_v = ? AND error IS NOT NULL").get(f.v).n }));
+}
+
+// ---------- Estadísticas ----------
+const DIAS_SEM = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+const enMadrid = (iso) => {
+  const d = new Date(/Z$|T/.test(iso) ? iso : `${iso.replace(' ', 'T')}Z`);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d).map((x) => [x.type, x.value]));
+  return { dia: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(p.weekday), hora: Number(p.hour), fecha: `${p.year}-${p.month}-${p.day}` };
+};
+
+/**
+ * Estadísticas de los chats nuevos (leads, sin socios) en los últimos `dias`: por día y canal, mapa de cuándo
+ * entran (día de la semana × hora), embudo, por canal y sede, y etiquetas más puestas.
+ */
+export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
+  const d = Math.max(1, Math.min(365, Number(dias) || 30));
+  const filtro = [PRUEBAS, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
+  const p = {};
+  if (sede) { filtro.push(sede === 'sin_sede' ? 'c.sede IS NULL' : 'c.sede = @sede'); p.sede = sede; }
+  if (canal) { filtro.push('c.channel = @canal'); p.canal = canal; }
+  const chats = db.prepare(`SELECT c.id, c.created_at, c.channel, c.sede, c.fase, c.prueba_reservada, c.alta_estado, c.derivado, c.retomar,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'ia') atendido,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead' AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia')) contesta
+    FROM conversations c WHERE ${filtro.join(' AND ')}`).all(p);
+  const porDia = {}; const mapa = Array.from({ length: 7 }, () => Array(24).fill(0));
+  for (const c of chats) {
+    const t = enMadrid(c.created_at);
+    porDia[t.fecha] ??= { whatsapp: 0, instagram: 0 };
+    porDia[t.fecha][c.channel] = (porDia[t.fecha][c.channel] || 0) + 1;
+    mapa[t.dia][t.hora]++;
+  }
+  const ORDEN = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
+  const llego = (c, f) => ORDEN.indexOf(c.fase) >= ORDEN.indexOf(f) || c.prueba_reservada || c.alta_estado;
+  const embudo = [
+    ['Chats nuevos', chats.length], ['Sofía contestó', chats.filter((c) => c.atendido).length], ['El lead siguió hablando', chats.filter((c) => c.contesta).length],
+    ['Llegó a presentación', chats.filter((c) => llego(c, 'f3 presentación')).length], ['Llegó a cierre', chats.filter((c) => llego(c, 'f5 cierre')).length],
+    ['Pidió clase de prueba', chats.filter((c) => c.prueba_reservada).length], ['Alta (hecha o para el equipo)', chats.filter((c) => ['preparada', 'pendiente'].includes(c.alta_estado)).length],
+  ];
+  const grupo = (k) => Object.values(chats.reduce((o, c) => { const g = c[k] || 'sin_' + k; (o[g] ??= { grupo: g, chats: 0, prueba: 0, alta: 0, derivados: 0, mas_adelante: 0 }); const x = o[g]; x.chats++; x.prueba += c.prueba_reservada ? 1 : 0; x.alta += ['preparada', 'pendiente'].includes(c.alta_estado) ? 1 : 0; x.derivados += c.derivado ? 1 : 0; x.mas_adelante += c.retomar ? 1 : 0; return o; }, {})).sort((a, b) => b.chats - a.chats);
+  const etiquetas = chats.length ? db.prepare(`SELECT e.nombre, e.color, count(*) n FROM conv_etiquetas ce JOIN etiquetas e ON e.id = ce.etiqueta_id
+    WHERE ce.conversation_id IN (${chats.map(() => '?').join(',')}) GROUP BY e.id ORDER BY n DESC LIMIT 12`).all(...chats.map((c) => c.id)) : [];
+  return { dias: d, total: chats.length, porDia: Object.entries(porDia).sort().map(([fecha, v]) => ({ fecha, ...v })), mapa, diasSemana: DIAS_SEM, embudo, porCanal: grupo('channel'), porSede: grupo('sede'), etiquetas };
+}
+
+// ---------- Consumo de la IA ----------
+// Precios por millón de tokens en dólares (la API cobra en USD): entrada, salida, lectura de caché, escritura de caché
+export const PRECIOS = {
+  'claude-sonnet-5-5': [2, 10, 0.10, 2.5], 'claude-opus-5-5': [4, 20, 0.20, 5], 'claude-haiku-5-5': [0.10, 0.50, 0.01, 0.125],
+  'claude-sonnet-5': [2, 10, 0.20, 2.5], 'claude-opus-5': [5, 25, 0.50, 6.25], 'claude-fable-5-2': [8, 40, 0.20, 10],
+};
+const MOTIVOS = { 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
+
+export function costeRun(r) {
+  const p = PRECIOS[r.modelo] || PRECIOS['claude-sonnet-5-5'];
+  return ((r.tokens_in || 0) * p[0] + (r.tokens_out || 0) * p[1] + (r.tokens_cache_read || 0) * p[2] + (r.tokens_cache_write || 0) * p[3]) / 1e6;
+}
+
+/** Consumo por mes y por para qué se usó (respuestas, seguimientos, reportes…), en dólares y euros aproximados. */
+export function consumo(db, { meses = 6, eurPorUsd = Number(process.env.EUR_POR_USD) || 0.92 } = {}) {
+  const runs = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, motivo, modelo, conversation_id, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write
+    FROM ai_runs WHERE datetime(created_at) >= datetime('now', 'start of month', ?)`).all(`-${Math.max(0, Math.min(24, Number(meses) || 6) - 1)} months`);
+  const out = {};
+  for (const r of runs) {
+    const pruebas = String(r.conversation_id || '').startsWith('prueba-');
+    const motivo = pruebas ? 'Probar IA' : MOTIVOS[r.motivo] || r.motivo || 'Otros';
+    const m = (out[r.mes] ??= { mes: r.mes, usd: 0, llamadas: 0, motivos: {} });
+    const c = costeRun(r);
+    m.usd += c; m.llamadas++;
+    (m.motivos[motivo] ??= { usd: 0, llamadas: 0 }); m.motivos[motivo].usd += c; m.motivos[motivo].llamadas++;
+  }
+  const lista = Object.values(out).sort((a, b) => b.mes.localeCompare(a.mes)).map((m) => ({ ...m, eur: m.usd * eurPorUsd, motivos: Object.entries(m.motivos).map(([k, v]) => ({ motivo: k, ...v, eur: v.usd * eurPorUsd })).sort((a, b) => b.usd - a.usd) }));
+  const chatsMes = Object.fromEntries(db.prepare(`SELECT strftime('%Y-%m', created_at) mes, count(*) n FROM conversations WHERE id NOT LIKE 'prueba-%' GROUP BY mes`).all().map((x) => [x.mes, x.n]));
+  return { eurPorUsd, meses: lista.map((m) => ({ ...m, chats: chatsMes[m.mes] || 0, eurPorChat: chatsMes[m.mes] ? (m.usd * eurPorUsd) / chatsMes[m.mes] : null })) };
+}
+
+// ---------- Exportar ----------
+const celda = (v) => { const t = v == null ? '' : String(v).replace(/\r?\n/g, ' '); return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+const csv = (cab, filas) => `\uFEFF${[cab, ...filas].map((f) => f.map(celda).join(';')).join('\r\n')}\r\n`; // BOM + «;» para que Excel en español lo abra bien
+
+/** CSV de los chats que cumplen los criterios: uno por fila, o todos sus mensajes (formato «mensajes»). */
+export function exportar(db, { criterios, q = '', formato = 'chats' } = {}) {
+  const chats = conversaciones(db, { criterios: criterios || {}, q, limite: 5000 });
+  if (formato === 'mensajes') {
+    const filas = [];
+    const st = db.prepare("SELECT autor, texto, adjunto, transcripcion, enviado, created_at FROM messages WHERE conversation_id = ? AND autor != 'sistema' ORDER BY id");
+    for (const c of chats) for (const m of st.all(c.id)) filas.push([c.id, c.nombre, c.telefono, c.channel, m.created_at, { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' }[m.autor] || m.autor, m.texto, m.transcripcion || '', m.adjunto || '', m.enviado ? 'sí' : 'borrador']);
+    return csv(['chat', 'nombre', 'teléfono', 'canal', 'fecha', 'quién', 'texto', 'transcripción', 'adjunto', 'enviado'], filas);
+  }
+  return csv(['chat', 'nombre', 'teléfono', 'canal', 'sede', 'tipo', 'fase', 'Sofía', 'etiquetas', 'clase de prueba', 'alta', 'lo deja para', 'creado', 'último mensaje', 'último texto', 'lo que ha entendido Sofía'],
+    chats.map((c) => [c.id, c.nombre, c.telefono, c.channel, c.sede, c.tipo, c.fase, c.derivado ? 'derivado' : c.ai_paused ? `pausada (${c.pause_reason || ''})` : 'activa',
+      c.etiquetas.map((e) => e.nombre).join(', '), c.prueba_reservada ? 'sí' : '', c.alta_estado || '', c.retomar ? JSON.parse(c.retomar).fecha : '', c.created_at, c.ultimo_at, c.ultimo_texto, c.analisis]));
+}

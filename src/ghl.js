@@ -67,6 +67,13 @@ export class Ghl {
     return this.req('POST', '/conversations/messages', { type, contactId, message: texto });
   }
 
+  /** Archivo (imagen, vídeo, PDF…) por WhatsApp o Instagram. `url` debe ser pública (GHL la descarga). */
+  enviarAdjunto({ contactId, canal, url, texto = '' }) {
+    const type = CANAL_A_TIPO[canal];
+    if (!type) throw new Error(`Canal no soportado: ${canal}`);
+    return this.req('POST', '/conversations/messages', { type, contactId, attachments: [url], ...(texto ? { message: texto } : {}) });
+  }
+
   /**
    * Plantilla de WhatsApp (fuera de la ventana de 24 h). La API de GHL no admite variables de plantilla, así que
    * se hace con un workflow de GHL: se guarda el texto en el campo «Sofía · Texto de seguimiento» del contacto y

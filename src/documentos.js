@@ -74,3 +74,13 @@ export function aplicarCambios(texto, cambios = []) {
   }
   return t;
 }
+
+/** Números de versión que usa Sofía ahora (producción o los borradores indicados). */
+export function versionesActivas(db, borradores = {}) {
+  const out = {};
+  for (const doc of Object.keys(DOCS)) {
+    const b = borradores[doc] ? obtener(db, borradores[doc]) : null;
+    out[doc] = (b && b.doc === doc ? b : enProduccion(db, doc))?.version ?? null;
+  }
+  return out;
+}

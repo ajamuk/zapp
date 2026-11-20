@@ -12,6 +12,8 @@
 //   solo_si: ids → solo si el chat ya lleva alguna de esas etiquetas
 //   nunca_si: ids → nunca si lleva alguna de esas
 
+import { validarAccion as validarMeta, enviarEvento } from './meta.js';
+
 export const COLORES = ['#386b36', '#2f5a77', '#805003', '#a13030', '#6a4882', '#0f766e', '#be185d', '#4b5563'];
 export const MEDIA = ['imagen', 'audio', 'video', 'documento'];
 const ORIGENES = ['manual', 'regla', 'ia', 'ghl'];
@@ -57,6 +59,7 @@ export function validar(datos = {}, db, id = null) {
     pausar_ia: Boolean(a.pausar_ia), reanudar_ia: Boolean(a.reanudar_ia) && !a.pausar_ia,
     forzar_respuesta: Boolean(a.forzar_respuesta) && !a.pausar_ia, derivar: Boolean(a.derivar),
     avisar: Boolean(a.avisar), ghl: true, // siempre sincronizada con GHL
+    meta: validarMeta(a.meta),
   };
   return { nombre, color, criterio_ia: criterio, reglas, solo_si: solo, nunca_si: nunca, acciones, activa: datos.activa !== false };
 }
@@ -153,9 +156,9 @@ export function bloqueo(etq, idsActuales) {
  * - now(): fecha actual (para chats de prueba con hora simulada)
  */
 export class Etiquetador {
-  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date(), alPoner = null, alQuitar = null }) {
+  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date(), alPoner = null, alQuitar = null, enviarMeta = null }) {
     // alPoner/alQuitar(convId, etiquetaId): para los seguimientos que dispara una etiqueta
-    Object.assign(this, { repo, catalogo, ghl, avisar, now, alPoner, alQuitar });
+    Object.assign(this, { repo, catalogo, ghl, avisar, now, alPoner, alQuitar, enviarMeta });
   }
 
   get db() { return this.repo.db; }
@@ -209,6 +212,7 @@ export class Etiquetador {
     }
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
     if (origen !== 'ghl') await this.subirAGhl(conv, etq);
+    if (a.meta?.evento) await this.safe(() => (this.enviarMeta || enviarEvento)(this.db, this.repo.getConv(conv.id) || conv, a.meta));
     if (a.avisar) {
       const quien = { manual: 'a mano', regla: 'por regla', ia: 'por Sofía' }[origen] || origen;
       await this.safe(() => this.avisar?.(`Etiqueta «${etq.nombre}» (${quien}) en ${conv.nombre || conv.telefono || 'un chat'}${conv.sede ? ` · ${conv.sede}` : ''}`, { sede: conv.sede }));

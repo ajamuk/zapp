@@ -7,10 +7,17 @@ import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita } from './followups.js';
-import { textosActivos } from './documentos.js';
+import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
+import * as recursos from './recursos.js';
 
 const TAGS = knowledge.etiquetas;
+/** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
+export function contienePalabra(texto, lista = []) {
+  const n = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const t = ` ${n(texto).replace(/[^a-z0-9#ñ@]+/g, ' ')} `;
+  return lista.find((p) => p && t.includes(` ${n(p).replace(/[^a-z0-9#ñ@]+/g, ' ').trim()} `)) || null;
+}
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
@@ -47,14 +54,27 @@ export class Setter {
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) });
     if (!ins) return { ignorado: 'duplicado' };
     await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) }));
-    // Si una persona del equipo escribe, la IA se aparta de esa conversación.
-    this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: 'humano escribió', respond_at: null });
+    const ajustes = leerAjustes(this.repo);
+    // Palabra para reanudar (p. ej. «#sofia»): Sofía vuelve a contestar en este chat
+    if (contienePalabra(evt.texto, ajustes.palabrasReanudar)) {
+      this.repo.updateConv(conv.id, { ai_paused: 0, derivado: 0, pause_reason: null });
+      return { reanudada: true };
+    }
+    // Si una persona del equipo escribe (o usa una palabra para parar), la IA se aparta de esa conversación.
+    const parar = contienePalabra(evt.texto, ajustes.palabrasParar);
+    if (!ajustes.pausarSiEquipoEscribe && !parar) return { registrado: true };
+    this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: parar ? `el equipo escribió «${parar}»` : 'humano escribió', respond_at: null });
     this.repo.cancelScheduled(conv.id, 'humano escribió');
     return { pausada: true };
   }
 
   async onInbound(evt) {
+    const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
+    const ajustesC = leerAjustes(this.repo);
+    if (nuevo && ajustesC.canalesPausa[conv.channel]) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `los chats de ${conv.channel} empiezan en pausa` });
+    const pararLead = contienePalabra(evt.texto, ajustesC.palabrasParar);
+    if (pararLead) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `el lead escribió «${pararLead}»`, respond_at: null });
     let adjunto = tipoAdjunto(evt.adjuntos);
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto });
     if (!ins) return { ignorado: 'duplicado' };
@@ -148,6 +168,8 @@ export class Setter {
     return systemBlocks(t.prompt ?? knowledge.prompt, `${t.negocio ?? knowledge.negocio.split('\n\n## Festivos')[0]}\n\n${textoFestivos()}`, this.contexto(conv, extraContexto));
   }
 
+  versiones() { const v = versionesActivas(this.catalogo, this.borradores || {}); return { prompt_v: v.prompt, negocio_v: v.negocio }; }
+
   contexto(conv, extra = '') {
     const hoy = hoyLocal(this.now());
     return [
@@ -160,6 +182,7 @@ export class Setter {
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       this.etiquetas?.contextoIA(conv.id) || '',
+      recursos.contextoIA(this.catalogo),
       extra,
     ].filter(Boolean).join('\n');
   }
@@ -215,7 +238,7 @@ export class Setter {
         ejecutarHerramienta: (n, i) => this.herramienta(conv, n, i, efectos),
         onHerramienta: (h) => efectos.herramientas.push(h),
         onUsage: (u, ms) => this.repo.logRun({
-          conversation_id: convId, motivo, modelo: config.ai.model, ms,
+          conversation_id: convId, motivo, modelo: config.ai.model, ms, ...this.versiones(),
           tokens_in: u.input_tokens || 0, tokens_out: u.output_tokens || 0,
           tokens_cache_read: u.cache_read_input_tokens || 0, tokens_cache_write: u.cache_creation_input_tokens || 0,
         }),
@@ -226,10 +249,12 @@ export class Setter {
       throw e;
     }
 
+    if (conv.prompt_v == null) this.repo.updateConv(convId, { prompt_v: this.versiones().prompt_v });
     await this.aplicarRespuesta(conv, respuesta, efectos);
     let mensajes = (respuesta.mensajes || []).map((m) => m.trim()).filter(Boolean);
     if (plantilla) mensajes = mensajes.slice(0, 1);
     if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
+    if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
     if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
     // Seguimientos (también en modo prueba: al vencer quedan como borrador). Si lo deja para más adelante,
     // en vez de los cortos se programa el de largo plazo.
@@ -296,6 +321,25 @@ export class Setter {
     }
     this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
     return ids;
+  }
+
+  /** Envía archivos de Recursos. En modo prueba, solo una nota en GHL y un borrador en el chat. */
+  async enviarRecursos(conv, lista) {
+    for (const r of lista) {
+      const msg = { conversation_id: conv.id, autor: 'ia', texto: `[${r.tipo}: ${r.nombre}]`, adjunto: r.tipo, media_ruta: r.media_ruta, media_mime: r.mime };
+      if (!this.live) {
+        await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado] adjuntaría el archivo «${r.nombre}»`));
+        this.repo.addMessage({ ...msg, enviado: 0 });
+        continue;
+      }
+      try {
+        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r) });
+        this.repo.addMessage({ ...msg, external_id: out?.messageId || null });
+      } catch (e) {
+        console.error('[recursos]', e.message);
+        await this.avisar?.(`Sofía quiso enviar «${r.nombre}» y GHL no lo aceptó: ${e.message}`, { sede: conv.sede });
+      }
+    }
   }
 
   /** Aviso del alta al lead, y comprobación de que el mensaje ha salido al chat. */
@@ -382,6 +426,13 @@ export class Setter {
         programarCita(this.repo, this.catalogo, conv.id, input.fecha_hora, this.now()); // recordatorios antes de la clase
         await this.avisar?.(`Prueba en Parla pedida: ${input.modalidad} · ${input.fecha_hora}. Confirmar en el calendario y avisar al lead.`, { sede: 'parla' });
         return { ok: true, estado: 'solicitada', nota: 'Dile que se la dejas apuntada y que el equipo se la confirma por aquí. Es sin coste.' };
+      }
+      case 'enviar_recurso': {
+        const r = recursos.porNombre(this.catalogo, input.nombre);
+        if (!r) return { ok: false, error: 'No hay ningún archivo con ese nombre en la lista.' };
+        if ((efectos.recursos ||= []).some((x) => x.id === r.id)) return { ok: true, nota: 'Ya lo vas a enviar en este turno.' };
+        efectos.recursos.push(r);
+        return { ok: true, nota: 'Se enviará justo después de tus mensajes. No pegues enlaces ni lo describas de más.' };
       }
       case 'derivar_a_equipo': {
         efectos.derivado = true;

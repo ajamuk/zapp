@@ -6,7 +6,20 @@ export function horaLocal(date = new Date(), tz = config.tz) {
 }
 
 /** ¿Está la IA en su franja de respuesta? inicio=8, fin=0 → de 8:00 a 23:59. */
-export function dentroDeHorario(date = new Date(), { inicio = config.ai.horaInicio, fin = config.ai.horaFin, tz = config.tz } = {}) {
+const DIAS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+/** Día de la semana local (lunes…domingo, sin tildes). */
+export function diaLocal(date = new Date(), tz = config.tz) {
+  const d = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: tz }).format(date);
+  return DIAS[['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(d)];
+}
+
+/** ¿Está la IA en su franja de respuesta? Por día si hay horario por día (null = ese día no contesta). */
+export function dentroDeHorario(date = new Date(), { inicio = config.ai.horaInicio, fin = config.ai.horaFin, tz = config.tz, dias = config.ai.horarioDias || {} } = {}) {
+  const dia = diaLocal(date, tz);
+  if (dia in dias) {
+    if (dias[dia] === null) return false;
+    ({ desde: inicio, hasta: fin } = dias[dia]);
+  }
   const h = horaLocal(date, tz);
   const finEf = fin === 0 ? 24 : fin;
   return inicio < finEf ? h >= inicio && h < finEf : h >= inicio || h < finEf;
@@ -15,7 +28,7 @@ export function dentroDeHorario(date = new Date(), { inicio = config.ai.horaInic
 /** Siguiente instante en que la IA puede contestar (para guardar mensajes fuera de horario). */
 export function siguienteApertura(date = new Date(), opts = {}) {
   const d = new Date(date);
-  for (let i = 0; i < 48 * 4; i++) {
+  for (let i = 0; i < 8 * 24 * 4; i++) { // hasta una semana (por si hay días cerrados)
     if (dentroDeHorario(d, opts)) return d;
     d.setMinutes(d.getMinutes() + 15, 0, 0);
   }

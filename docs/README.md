@@ -21,3 +21,22 @@ Sofía escucha las notas de voz y ve las imágenes que manda el lead:
 - **Imágenes**: van al modelo como imagen (las 3 últimas del chat; las anteriores quedan como «[imagen enviada antes]»). Las grandes o en formatos raros (HEIC…) se convierten con ffmpeg a JPEG de 1568 px.
 - Las reglas de etiquetas de texto también se aplican a la transcripción.
 - En el panel, los chats muestran el audio con su transcripción y la imagen. En Probar IA se puede adjuntar una imagen o audio (📎) o grabar una nota de voz (🎙️).
+
+## Más secciones del panel
+
+- **Resumen → alertas**: cada 10 minutos se comprueba GHL (token), los tokens de AimHarder, errores de la IA, respuestas
+  atascadas, seguimientos con error, audios sin transcribir, que lleguen mensajes de GHL y el disco. Una alerta por
+  problema, aviso por Telegram la primera vez y se cierra sola cuando vuelve a ir bien (`src/alertas.js`).
+- **Estadísticas**: chats nuevos por día y canal, mapa de cuándo entran (día × hora), embudo, por canal y sede,
+  etiquetas más puestas y **consumo de la IA** por mes y uso (en dólares de la API y € aproximados, `EUR_POR_USD`).
+- **Recursos**: archivos que Sofía puede enviar con la herramienta `enviar_recurso` (y que un seguimiento puede
+  adjuntar). Se publican en `PUBLIC_URL/r/<código>` (nginx deja pasar solo GET) para que GHL los descargue.
+- **Etiquetas → Avisar a Meta**: evento de la API de Conversiones al ponerse la etiqueta (`META_PIXEL_ID`,
+  `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`). Teléfono cifrado con SHA-256, una vez por chat y evento; en modo prueba
+  no se envía. Lista de eventos al final de Etiquetas.
+- **Reportes → Instrucciones**: «Mi Setter IA» (resumen legible por apartados) y rendimiento por versión del prompt
+  (cada chat cuenta en la versión con la que empezó: siguen hablando, prueba, alta, derivados).
+- **Chats**: ⚡ «Responder ya» y exportar a CSV (chats o chats con mensajes, con los filtros aplicados).
+- **Ajustes**: si escribe el equipo, Sofía se aparta (se puede apagar); palabras que la paran (lead o equipo) y que la
+  reanudan (equipo); canales cuyos chats nuevos empiezan en pausa; horario distinto por día. **Registro de actividad**:
+  quién cambió qué (usuario de MetroTools por la cabecera `X-CFMPO-User`).

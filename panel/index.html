@@ -290,6 +290,31 @@
   .texto-doc { white-space: pre-wrap; font: 12.5px/1.5 ui-monospace, Menlo, monospace; background: var(--panel2); padding: 10px; border-radius: 8px; max-height: 500px; overflow: auto; }
   .editor-doc { display: grid; gap: 8px; margin-top: 10px; }
   .editor-doc textarea { width: 100%; font: 13px/1.5 ui-monospace, Menlo, monospace; border: 1px solid #becdb8; border-radius: 7px; padding: 8px 10px; }
+  .alertas { background: #fdf0f0; border: 1px solid #e8c2c2; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
+  .alertas h3 { margin: 0 0 8px !important; color: var(--red); }
+  .alerta { display: flex; justify-content: space-between; gap: 10px; align-items: start; padding: 8px 0; border-top: 1px solid #f0d6d6; }
+  .alerta.aviso b { color: var(--amber); }
+  .estado-sis { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .modo a.chip { text-decoration: none; }
+  .ajuste-det { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 8px; }
+  .ajuste-det summary { cursor: pointer; font-weight: 600; }
+  .dias-h { display: grid; gap: 6px; margin-top: 10px; }
+  .dia-h { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; } .dia-h b { width: 90px; }
+  .mapa { display: grid; grid-template-columns: 40px repeat(24, minmax(18px, 1fr)); gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; overflow-x: auto; font-size: 11px; }
+  .mh, .md { color: var(--muted); text-align: center; } .md { text-align: left; }
+  .mc { aspect-ratio: 1; min-height: 18px; border-radius: 3px; background: color-mix(in srgb, var(--green) calc(var(--a) * 100%), #eef2ec); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .embudo-h { display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+  .eh { display: grid; grid-template-columns: 210px 1fr 50px 170px; gap: 10px; align-items: center; }
+  .eh-barra { background: #eef2ec; border-radius: 4px; height: 16px; overflow: hidden; } .eh-barra i { display: block; height: 100%; background: var(--green); }
+  @media (max-width: 760px) { .eh { grid-template-columns: 1fr 50px; } .eh-barra, .eh .ayuda { grid-column: 1 / -1; } }
+  .rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .rec { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; } .rec.inactiva { opacity: .6; }
+  .rec-img { width: 100%; height: 150px; object-fit: cover; background: var(--panel2); display: block; }
+  .rec-doc { height: 150px; display: flex; align-items: center; justify-content: center; background: var(--panel2); font-size: 20px; }
+  .rec-body { padding: 10px 12px; display: grid; gap: 4px; } .rec-body p { margin: 0; }
+  .resumen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .res-ap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; } .res-ap ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+  #bexp { min-height: 42px; }
 </style>
 </head>
 <body>
@@ -341,7 +366,7 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 async function iniciar() {
   estado.seccion = location.hash.slice(1).split('/')[0] || 'resumen';
@@ -358,6 +383,7 @@ async function iniciar() {
     <h1>ZAPP · Sofía</h1>
     <div class="modo">${i.modo === 'live' ? '<span class="chip verde">Modo real</span>' : '<span class="chip ambar">Modo prueba</span>'}
       ${i.ajustes.ia_activa ? '' : '<span class="chip rojo">IA pausada</span>'}
+      ${i.alertas ? `<a href="#resumen" class="chip rojo" title="Hay problemas que revisar">⚠️ ${i.alertas} alerta${i.alertas === 1 ? '' : 's'}</a>` : ''}
       ${integrado ? '' : '<button id="bsalir">Salir</button>'}</div>
     </header>
     <nav class="secciones" aria-label="Secciones de ZAPP">
@@ -372,7 +398,7 @@ window.addEventListener('hashchange', () => {
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
   if (id !== 'etiquetas') estado.editEtq = null;
   if (id !== 'seguimientos') { estado.editRegla = null; estado.nuevoLanz = false; }
-  if (id === 'reportes' && estado.seccion === 'reportes') { pintar(); return; }
+  if (id && id === estado.seccion && ['reportes', 'ajustes'].includes(id)) { pintar(); return; }
   estado.seccion = id || 'resumen';
   pintar();
 });
@@ -384,7 +410,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, chats, etiquetas, altas, seguimientos, probar, reportes, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -397,8 +423,9 @@ const tarjeta = (n, l, color = '') => `<div class="tarjeta"><div class="n" style
 
 async function resumen() {
   const m = $('#main');
-  m.innerHTML = `<h2>Resumen</h2><div class="filtros">${[[1, 'Hoy'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<button data-d="${d}" class="${estado.dias === d ? 'activo' : ''}">${t}</button>`).join('')}</div><div id="rs" class="vacio">Cargando…</div>`;
+  m.innerHTML = `<h2>Resumen</h2><div id="alertas"></div><div class="filtros">${[[1, 'Hoy'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<button data-d="${d}" class="${estado.dias === d ? 'activo' : ''}">${t}</button>`).join('')}</div><div id="rs" class="vacio">Cargando…</div>`;
   m.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { estado.dias = Number(b.dataset.d); resumen(); });
+  pintarAlertas();
   const r = await api('/panel/resumen?dias=' + estado.dias);
   const info = estado.info;
   const max = Math.max(1, ...r.serie.map((x) => (x.lead || 0) + (x.ia || 0)));
@@ -478,6 +505,19 @@ async function embudo() {
     <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
     Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
     Primer pago = alta pagada después de la clase de prueba.</p>`;
+}
+
+
+// ---------- Alertas del sistema (en Resumen) ----------
+async function pintarAlertas(datos) {
+  const el = $('#alertas'); if (!el) return;
+  const a = datos || await api('/panel/alertas').catch(() => null);
+  if (!a || !$('#alertas')) return;
+  estado.info.alertas = a.abiertas.length;
+  $('#alertas').innerHTML = `${a.abiertas.length ? `<section class="alertas"><h3>⚠️ Problemas que revisar</h3>${a.abiertas.map((x) => `<div class="alerta ${x.nivel}"><div><b>${esc(x.titulo)}</b><div class="ayuda">${esc(x.detalle || '')}</div><div class="ayuda">Desde ${hora(x.primera)}${x.veces > 1 ? ` · comprobado ${x.veces} veces` : ''}</div></div><button class="mini" data-ares="${x.id}">Ya está resuelto</button></div>`).join('')}</section>` : ''}
+    <div class="estado-sis">${a.abiertas.length ? '' : '<span class="chip verde">✓ Todo funciona</span>'} <button class="mini" id="acomp">Comprobar ahora</button>${a.recientes.length ? ` <details><summary class="ayuda">Resueltas estos días (${a.recientes.length})</summary>${a.recientes.map((x) => `<div class="ayuda">${hora(x.resuelta_at)} · ${esc(x.titulo)} · ${esc(x.resolucion || '')}</div>`).join('')}</details>` : ''}</div>`;
+  $('#alertas').querySelectorAll('[data-ares]').forEach((b) => b.onclick = async () => { await api(`/panel/alertas/${b.dataset.ares}/resolver`, { method: 'POST' }); pintarAlertas(); });
+  $('#acomp').onclick = async () => { $('#acomp').disabled = true; $('#acomp').textContent = 'Comprobando…'; const r = await api('/panel/alertas/comprobar', { method: 'POST' }).catch(() => null); pintarAlertas(r ? { abiertas: r.abiertas, recientes: a.recientes } : null); };
 }
 
 const chipsConv = (c) => [
@@ -570,6 +610,7 @@ async function chats() {
       <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
     <div class="barra-filtros">
       <input id="q" type="search" aria-label="Buscar chat o mensaje" placeholder="Buscar nombre, teléfono o mensaje" value="${esc(estado.q)}">
+      <select id="bexp" aria-label="Exportar a CSV"><option value="">Exportar…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select>
       <button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button>
     </div>
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
@@ -582,6 +623,7 @@ async function chats() {
   $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; lista(); }, 300); };
   pintarFiltros();
+  $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
   await lista();
   if (estado.seccion === 'chats' && estado.conv) await abrir(estado.conv);
 }
@@ -686,7 +728,7 @@ async function abrir(id) {
   const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
   $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">Volver a chats</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
       <div class="chips" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipsConv(c)}</div>${c.pause_reason ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.pause_reason)}</div>` : ''}</div>
-      <div>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
+      <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
     <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
@@ -720,6 +762,7 @@ async function abrir(id) {
   const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
   $('#bact') && ($('#bact').onclick = () => accion('reanudar'));
   $('#bpau') && ($('#bpau').onclick = () => accion('pausar'));
+  $('#bfor') && ($('#bfor').onclick = async () => { try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/forzar`, { method: 'POST' }); $('#bfor').textContent = '⚡ Contestará en unos segundos'; $('#bfor').disabled = true; } catch (e) { $('#bfor').textContent = e.message; } });
   $('#addetq') && ($('#addetq').onchange = async (e) => { if (!e.target.value) return; await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas`, { method: 'POST', body: JSON.stringify({ etiqueta: Number(e.target.value) }) }); recargar(); });
   $('#hilo').querySelectorAll('[data-quitar]').forEach((b) => b.onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas/${b.dataset.quitar}`, { method: 'DELETE' }); recargar(); });
 }
@@ -738,6 +781,7 @@ async function etiquetas() {
   const r = await api('/panel/etiquetas');
   if (estado.seccion !== 'etiquetas') return;
   estado.catalogo = r;
+  estado.metaInfo = await api('/panel/meta').catch(() => ({ tipos: [], configurado: false, eventos: [] }));
   if (estado.editEtq) return editorEtiqueta(estado.editEtq === 'nueva' ? null : r.etiquetas.find((e) => e.id === estado.editEtq));
   const m = $('#main');
   m.innerHTML = `<div class="cab-seccion"><h2>Etiquetas</h2><div class="acciones-f"><button id="esync" title="Trae de GHL las etiquetas puestas o quitadas allí y reintenta las pendientes">Sincronizar con GHL</button><button id="eimport">Importar de GHL</button><button class="primario" id="enueva">+ Nueva etiqueta</button></div></div>
@@ -750,10 +794,11 @@ async function etiquetas() {
       ${e.reglas_texto.length ? `<ul class="reglas">${e.reglas_texto.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${!e.criterio_ia && !e.reglas.length ? '<p class="ayuda">Solo a mano</p>' : ''}
       ${condicionesTexto(e, r.etiquetas)}
-      <div class="acc">${ACCIONES.filter(([k]) => e.acciones[k]).map(([, t]) => `<span class="chip">${t}</span>`).join('')}</div>
+      <div class="acc">${ACCIONES.filter(([k]) => e.acciones[k]).map(([, t]) => `<span class="chip">${t}</span>`).join('')}${e.acciones.meta?.evento ? `<span class="chip azul">📣 Meta: ${esc(e.acciones.meta.evento)}${e.acciones.meta.valor != null ? ` · ${e.acciones.meta.valor} €` : ''}</span>` : ''}</div>
       <footer><button data-ed="${e.id}">Editar</button>${e.reglas.some((x) => x.tipo !== 'inactividad') ? `<button data-ap="${e.id}" title="Busca en los chats que ya existen los que cumplen sus reglas">Aplicar a chats de antes</button>` : ''}
         <a href="#chats" data-fil="${e.id}">Ver chats</a></footer></article>`).join('')}</div>`
-      : '<div class="vacio">Todavía no hay etiquetas. Crea la primera: por ejemplo «Interesado en Hyrox» con un criterio para Sofía, o «Lesión» con la regla «si el lead escribe la palabra lesión».</div>'}`;
+      : '<div class="vacio">Todavía no hay etiquetas. Crea la primera: por ejemplo «Interesado en Hyrox» con un criterio para Sofía, o «Lesión» con la regla «si el lead escribe la palabra lesión».</div>'}
+    <h3>Eventos enviados a Meta</h3>${estado.metaInfo.eventos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Chat</th><th>Evento</th><th>Estado</th></tr>${estado.metaInfo.eventos.map((x) => `<tr><td>${hora(x.created_at)}</td><td>${esc(x.nombre || x.conversation_id)}</td><td>${esc(x.evento)}${x.valor != null ? ` · ${x.valor} €` : ''}</td><td><span class="chip ${x.estado === 'enviado' ? 'verde' : x.estado === 'error' ? 'rojo' : 'ambar'}">${esc({ enviado: 'enviado', simulado: 'no enviado (prueba)', sin_configurar: 'sin configurar', error: 'error' }[x.estado] || x.estado)}</span></td></tr>`).join('')}</table></div>` : '<p class="ayuda">Ninguno todavía. Configura «Avisar a Meta» en las etiquetas que quieras (por ejemplo, una de clase de prueba y otra de alta).</p>'}`;
   $('#enueva').onclick = () => { estado.editEtq = 'nueva'; etiquetas(); };
   $('#esync').onclick = async () => {
     const b = $('#esync'); b.disabled = true; b.textContent = 'Sincronizando…';
@@ -798,6 +843,7 @@ function condicionesTexto(e, todas) {
   return [e.solo_si.length ? `<p class="ayuda">Solo si ya lleva ${n(e.solo_si)}</p>` : '', e.nunca_si.length ? `<p class="ayuda">Nunca si lleva ${n(e.nunca_si)}</p>` : ''].join('');
 }
 
+async function cargarMeta() { estado.metaInfo ??= await api('/panel/meta').catch(() => ({ tipos: [], configurado: false, eventos: [] })); return estado.metaInfo; }
 function editorEtiqueta(e) {
   const otras = estado.catalogo.etiquetas.filter((x) => x.id !== e?.id);
   const d = e ? JSON.parse(JSON.stringify(e)) : { nombre: '', color: estado.catalogo.colores[0], criterio_ia: '', reglas: [], solo_si: [], nunca_si: [], acciones: { ghl: true }, activa: true };
@@ -825,6 +871,11 @@ function editorEtiqueta(e) {
       <section><h3>Al ponerse</h3>
         ${ACCIONES.map(([k, t, ayuda]) => `<label class="check"><input type="checkbox" data-acc="${k}" ${d.acciones[k] ? 'checked' : ''}> ${t} <span class="ayuda">${ayuda}</span></label>`).join('')}
       </section>
+      <section><h3>Avisar a Meta <span class="ayuda">(para que los anuncios aprendan qué leads acaban reservando o apuntándose)</span></h3>
+        <div class="fila-f"><label>Evento <select id="emev"><option value="">No avisar</option>${(estado.metaInfo?.tipos || []).map(([v, t]) => `<option value="${v}" ${d.acciones.meta?.evento === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>Valor (€) <input type="number" id="emval" min="0" step="0.01" value="${d.acciones.meta?.valor ?? ''}" style="width:110px"></label>
+          <label class="check"><input type="checkbox" id="emalta" ${d.acciones.meta?.valorAlta ? 'checked' : ''}> Usar el primer recibo del alta</label></div>
+        <p class="ayuda">${estado.metaInfo?.configurado ? 'Conectado con Meta.' : 'Falta configurar el píxel de Meta en el servidor (META_PIXEL_ID y META_CAPI_TOKEN): mientras tanto se apunta pero no se envía.'} En modo prueba nunca se envía. Una vez por chat y evento.</p></section>
       <section><label class="check"><input type="checkbox" id="eact" ${d.activa ? 'checked' : ''}> Activa <span class="ayuda">(si la desactivas, las reglas y Sofía dejan de ponerla)</span></label></section>
       <p class="error" id="eerr" role="alert"></p>
       <div class="acciones-f"><button class="primario">${e ? 'Guardar cambios' : 'Crear etiqueta'}</button><button type="button" id="ecanc">Cancelar</button>
@@ -833,6 +884,7 @@ function editorEtiqueta(e) {
     const leer = () => {
       d.nombre = $('#enom').value; if ($('#ecrit')) d.criterio_ia = $('#ecrit').value;
       m.querySelectorAll('[data-acc]').forEach((c) => d.acciones[c.dataset.acc] = c.checked); d.activa = $('#eact').checked;
+      const ev = $('#emev').value; d.acciones.meta = ev ? { evento: ev, valor: $('#emval').value === '' ? null : Number($('#emval').value), valorAlta: $('#emalta').checked } : null;
       m.querySelectorAll('[data-r]').forEach((el) => { const [i, campo] = el.dataset.r.split('.'); d.reglas[i][campo] = campo === 'horas' ? Number(el.value) : el.value; });
     };
     const re = () => { leer(); pintar(); };
@@ -956,6 +1008,7 @@ async function seguimientos() {
 
 async function editorRegla() {
   const { reglas: todas, etiquetas: etqs } = await api('/panel/reglas');
+  estado.recLista = await api('/panel/recursos').catch(() => []);
   if (estado.seccion !== 'seguimientos') return;
   const original = estado.editRegla.id ? todas.find((r) => r.id === estado.editRegla.id) : null;
   const d = original ? JSON.parse(JSON.stringify(original)) : { nombre: '', tipo: estado.editRegla.nuevo, canales: ['whatsapp', 'instagram'], minutos: estado.editRegla.nuevo === 'cita' ? 180 : estado.editRegla.nuevo === 'largo-plazo' ? 30 * 1440 : 1440, modo: 'ia', instrucciones: '', textoFijo: '', condicion: '', excluir: { clientes: true, pausada: true, calladasHoras: 0 }, plantilla: true, activo: true, etiquetaId: etqs[0]?.id || null, ponerEtiqueta: null, despuesDe: null };
@@ -994,6 +1047,7 @@ async function editorRegla() {
         <label class="check"><input type="checkbox" id="rxcal" ${d.excluir.calladasHoras ? 'checked' : ''}> Solo si lleva <input type="number" id="rxcalh" min="1" max="720" value="${d.excluir.calladasHoras || 24}" style="width:70px"> horas o más sin escribir</label>
       </section>
       <section><h3>Al enviarse</h3>
+        <label class="fila-f">Adjuntar el recurso <select id="rrec"><option value="">Ninguno</option>${(estado.recLista || []).filter((x) => x.activo).map((x) => `<option value="${x.id}" ${d.recursoId === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select> <span class="ayuda">(solo dentro de las 24 h: la plantilla no lleva archivos)</span></label>
         <label class="fila-f">Poner la etiqueta <select id="rpon"><option value="">Ninguna</option>${etqs.map((e) => `<option value="${e.id}" ${d.ponerEtiqueta === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" id="rpla" ${d.plantilla ? 'checked' : ''}> En WhatsApp, si han pasado más de 24 h, enviarlo por plantilla <span class="ayuda">(si no, no sale)</span></label>
         <label class="check"><input type="checkbox" id="ract" ${d.activo ? 'checked' : ''}> Activo</label>
@@ -1007,7 +1061,7 @@ async function editorRegla() {
       d.canales = [...m.querySelectorAll('[data-can]')].filter((x) => x.checked).map((x) => x.dataset.can);
       if ($('#rcondt')) d.condicion = $('#rcondt').value; if ($('#rins')) d.instrucciones = $('#rins').value; if ($('#rfijo')) d.textoFijo = $('#rfijo').value;
       d.excluir = { clientes: $('#rxcli').checked, pausada: $('#rxpau').checked, calladasHoras: $('#rxcal').checked ? Number($('#rxcalh').value) : 0 };
-      d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
+      d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; d.recursoId = $('#rrec').value ? Number($('#rrec').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
     };
     m.querySelectorAll('[name="rtipo"]').forEach((x) => x.onchange = () => { leer(); d.tipo = x.value; pintar(); });
     m.querySelectorAll('[name="rmodo"]').forEach((x) => x.onchange = () => { leer(); d.modo = x.value; pintar(); });
@@ -1186,16 +1240,29 @@ async function fichaReporte(id) {
   if (['analizando', 'recibido'].includes(r.estado)) setTimeout(() => { if (location.hash === `#reportes/${id}`) fichaReporte(id); }, 4000);
 }
 
+const htmlResumen = (r) => `<p class="ayuda">Prompt v${r.version} y base de conocimiento v${r.negocio_version}</p><div class="resumen-grid">${r.apartados.map((a) => `<div class="res-ap"><b>${esc(a.titulo)}</b><ul>${a.puntos.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}</div>`;
 async function instrucciones(abrirId) {
   const datos = await api('/panel/instrucciones');
   if (estado.seccion !== 'reportes') return;
   const m = $('#main');
   m.innerHTML = `<div class="cab-seccion"><h2>Instrucciones de Sofía</h2><a class="boton" href="#reportes">Volver a reportes</a></div>
     <p class="intro">Sofía funciona con dos textos: su <b>prompt</b> (cómo se comporta) y la <b>base de conocimiento</b> (datos del negocio). Cada cambio crea una versión: puedes guardarla como borrador y probarla en Probar IA antes de ponerla en producción, y volver a cualquier versión anterior.</p>
+    <section class="doc"><h3>Mi Setter IA <span class="ayuda">qué hace Sofía, en claro</span> <button class="mini" id="resgen">${estado.resumenIns ? 'Rehacer' : 'Ver resumen'}</button></h3><div id="resumen-ins">${estado.resumenIns ? htmlResumen(estado.resumenIns) : '<p class="ayuda">Un resumen por apartados de lo que dicen sus instrucciones (se prepara con IA y se guarda con cada versión).</p>'}</div></section>
+    <section class="doc"><h3>Rendimiento por versión del prompt</h3><div id="rend" class="ayuda">Cargando…</div></section>
     ${Object.entries(datos).map(([doc, d]) => `<section class="doc"><h3>${esc(d.nombre)} <button class="mini" data-edit="${doc}">Editar</button></h3>
       <div class="tabla"><table><tr><th>Versión</th><th>Estado</th><th>Cambio</th><th>Fecha</th><th></th></tr>${d.versiones.map((v) => `<tr><td>v${v.version}</td><td><span class="chip ${v.estado === 'produccion' ? 'verde' : v.estado === 'borrador' ? 'azul' : ''}">${{ produccion: 'en producción', borrador: 'borrador', archivada: 'anterior' }[v.estado]}</span></td>
         <td>${esc(v.nota || '')}${v.reporte_id ? ` <a href="#reportes/${v.reporte_id}">#${v.reporte_id}</a>` : ''}</td><td>${hora(v.created_at)}</td>
         <td class="acciones-f"><button class="mini" data-ver="${v.id}">Ver cambios</button>${v.estado !== 'produccion' ? `<button class="mini" data-act="${v.id}">${v.estado === 'borrador' ? 'Pasar a producción' : 'Volver a esta'}</button>` : ''}</td></tr>`).join('')}</table></div><div data-panel="${doc}"></div></section>`).join('')}`;
+  api('/panel/rendimiento?dias=180').then((r) => {
+    const pct = (a, b) => (b ? `${Math.round((a / b) * 100)} %` : '–');
+    if ($('#rend')) $('#rend').outerHTML = r.length ? `<div class="tabla"><table><tr><th>Versión</th><th>Chats</th><th>Siguen hablando</th><th>Clase de prueba</th><th>Alta</th><th>Derivados</th><th>Más adelante</th><th>Errores IA</th></tr>${r.map((v) => `<tr><td><b>v${v.v}</b><div class="ayuda">${esc(v.nota || '')}</div><div class="ayuda">${hora(v.desde)} – ${hora(v.hasta)}</div></td><td>${v.chats}</td><td>${pct(v.contestan, v.chats)}</td><td>${pct(v.prueba, v.chats)}</td><td>${pct(v.alta, v.chats)}</td><td>${pct(v.derivados, v.chats)}</td><td>${pct(v.mas_adelante, v.chats)}</td><td>${v.errores}</td></tr>`).join('')}</table></div><p class="ayuda">Cada chat cuenta en la versión con la que Sofía empezó a hablar. Con menos de 30 chats por versión, las diferencias pueden ser casualidad.</p>` : '<p class="ayuda">Todavía no hay chats atendidos por Sofía. Cuando entren, aquí verás si cada versión del prompt consigue más pruebas y altas.</p>';
+  }).catch(() => {});
+  $('#resgen').onclick = async () => {
+    const b = $('#resgen'); b.disabled = true; b.textContent = 'Preparando… (un minuto)';
+    try { estado.resumenIns = await api('/panel/instrucciones/resumen', { method: 'POST', body: JSON.stringify({ rehacer: Boolean(estado.resumenIns) }) }); $('#resumen-ins').innerHTML = htmlResumen(estado.resumenIns); b.textContent = 'Rehacer'; }
+    catch (e) { $('#resumen-ins').innerHTML = `<p class="error">${esc(e.message)}</p>`; b.textContent = 'Ver resumen'; }
+    b.disabled = false;
+  };
   const prod = (doc) => datos[doc].versiones.find((v) => v.estado === 'produccion');
   m.querySelectorAll('[data-act]').forEach((b) => b.onclick = async () => {
     if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Sofía la usará ya'; b.classList.add('primario'); return; }
@@ -1420,36 +1487,132 @@ async function descargar(ruta, nombre) {
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
+// ---------- Ajustes (con controles como los de Zapp) y registro de actividad ----------
+const DIAS_TXT = [['lunes', 'Lunes'], ['martes', 'Martes'], ['miercoles', 'Miércoles'], ['jueves', 'Jueves'], ['viernes', 'Viernes'], ['sabado', 'Sábado'], ['domingo', 'Domingo']];
 async function ajustes() {
+  if (location.hash === '#ajustes/actividad') return actividadPagina();
   const a = await api('/panel/ajustes'); const i = estado.info;
   if (estado.seccion !== 'ajustes') return;
   const sw = (id, on, nombre) => `<label class="interruptor"><input type="checkbox" id="${id}" aria-label="${nombre}" ${on ? 'checked' : ''}><span></span></label>`;
-  $('#main').innerHTML = `<h2>Ajustes</h2>
+  const filaDia = ([k, t]) => { const v = a.horarioDias?.[k]; const modo = v === null ? 'cerrado' : v ? 'franja' : 'normal';
+    return `<div class="dia-h"><b>${t}</b><select data-dmodo="${k}" aria-label="${t}"><option value="normal" ${modo === 'normal' ? 'selected' : ''}>Horario general</option><option value="franja" ${modo === 'franja' ? 'selected' : ''}>Otro horario</option><option value="cerrado" ${modo === 'cerrado' ? 'selected' : ''}>No contesta</option></select>
+      <span data-dfr="${k}" ${modo === 'franja' ? '' : 'hidden'}><input type="number" min="0" max="23" data-ddesde="${k}" value="${v?.desde ?? a.horaInicio}" aria-label="Desde" style="width:64px"> a <input type="number" min="0" max="23" data-dhasta="${k}" value="${v?.hasta ?? a.horaFin}" aria-label="Hasta" style="width:64px"></span></div>`; };
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Ajustes</h2><a class="boton" href="#ajustes/actividad">Registro de actividad</a></div>
     <div class="ajuste"><div><div class="t">Sofía activa</div><div class="d">Apagada, no contesta ni manda follow-ups: todo lo atiende el equipo en GHL.</div></div>${sw('ia', a.ia_activa, 'Sofía activa')}</div>
     <div class="ajuste"><div><div class="t">WhatsApp</div><div class="d">Sofía contesta en WhatsApp</div></div>${sw('cw', a.canales.whatsapp, 'WhatsApp')}</div>
     <div class="ajuste"><div><div class="t">Instagram</div><div class="d">Sofía contesta en Instagram</div></div>${sw('ci', a.canales.instagram, 'Instagram')}</div>
     <div class="ajuste"><div><div class="t">Horario de respuesta</div><div class="d">Fuera de la franja, los mensajes se guardan y Sofía contesta al empezar el siguiente turno (0 = medianoche; en Zapp: 8 a 0)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="hi" aria-label="Hora de inicio" min="0" max="23" value="${a.horaInicio}" style="width:64px"> a <input type="number" id="hf" aria-label="Hora de fin" min="0" max="23" value="${a.horaFin}" style="width:64px"></div></div>
+    <details class="ajuste-det" ${Object.keys(a.horarioDias || {}).length ? 'open' : ''}><summary>Horario distinto según el día <span class="ayuda">(cerrar un día o darle otra franja)</span></summary><div class="dias-h">${DIAS_TXT.map(filaDia).join('')}</div></details>
     <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Espera al azar antes de contestar, en segundos, como una persona que ve el mensaje y lo lee (en Zapp: 15 a 50)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" aria-label="Retraso mínimo" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" aria-label="Retraso máximo" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
     <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo mientras el lead ve «escribiendo…». Cuanto más largo el mensaje, más tarda (en Zapp: 4)</div></div>
       <input type="number" id="vel" aria-label="Velocidad de escritura" min="1" max="20" value="${a.typingSpeed}" style="width:70px"></div>
+    <h3>Cuándo se aparta Sofía</h3>
+    <div class="ajuste"><div><div class="t">Si escribe alguien del equipo</div><div class="d">Sofía se pausa en ese chat en cuanto una persona del equipo escribe desde GHL. Si lo apagas, solo se pausa con las palabras de abajo.</div></div>${sw('peq', a.pausarSiEquipoEscribe, 'Pausar si escribe el equipo')}</div>
+    <div class="ajuste"><div><div class="t">Palabras que paran a Sofía</div><div class="d">Si el lead o el equipo las escriben, Sofía se pausa en ese chat. Separadas por comas. Ej: stop ia, hablar con una persona</div></div><input id="ppar" value="${esc((a.palabrasParar || []).join(', '))}" style="width:280px" aria-label="Palabras que paran a Sofía"></div>
+    <div class="ajuste"><div><div class="t">Palabras para que vuelva</div><div class="d">Si el equipo las escribe en un chat, Sofía vuelve a contestar ahí. Ej: #sofia</div></div><input id="prea" value="${esc((a.palabrasReanudar || []).join(', '))}" style="width:280px" aria-label="Palabras para reanudar a Sofía"></div>
+    <div class="ajuste"><div><div class="t">Chats nuevos que empiezan en pausa</div><div class="d">Sofía no contesta los chats nuevos de ese canal hasta que alguien la active en el chat.</div></div><div class="fila-f"><label class="check"><input type="checkbox" id="pwa" ${a.canalesPausa?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="pig" ${a.canalesPausa?.instagram ? 'checked' : ''}> Instagram</label></div></div>
     <div style="display:flex;gap:10px;align-items:center;margin:14px 0"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"></span></div>
     <h3>Sistema</h3>
     <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
     <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.credenciales_alta ? 'Integración por navegador' : 'Faltan las credenciales de AimHarder.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'Prueba' : 'Automática'}</span></div>
     <div class="ajuste"><div><div class="t">Modelo</div><div class="d">${i.modelo_configurado ? 'Redacta las respuestas de Sofía.' : 'Falta la clave de Anthropic.'}</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
+  $('#main').querySelectorAll('[data-dmodo]').forEach((s) => s.onchange = () => { $(`[data-dfr="${s.dataset.dmodo}"]`).hidden = s.value !== 'franja'; });
   $('#bg').onclick = async () => {
+    const horarioDias = Object.fromEntries(DIAS_TXT.map(([k]) => { const m = $(`[data-dmodo="${k}"]`).value; return [k, m === 'cerrado' ? null : m === 'franja' ? { desde: Number($(`[data-ddesde="${k}"]`).value), hasta: Number($(`[data-dhasta="${k}"]`).value) } : 'normal']; }));
     try {
       estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({
         ia_activa: $('#ia').checked, canales: { whatsapp: $('#cw').checked, instagram: $('#ci').checked },
         horaInicio: Number($('#hi').value), horaFin: Number($('#hf').value), minDelay: Number($('#dmin').value), maxDelay: Number($('#dmax').value), typingSpeed: Number($('#vel').value),
+        pausarSiEquipoEscribe: $('#peq').checked, palabrasParar: $('#ppar').value, palabrasReanudar: $('#prea').value,
+        canalesPausa: { whatsapp: $('#pwa').checked, instagram: $('#pig').checked }, horarioDias,
       }) });
       $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>';
       $('#raiz .modo .rojo')?.remove();
       if (!estado.info.ajustes.ia_activa) $('#raiz .modo').insertAdjacentHTML('beforeend', '<span class="chip rojo">IA pausada</span>');
     } catch (e) { $('#ok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   };
+}
+
+async function actividadPagina() {
+  const r = await api('/panel/actividad' + (estado.actQuien ? `?quien=${encodeURIComponent(estado.actQuien)}` : ''));
+  if (estado.seccion !== 'ajustes') return;
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Registro de actividad</h2><a class="boton" href="#ajustes">Volver a ajustes</a></div>
+    <p class="intro">Quién cambió qué desde el panel: etiquetas, seguimientos, instrucciones, ajustes, chats pausados, reportes…</p>
+    <div class="filtros"><button data-q="" class="${estado.actQuien ? '' : 'activo'}">Todos</button>${r.personas.map((p) => `<button data-q="${esc(p.quien)}" class="${estado.actQuien === p.quien ? 'activo' : ''}">${esc(p.quien)} <span class="n">${p.n}</span></button>`).join('')}</div>
+    ${r.actividad.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Quién</th><th>Qué</th></tr>${r.actividad.map((x) => `<tr><td>${hora(x.at)}</td><td>${esc(x.quien)}</td><td>${esc(x.accion)}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay cambios registrados.</div>'}`;
+  $('#main').querySelectorAll('[data-q]').forEach((b) => b.onclick = () => { estado.actQuien = b.dataset.q || null; actividadPagina(); });
+}
+
+// ---------- Estadísticas y consumo ----------
+async function estadisticas() {
+  const f = estado.est ||= { dias: 30, sede: '', canal: '' };
+  $('#main').innerHTML = `<h2>Estadísticas</h2><div class="filtros">${[[7, '7 días'], [30, '30 días'], [90, '90 días']].map(([d, t]) => `<button data-ed="${d}" class="${f.dias === d ? 'activo' : ''}">${t}</button>`).join('')}
+    <select id="esede" aria-label="Sede"><option value="">Todas las sedes</option>${[...Object.entries(SEDES), ['sin_sede', 'Sin sede']].map(([k, t]) => `<option value="${k}" ${f.sede === k ? 'selected' : ''}>${t}</option>`).join('')}</select>
+    <select id="ecanal" aria-label="Canal"><option value="">WhatsApp e Instagram</option>${Object.entries(CANAL).map(([k, t]) => `<option value="${k}" ${f.canal === k ? 'selected' : ''}>${t}</option>`).join('')}</select></div><div id="est" class="vacio">Cargando…</div>`;
+  $('#main').querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { f.dias = Number(b.dataset.ed); estadisticas(); });
+  $('#esede').onchange = (e) => { f.sede = e.target.value; estadisticas(); };
+  $('#ecanal').onchange = (e) => { f.canal = e.target.value; estadisticas(); };
+  const [e, c] = await Promise.all([api(`/panel/estadisticas?dias=${f.dias}&sede=${f.sede}&canal=${f.canal}`), api('/panel/consumo?meses=6')]);
+  if (estado.seccion !== 'estadisticas' || !$('#est')) return;
+  const maxDia = Math.max(1, ...e.porDia.map((d) => (d.whatsapp || 0) + (d.instagram || 0)));
+  const maxMapa = Math.max(1, ...e.mapa.flat());
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)} %` : '–');
+  const tablaGrupo = (t, filas, nombre) => `<h3>${t}</h3><div class="tabla"><table><tr><th></th><th>Chats</th><th>Clase de prueba</th><th>Alta</th><th>Derivados</th><th>Lo dejan para más adelante</th></tr>${filas.map((g) => `<tr><td>${esc(nombre(g.grupo))}</td><td>${g.chats}</td><td>${g.prueba} <span class="ayuda">${pct(g.prueba, g.chats)}</span></td><td>${g.alta} <span class="ayuda">${pct(g.alta, g.chats)}</span></td><td>${g.derivados}</td><td>${g.mas_adelante}</td></tr>`).join('') || '<tr><td colspan="6" class="vacio">Sin datos</td></tr>'}</table></div>`;
+  const eur = (n) => (n < 0.01 && n > 0 ? '< 0,01 €' : `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
+  $('#est').outerHTML = `
+    <div class="tarjetas">${tarjeta(e.total, 'Chats nuevos de leads')}${e.embudo.slice(1).map(([t, n]) => tarjeta(n, `${t} · ${pct(n, e.total)}`)).join('')}</div>
+    <h3>Chats nuevos por día <span class="chip">WhatsApp</span> <span class="chip violeta">Instagram</span></h3>
+    ${e.porDia.length ? `<div class="barras">${e.porDia.map((d) => `<div title="${d.fecha}: ${d.whatsapp || 0} WhatsApp · ${d.instagram || 0} Instagram"><i style="height:${(d.instagram || 0) / maxDia * 70}px;background:var(--violet)"></i><i style="height:${(d.whatsapp || 0) / maxDia * 70}px;background:var(--green)"></i></div>`).join('')}</div>` : '<div class="vacio">Sin chats en este periodo</div>'}
+    <h3>Cuándo entran los chats <span class="ayuda">día de la semana × hora (Madrid)</span></h3>
+    <div class="mapa" role="table">${'<div></div>' + Array.from({ length: 24 }, (_, h) => `<div class="mh">${h % 3 === 0 ? h : ''}</div>`).join('')}
+      ${e.mapa.map((fila, d) => `<div class="md">${DIAS_TXT[d][1].slice(0, 3)}</div>` + fila.map((n, h) => `<div class="mc" style="--a:${n / maxMapa}" title="${DIAS_TXT[d][1]} ${h}:00 · ${n} chat${n === 1 ? '' : 's'}">${n || ''}</div>`).join('')).join('')}</div>
+    <h3>Embudo</h3><div class="embudo-h">${e.embudo.map(([t, n], k) => `<div class="eh"><span>${esc(t)}</span><div class="eh-barra"><i style="width:${e.total ? (n / e.total) * 100 : 0}%"></i></div><b>${n}</b><span class="ayuda">${k ? pct(n, e.embudo[k - 1][1]) + ' del paso anterior' : ''}</span></div>`).join('')}</div>
+    ${tablaGrupo('Por canal', e.porCanal, (g) => CANAL[g] || g)}
+    ${tablaGrupo('Por sede', e.porSede, (g) => SEDES[g] || (g === 'sin_sede' ? 'Sin sede' : g))}
+    <h3>Etiquetas más puestas</h3><div class="chips-f">${e.etiquetas.map((x) => `${pill(x)} <span class="ayuda">${x.n}</span>`).join(' ') || '<span class="ayuda">Ninguna en este periodo</span>'}</div>
+    <h3>Consumo de la IA <span class="ayuda">aproximado, a ${c.eurPorUsd} € por dólar (la API cobra en dólares)</span></h3>
+    ${c.meses.length ? `<div class="tabla"><table><tr><th>Mes</th><th>Total</th><th>Por chat nuevo</th><th>En qué</th></tr>${c.meses.map((m) => `<tr><td>${new Date(m.mes + '-15').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</td><td><b>${eur(m.eur)}</b><div class="ayuda">${m.llamadas} llamadas · $${m.usd.toFixed(2)}</div></td><td>${m.eurPorChat != null ? eur(m.eurPorChat) : '–'}<div class="ayuda">${m.chats} chats</div></td><td>${m.motivos.map((x) => `${esc(x.motivo)}: ${eur(x.eur)}`).join('<br>')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Sin consumo todavía</div>'}
+    <p class="ayuda">Las notas de voz se transcriben en el propio servidor: no cuestan nada aparte.</p>`;
+}
+
+// ---------- Recursos ----------
+async function recursos() {
+  const lista = await api('/panel/recursos');
+  if (estado.seccion !== 'recursos') return;
+  const vista = (r) => r.tipo === 'imagen' ? `<img class="rec-img" alt="" data-media="/panel/recursos/${r.id}/archivo">` : r.tipo === 'video' ? `<video class="rec-img" controls preload="none" data-media="/panel/recursos/${r.id}/archivo"></video>` : `<div class="rec-doc">${r.tipo === 'audio' ? '🎵' : '📄'} ${esc(r.mime || '')}</div>`;
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Recursos</h2><button class="primario" id="rnuevo">+ Subir recurso</button></div>
+    <p class="intro">Archivos que Sofía puede enviar cuando encajan en la conversación (horarios en PDF, fotos del box, un vídeo, cómo llegar…). Lee el nombre y «cuándo enviarlo» para decidir. Un seguimiento también puede adjuntar uno. En modo prueba no se envían: queda el borrador.</p>
+    <div id="rform"></div>
+    ${lista.length ? `<div class="rec-grid">${lista.map((r) => `<article class="rec ${r.activo ? '' : 'inactiva'}">${vista(r)}<div class="rec-body"><b>${esc(r.nombre)}</b> <span class="chip">${esc(r.tipo)}</span>${r.activo ? '' : ' <span class="chip ambar">no se envía</span>'}
+      <p class="ayuda">Cuándo: ${esc(r.descripcion)}</p><p class="ayuda">${(r.tamano / 1024 / 1024).toFixed(1)} MB</p>
+      <div class="acciones-f"><button class="mini" data-red="${r.id}">Editar</button><button class="mini" data-ract="${r.id}" data-on="${r.activo ? 0 : 1}">${r.activo ? 'Desactivar' : 'Activar'}</button><button class="mini peligro" data-rbor="${r.id}">Borrar</button></div></div></article>`).join('')}</div>` : '<div class="vacio">Todavía no hay recursos. Sube por ejemplo el horario de cada sede en imagen o PDF.</div>'}`;
+  cargarMedios($('#main'));
+  const form = (r) => {
+    $('#rform').innerHTML = `<form class="editor" id="frec"><section><h3>${r ? `Editar «${esc(r.nombre)}»` : 'Subir recurso'}</h3>
+      <input name="n" placeholder="Nombre. Ej: Horario Parla" maxlength="60" value="${esc(r?.nombre || '')}" style="width:100%;margin-bottom:8px" required>
+      <textarea name="d" rows="2" maxlength="500" placeholder="Cuándo enviarlo. Ej: cuando pregunte por horarios de Parla" required style="width:100%">${esc(r?.descripcion || '')}</textarea>
+      ${r ? '' : '<p><input type="file" name="f" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,application/pdf,audio/*" required></p><p class="ayuda">Imagen, vídeo MP4, PDF o audio. Máximo 25 MB.</p>'}
+      <div class="acciones-f"><button class="primario">${r ? 'Guardar' : 'Subir'}</button><button type="button" id="rcanc">Cancelar</button></div><p class="error"></p></section></form>`;
+    $('#rcanc').onclick = () => { $('#rform').innerHTML = ''; };
+    $('#frec').onsubmit = async (e) => {
+      e.preventDefault(); const f = e.target; const b = f.querySelector('.primario'); b.disabled = true; b.textContent = r ? 'Guardando…' : 'Subiendo…';
+      try {
+        if (r) await api(`/panel/recursos/${r.id}`, { method: 'PUT', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value }) });
+        else {
+          const file = f.f.files[0]; if (file.size > 25 * 1024 * 1024) throw new Error('Como mucho 25 MB.');
+          const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(file); });
+          await api('/panel/recursos/adjunto', { method: 'POST', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, datos, mime: file.type, archivo: file.name }) });
+        }
+        recursos();
+      } catch (err) { f.querySelector('.error').textContent = err.message; b.disabled = false; b.textContent = r ? 'Guardar' : 'Subir'; }
+    };
+  };
+  $('#rnuevo').onclick = () => form(null);
+  $('#main').querySelectorAll('[data-red]').forEach((b) => b.onclick = () => form(lista.find((x) => x.id === Number(b.dataset.red))));
+  $('#main').querySelectorAll('[data-ract]').forEach((b) => b.onclick = async () => { await api(`/panel/recursos/${b.dataset.ract}`, { method: 'PUT', body: JSON.stringify({ activo: b.dataset.on === '1' }) }); recursos(); });
+  $('#main').querySelectorAll('[data-rbor]').forEach((b) => b.onclick = async () => { if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro?'; return; } await api(`/panel/recursos/${b.dataset.rbor}`, { method: 'DELETE' }); recursos(); });
 }
 
 integrado || token ? iniciar() : pintarLogin();

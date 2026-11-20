@@ -61,6 +61,10 @@ export const config = {
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
   },
+  // Dirección pública del servicio (para que GHL descargue los recursos que envía Sofía)
+  publicUrl: env('PUBLIC_URL', 'https://setter.82.223.108.143.nip.io'),
+  // API de Conversiones de Meta (eventos al ponerse ciertas etiquetas)
+  meta: { pixelId: env('META_PIXEL_ID', ''), token: env('META_CAPI_TOKEN', ''), testCode: env('META_TEST_EVENT_CODE', ''), version: env('META_API_VERSION', 'v21.0') },
   media: {
     // Carpeta donde se guardan audios e imágenes (por defecto, data/media junto a la base de datos)
     dir: env('MEDIA_DIR', ''),

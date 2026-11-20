@@ -24,7 +24,7 @@ export function deFila(f) {
     despuesDe: f.despues_de || null, etiquetaId: f.etiqueta_id ?? null,
     condicion: f.condicion || '', instrucciones: f.instrucciones || '', modo: f.modo || 'ia', textoFijo: f.texto_fijo || '',
     excluir: { clientes: excluir.clientes !== false, pausada: excluir.pausada !== false, calladasHoras: Number(excluir.calladas_horas) || 0 },
-    ponerEtiqueta: f.poner_etiqueta ?? null, plantilla: Boolean(f.plantilla), plantillaWhatsapp: f.plantilla ? {} : null,
+    ponerEtiqueta: f.poner_etiqueta ?? null, recursoId: f.recurso_id ?? null, plantilla: Boolean(f.plantilla), plantillaWhatsapp: f.plantilla ? {} : null,
     activo: Boolean(f.activo), orden: f.orden,
   };
 }
@@ -86,7 +86,7 @@ export function validar(d = {}, db, id = null) {
     nombre, tipo, canales: JSON.stringify(canales), minutos, despues_de: despuesDe, etiqueta_id: etiquetaId,
     condicion: String(d.condicion ?? '').trim().slice(0, 1500) || null, instrucciones: instrucciones || null, modo, texto_fijo: modo === 'fijo' ? textoFijo : null,
     excluir: JSON.stringify({ clientes: e.clientes !== false, pausada: e.pausada !== false, calladas_horas: Math.max(0, Math.min(720, Number(e.calladasHoras) || 0)) }),
-    poner_etiqueta: ponerEtiqueta, plantilla: d.plantilla === false ? 0 : 1, activo: d.activo === false ? 0 : 1,
+    poner_etiqueta: ponerEtiqueta, recurso_id: d.recursoId ? Number(d.recursoId) : null, plantilla: d.plantilla === false ? 0 : 1, activo: d.activo === false ? 0 : 1,
   };
 }
 
@@ -96,8 +96,8 @@ export function crear(db, d) {
   while (obtener(db, id)) id = `${slug(d.nombre)}-${n++}`;
   if (r.tipo === 'largo-plazo' && !id.startsWith('largo-plazo')) id = `largo-plazo-${id}`;
   const orden = (db.prepare('SELECT max(orden) m FROM reglas_seguimiento').get().m ?? 0) + 1;
-  db.prepare(`INSERT INTO reglas_seguimiento (id, nombre, tipo, canales, minutos, despues_de, etiqueta_id, condicion, instrucciones, modo, texto_fijo, excluir, poner_etiqueta, plantilla, activo, orden)
-    VALUES (@id, @nombre, @tipo, @canales, @minutos, @despues_de, @etiqueta_id, @condicion, @instrucciones, @modo, @texto_fijo, @excluir, @poner_etiqueta, @plantilla, @activo, @orden)`).run({ ...r, id, orden });
+  db.prepare(`INSERT INTO reglas_seguimiento (id, nombre, tipo, canales, minutos, despues_de, etiqueta_id, condicion, instrucciones, modo, texto_fijo, excluir, poner_etiqueta, recurso_id, plantilla, activo, orden)
+    VALUES (@id, @nombre, @tipo, @canales, @minutos, @despues_de, @etiqueta_id, @condicion, @instrucciones, @modo, @texto_fijo, @excluir, @poner_etiqueta, @recurso_id, @plantilla, @activo, @orden)`).run({ ...r, id, orden });
   return obtener(db, id);
 }
 
@@ -107,7 +107,7 @@ export function actualizar(db, id, d) {
   const r = validar({ ...actual, ...d, excluir: { ...actual.excluir, ...(d.excluir || {}) } }, db, id);
   if (r.tipo !== actual.tipo && (actual.tipo === 'largo-plazo') !== (r.tipo === 'largo-plazo')) throw new Error('Una regla de largo plazo no puede cambiar de tipo: crea otra.');
   db.prepare(`UPDATE reglas_seguimiento SET nombre=@nombre, tipo=@tipo, canales=@canales, minutos=@minutos, despues_de=@despues_de, etiqueta_id=@etiqueta_id,
-    condicion=@condicion, instrucciones=@instrucciones, modo=@modo, texto_fijo=@texto_fijo, excluir=@excluir, poner_etiqueta=@poner_etiqueta, plantilla=@plantilla, activo=@activo WHERE id=@id`).run({ ...r, id });
+    condicion=@condicion, instrucciones=@instrucciones, modo=@modo, texto_fijo=@texto_fijo, excluir=@excluir, poner_etiqueta=@poner_etiqueta, recurso_id=@recurso_id, plantilla=@plantilla, activo=@activo WHERE id=@id`).run({ ...r, id });
   return obtener(db, id);
 }
 

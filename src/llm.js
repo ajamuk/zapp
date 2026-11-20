@@ -85,6 +85,11 @@ export const TOOLS = [
     },
   },
   {
+    name: 'enviar_recurso',
+    description: 'Envía al lead uno de los archivos de la lista «Archivos que puedes enviar» (horarios en PDF, fotos, vídeo…). Solo si encaja con lo que pregunta.',
+    input_schema: { type: 'object', properties: { nombre: { type: 'string', description: 'Nombre exacto del archivo' } }, required: ['nombre'] },
+  },
+  {
     name: 'responder',
     description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 a 4 burbujas), etiquetas, fase y una nota interna corta para el equipo.',
     input_schema: {
@@ -162,13 +167,14 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
  * Llamada que devuelve un objeto JSON con el esquema dado (structured outputs). Se usa para el optimizador de
  * reportes, que no habla con leads. `complete` se puede sustituir en tests.
  */
-export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000 }) {
+export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000, onUsage }) {
   const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }));
   const res = await llamar({
     model: modelo, max_tokens: maxTokens, system,
     messages: [{ role: 'user', content: contenido }],
     output_config: { format: { type: 'json_schema', schema } },
   });
+  onUsage?.(res.usage || {}, modelo);
   if (res.stop_reason === 'refusal') throw new Error('El modelo se ha negado a analizarlo');
   if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó');
   const texto = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
