@@ -236,6 +236,12 @@
   }
   @media (min-width: 761px) { #pvolver { display: none; } }
   @media (max-width: 760px) { #pmovil { display: none; } }
+  .medio-img { display: block; max-width: min(260px, 100%); max-height: 260px; border-radius: 8px; margin-bottom: 4px; cursor: zoom-in; background: var(--panel2); min-height: 40px; }
+  .burbuja audio { display: block; width: min(260px, 100%); height: 40px; margin-bottom: 4px; }
+  .transcripcion { font-size: 13px; font-style: italic; color: var(--text); margin-bottom: 2px; }
+  #raiz button.icono { min-width: 42px; padding: 0; font-size: 18px; }
+  #raiz button.grabando { background: #fde8e8; border-color: var(--red); animation: latido 1s infinite; }
+  @keyframes latido { 50% { opacity: .55; } }
 </style>
 </head>
 <body>
@@ -435,6 +441,32 @@ const chipsConv = (c) => [
   c.seguimientos_pendientes ? '<span class="chip">follow-up</span>' : '',
 ].join('');
 
+
+// ---------- Audios e imágenes ----------
+const medioHtml = (m, ruta) => {
+  if (!m.adjunto || !(m.tiene_medio || m.media_ruta)) return m.adjunto && m.media_error ? `<div class="ayuda">No se pudo descargar el ${esc(m.adjunto)} (${esc(m.media_error)})</div>` : '';
+  const src = `${ruta}/media/${m.id}`;
+  if (m.adjunto === 'imagen') return `<img class="medio-img" alt="Imagen enviada por el lead" data-media="${esc(src)}">`;
+  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
+  return `<a href="#" data-media-desc="${esc(src)}">Descargar ${esc(m.adjunto)}</a>`;
+};
+const textoSinMarcador = (m) => (m.adjunto && /^\[(audio|imagen|video|documento|adjunto)\]$/.test(m.texto || '') ? '' : m.texto);
+async function cargarMedios(cont) {
+  for (const el of cont.querySelectorAll('[data-media]')) {
+    const cargar = async () => {
+      if (el.dataset.cargado) return; el.dataset.cargado = '1';
+      try {
+        const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
+        const r = await fetch((integrado ? './api' : '/admin') + el.dataset.media, { headers: cabecera });
+        if (!r.ok) throw new Error();
+        el.src = URL.createObjectURL(await r.blob());
+        if (el.tagName === 'IMG') el.onclick = () => window.open(el.src, '_blank');
+      } catch { el.replaceWith(Object.assign(document.createElement('span'), { className: 'ayuda', textContent: 'No se ha podido cargar el archivo' })); }
+    };
+    cargar();
+  }
+}
+
 // ---------- Chats: vistas y filtros ----------
 const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
@@ -595,7 +627,7 @@ async function abrir(id) {
       <div>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
-    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${esc(x.texto)}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
+    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
@@ -603,6 +635,7 @@ async function abrir(id) {
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
     ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = 1e9;
+  cargarMedios($('#msgs'));
   $('#bv').onclick = () => { estado.conv = null; $('#ch').classList.remove('con-hilo'); };
   const recargar = async () => { await lista(); abrir(id); };
   const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
@@ -877,10 +910,14 @@ function pintarPrueba(d, escribiendo = false) {
       <label>Nombre <input id="psnom" value="${esc(c.nombre)}" maxlength="60"></label>
       <button class="primario">Aplicar</button><button type="button" id="psreal">Hora y teléfono reales</button>
       <p class="ayuda">Con el teléfono de un socio, Sofía lo detecta como socio (índice real de AimHarder). La fecha cambia el «hoy» de Sofía y su horario.</p></form>` : ''}
-    <div class="msgs p-msgs" id="pm">${d.mensajes.map((m) => `<div class="burbuja b-${esc(m.autor)}">${esc(m.texto)}<div class="meta">${esc(ETQ[m.autor] || m.autor)} · ${hora(m.created_at)}</div></div>`).join('') || '<div class="vacio">Escribe el primer mensaje como si fueras un lead, o pulsa «IA inicia».</div>'}
+    <div class="msgs p-msgs" id="pm">${d.mensajes.map((m) => `<div class="burbuja b-${esc(m.autor)}">${medioHtml(m, `/probar/conversaciones/${encodeURIComponent(c.id)}`)}${esc(textoSinMarcador(m))}<div class="meta">${esc(ETQ[m.autor] || m.autor)} · ${hora(m.created_at)}</div></div>`).join('') || '<div class="vacio">Escribe el primer mensaje como si fueras un lead, o pulsa «IA inicia».</div>'}
       ${escribiendo ? '<div class="burbuja b-sistema" role="status">Sofía está escribiendo…</div>' : ''}</div>
-    <form id="pf" class="p-form"><textarea id="pt" rows="1" aria-label="Mensaje de prueba" placeholder="Escribe como un lead de ${esc(CANAL[c.canal])}…" title="Intro envía · Mayús+Intro, salto de línea" ${disponible && !escribiendo ? '' : 'disabled'}></textarea><button class="primario" ${disponible && !escribiendo ? '' : 'disabled'}>Enviar</button></form>`;
+    <form id="pf" class="p-form"><input type="file" id="pfile" accept="audio/*,image/*" hidden>
+      <button type="button" id="padj" class="icono" title="Enviar una imagen o un audio como el lead" aria-label="Adjuntar imagen o audio" ${disponible && !escribiendo ? '' : 'disabled'}>📎</button>
+      <button type="button" id="pgrab" class="icono ${p.grabando ? 'grabando' : ''}" title="${p.grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" aria-label="${p.grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" ${disponible && !escribiendo ? '' : 'disabled'}>${p.grabando ? '⏹️' : '🎙️'}</button>
+      <textarea id="pt" rows="1" aria-label="Mensaje de prueba" placeholder="Escribe como un lead de ${esc(CANAL[c.canal])}…" title="Intro envía · Mayús+Intro, salto de línea" ${disponible && !escribiendo ? '' : 'disabled'}></textarea><button class="primario" ${disponible && !escribiendo ? '' : 'disabled'}>Enviar</button></form>`;
   $('#pm').scrollTop = 1e9;
+  cargarMedios($('#pm'));
   pintarAnalisis(d, escribiendo);
   const enviar = async (ruta, cuerpo) => {
     pintarPrueba(d, true);
@@ -894,6 +931,25 @@ function pintarPrueba(d, escribiendo = false) {
   $('#pt').oninput = (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(140, e.target.scrollHeight) + 'px'; };
   if (!escribiendo) $('#pt')?.focus({ preventScroll: true });
   $('#pinicia').onclick = () => enviar(`/probar/conversaciones/${encodeURIComponent(c.id)}/iniciar`);
+  const subir = async (blob, nombre) => {
+    if (blob.size > 25 * 1024 * 1024) return alertaP('El archivo es demasiado grande (máximo 25 MB).');
+    const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    const texto = $('#pt').value.trim(); $('#pt').value = '';
+    const tipo = blob.type.startsWith('image/') ? 'imagen' : 'audio';
+    d.mensajes.push({ autor: 'lead', texto: tipo === 'imagen' ? `📷 ${nombre}${texto ? ' · ' + texto : ''}` : `🎙️ nota de voz${texto ? ' · ' + texto : ''}`, created_at: new Date().toISOString() });
+    enviar(`/probar/conversaciones/${encodeURIComponent(c.id)}/adjunto`, { datos, mime: blob.type, nombre, texto });
+  };
+  $('#padj').onclick = () => $('#pfile').click();
+  $('#pfile').onchange = (e) => { const f = e.target.files[0]; if (f) subir(f, f.name); };
+  $('#pgrab').onclick = async () => {
+    if (p.grabando) { p.grabadora.stop(); return; }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return alertaP('Este navegador no permite grabar audio. Adjunta un archivo de audio.');
+    let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return alertaP('No hay permiso para usar el micrófono.'); }
+    const trozos = []; const rec = new MediaRecorder(flujo);
+    rec.ondataavailable = (e) => trozos.push(e.data);
+    rec.onstop = () => { flujo.getTracks().forEach((t) => t.stop()); p.grabando = false; const blob = new Blob(trozos, { type: rec.mimeType.split(';')[0] || 'audio/webm' }); pintarPrueba(d); subir(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm')); };
+    p.grabadora = rec; p.grabando = true; rec.start(); pintarPrueba(d);
+  };
   $('#psim').onclick = () => { p.verSim = !p.verSim; pintarPrueba(d); };
   $('#pmovil').onclick = () => { p.movil = !p.movil; $('#p2').classList.toggle('movil', p.movil); pintarPrueba(d); };
   $('#plink').onclick = async () => { const url = location.href.split('#')[0] + '#probar/' + c.id; try { await navigator.clipboard.writeText(url); $('#plink').textContent = 'Enlace copiado'; } catch { prompt('Copia el enlace', url); } };

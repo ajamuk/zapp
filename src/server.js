@@ -9,7 +9,7 @@ import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
 import { openDb, repo as crearRepo } from './db.js';
-import { routerProbar, GhlCaptura } from './probar.js';
+import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
@@ -23,9 +23,11 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo }) {
+export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios }) {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
+  const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
+  app.use((req, res, next) => (req.path.endsWith('/adjunto') ? jsonGrande : jsonNormal)(req, res, next));
   const pruebas = crearRepo(openDb(':memory:'));
   const enCurso = new Set();
 
@@ -85,7 +87,7 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
   });
 
   // Probar IA con conversaciones guardadas (pruebas.db)
-  admin.use('/probar', routerProbar({ repo, pruebas: pruebasRepo, complete }));
+  admin.use('/probar', routerProbar({ repo, pruebas: pruebasRepo, complete, medios }));
 
   admin.get('/costes', (req, res) => res.json(repo.costes(Number(req.query.dias) || 7)));
 
@@ -109,6 +111,11 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
     res.json(await embudo(mes, embudoOpciones));
   });
   admin.get('/panel/conversaciones', (req, res) => res.json(panel.conversaciones(db, req.query)));
+  // Audio o imagen de un mensaje (el panel lo pide con su cabecera de acceso y lo muestra)
+  admin.get('/panel/conversaciones/:id/media/:msg', (req, res) => {
+    const m = db.prepare('SELECT media_ruta, media_mime FROM messages WHERE id = ? AND conversation_id = ?').get(Number(req.params.msg), req.params.id);
+    return enviarMedio(res, m);
+  });
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);
     return d ? res.json(d) : res.status(404).json({ error: 'no existe' });

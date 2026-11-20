@@ -4,6 +4,7 @@ import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
+import * as mediosReales from './medios.js';
 
 const TAGS = knowledge.etiquetas;
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
@@ -19,8 +20,8 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, now, sleep, live, random });
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, now, sleep, live, random });
   }
 
   // ---------- Entrada ----------
@@ -49,9 +50,18 @@ export class Setter {
 
   async onInbound(evt) {
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
-    const adjunto = tipoAdjunto(evt.adjuntos);
+    let adjunto = tipoAdjunto(evt.adjuntos);
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto });
     if (!ins) return { ignorado: 'duplicado' };
+    // Audios e imágenes: se descargan y los audios se transcriben antes de que Sofía conteste
+    let transcripcion = null;
+    if (evt.adjuntos?.length || evt.subida) {
+      const m = evt.subida || (await this.safe(() => this.medios.procesarAdjuntos(evt.adjuntos)));
+      if (m) {
+        adjunto = m.adjunto; transcripcion = m.transcripcion;
+        this.repo.updateMessage(ins.lastInsertRowid, { adjunto: m.adjunto, media_ruta: m.media_ruta, media_mime: m.media_mime, transcripcion: m.transcripcion, media_error: m.media_error, ...(evt.texto ? {} : { texto: `[${m.adjunto}]` }) });
+      }
+    }
     const ahora = this.now();
     this.repo.updateConv(conv.id, { last_inbound_at: ahora.toISOString() });
     this.repo.cancelScheduled(conv.id, 'el lead escribió');
@@ -67,7 +77,7 @@ export class Setter {
     // Tags que trae el webhook: las etiquetas del panel se ajustan a GHL
     if (Array.isArray(evt.tags)) await this.safe(() => this.etiquetas?.sincronizarContacto(conv.contact_id, evt.tags));
     // Etiquetas por reglas de texto/adjunto (pueden pausar, derivar o forzar la respuesta)
-    await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'lead', texto: evt.texto, adjunto }));
+    await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'lead', texto: [evt.texto, transcripcion].filter(Boolean).join(' '), adjunto }));
 
     // ¿Socio o lead? Solo la primera vez.
     if (!conv.tipo) {
@@ -77,7 +87,7 @@ export class Setter {
 
     const actual = this.repo.getConv(conv.id);
     if (actual.ai_paused || actual.derivado) return { pausada: true };
-    if (SIN_RESPUESTA.test(evt.texto || '')) return { ignorado: 'mención o reacción' };
+    if (SIN_RESPUESTA.test(evt.texto || '') && !adjunto) return { ignorado: 'mención o reacción' };
 
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
     const { lectura } = retardoHumano([], { random: this.random });
@@ -133,32 +143,54 @@ export class Setter {
       `- Nombre del perfil: ${conv.nombre || 'desconocido'}.`,
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
       `- Alta: ${conv.alta_estado || 'no iniciada'}. Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`,
+      '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
       this.etiquetas?.contextoIA(conv.id) || '',
       extra,
     ].filter(Boolean).join('\n');
   }
 
-  /** Convierte el historial al formato del modelo (turnos alternos, empezando por el lead). */
-  mensajesModelo(historial) {
+  /**
+   * Convierte el historial al formato del modelo (turnos alternos, empezando por el lead).
+   * Las notas de voz van como su transcripción y las imágenes del lead como imagen (solo las 3 últimas,
+   * para no disparar el coste; las anteriores quedan como «[imagen enviada antes]»).
+   */
+  async mensajesModelo(historial) {
+    const conImagen = historial.filter((m) => m.autor === 'lead' && m.adjunto === 'imagen' && m.media_ruta).slice(-3).map((m) => m.id);
     const out = [];
+    const anadir = (role, bloques) => {
+      const last = out[out.length - 1];
+      if (last && last.role === role) last.content.push(...bloques);
+      else out.push({ role, content: [...bloques] });
+    };
     for (const m of historial) {
       const role = m.autor === 'lead' ? 'user' : 'assistant';
-      const texto = m.autor === 'humano' ? `[escrito por una persona del equipo] ${m.texto}` : m.texto;
-      if (!texto) continue;
-      const last = out[out.length - 1];
-      if (last && last.role === role) last.content += `\n${texto}`;
-      else out.push({ role, content: texto });
+      const bloques = [];
+      if (m.autor === 'lead' && m.adjunto === 'audio') {
+        bloques.push({ type: 'text', text: m.transcripcion ? `[nota de voz, transcrita automáticamente] ${m.transcripcion}` : '[nota de voz que no se ha podido escuchar]' });
+        if (m.texto && !/^\[(audio|adjunto)\]$/.test(m.texto)) bloques.push({ type: 'text', text: m.texto });
+      } else if (m.autor === 'lead' && m.adjunto === 'imagen') {
+        let img = null;
+        if (conImagen.includes(m.id)) img = await this.safe(() => this.medios.imagenParaModelo(m.media_ruta));
+        if (img) bloques.push({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } });
+        bloques.push({ type: 'text', text: img ? '[imagen enviada por el lead]' : conImagen.includes(m.id) ? '[imagen que no se ha podido abrir]' : '[imagen enviada antes]' });
+        if (m.texto && !/^\[(imagen|adjunto)\]$/.test(m.texto)) bloques.push({ type: 'text', text: m.texto });
+      } else {
+        const texto = m.autor === 'humano' ? `[escrito por una persona del equipo] ${m.texto}` : m.texto;
+        if (texto) bloques.push({ type: 'text', text: texto });
+      }
+      if (bloques.length) anadir(role, bloques);
     }
-    if (!out.length || out[0].role !== 'user') out.unshift({ role: 'user', content: '(el lead abrió la conversación)' });
-    if (out[out.length - 1].role !== 'user') out.push({ role: 'user', content: '(sin mensaje nuevo del lead)' });
-    return out;
+    if (!out.length || out[0].role !== 'user') out.unshift({ role: 'user', content: [{ type: 'text', text: '(el lead abrió la conversación)' }] });
+    if (out[out.length - 1].role !== 'user') out.push({ role: 'user', content: [{ type: 'text', text: '(sin mensaje nuevo del lead)' }] });
+    // Mensajes solo de texto: como cadena (igual que antes)
+    return out.map((x) => (x.content.every((b) => b.type === 'text') ? { role: x.role, content: x.content.map((b) => b.text).join('\n') } : x));
   }
 
   async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
     const system = systemBlocks(knowledge.prompt, knowledge.negocio, this.contexto(conv, extraContexto));
-    const messages = this.mensajesModelo(this.repo.history(convId));
+    const messages = await this.mensajesModelo(this.repo.history(convId));
     const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
 
     let respuesta;

@@ -11,3 +11,13 @@
 - **Follow-ups**: las 4 reglas con interruptor, resultados de 7 días y próximos envíos (se pueden cancelar).
 - **Probar IA** (como en Zapp): pruebas guardadas en `data/pruebas.db` (lista, borrar una o todas), WhatsApp o Instagram, panel de análisis (fase, sede, etiquetas reales aplicadas, herramientas del último turno, lo que ha entendido y siguiente paso), «IA inicia» (outbound), forzar cada follow-up, teléfono y fecha simulados (con el teléfono de un socio se prueba la detección de socios), exportar a texto con o sin análisis, enlace directo y vista móvil. No toca GHL ni AimHarder.
 - **Ajustes**: Sofía encendida/apagada, canales, franja horaria, tiempo de respuesta y velocidad de escritura (mismos valores que Zapp: 8 a 0 h, 15–50 s, 4 letras/s). Se guardan en la base de datos y se aplican sin reiniciar. El modo real (MODE=live) no se cambia desde el panel.
+
+## Audios e imágenes
+
+Sofía escucha las notas de voz y ve las imágenes que manda el lead:
+
+- Los adjuntos de GHL se descargan y se guardan en `data/media/AAAA-MM/` (si la URL pide autenticación, se reintenta con el token de GHL).
+- **Audios**: se transcriben en el propio VPS con faster-whisper (modelo «small», int8, unos 8 s por nota) usando `scripts/transcribir.py`; la voz no sale a ningún servicio externo. Si falla, se usa `/usr/local/bin/cfmp-whisper-transcribe` (openai-whisper, más lento). Una transcripción cada vez. Config: `TRANSCRIPTOR_PYTHON`, `TRANSCRIPTOR_MODELOS`, `TRANSCRIPTOR_RESERVA`. Hoy usa el entorno Python de hermes y el modelo de metrito-stt (solo lectura): si desaparecen, cae a la reserva.
+- **Imágenes**: van al modelo como imagen (las 3 últimas del chat; las anteriores quedan como «[imagen enviada antes]»). Las grandes o en formatos raros (HEIC…) se convierten con ffmpeg a JPEG de 1568 px.
+- Las reglas de etiquetas de texto también se aplican a la transcripción.
+- En el panel, los chats muestran el audio con su transcripción y la imagen. En Probar IA se puede adjuntar una imagen o audio (📎) o grabar una nota de voz (🎙️).

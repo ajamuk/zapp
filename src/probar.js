@@ -12,6 +12,8 @@ import { Etiquetador } from './etiquetas.js';
 import { buscarSocioPorTelefono } from './aimharder/index.js';
 import { contextoSeguimiento } from './followups.js';
 import { leerAjustes } from './ajustes.js';
+import fs from 'node:fs';
+import { carpetaMedios, procesarSubida } from './medios.js';
 
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 
@@ -35,7 +37,7 @@ export const rutaPruebas = () => process.env.PRUEBAS_DB_PATH || (config.dbPath =
  * - pruebas: repo de la base de pruebas (se abre al primer uso si no se pasa)
  * - complete: sustituto del modelo (tests)
  */
-export function routerProbar({ repo, pruebas: pruebasInicial, complete }) {
+export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opciones }) {
   const r = express.Router();
   let pruebasRepo = pruebasInicial;
   const pruebas = () => (pruebasRepo ??= crearRepo(openDb(rutaPruebas())));
@@ -53,7 +55,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete }) {
     const avisar = async (t) => { ghl.salida.push(`[aviso equipo] ${t}`); };
     const etiquetas = new Etiquetador({ repo: pruebas(), catalogo: repo.db, ghl, avisar, now });
     const setter = new Setter({
-      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas,
+      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas, ...(opciones.medios?.setter ? { medios: opciones.medios.setter } : {}),
       aimharder: {
         buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), // índice real, solo lectura
         prepararAlta: async () => ({ estado: 'simulada', detalle: 'chat de pruebas: no se guarda en AimHarder' }),
@@ -77,7 +79,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete }) {
     const ajustes = leerAjustes(repo);
     return {
       conv: { ...resumen(c), analisis: c.analisis, siguiente_paso: c.siguiente_paso, ultimo_turno: json(c.ultimo_turno, null), ai_paused: c.ai_paused, derivado: c.derivado, pause_reason: c.pause_reason, alta_estado: c.alta_estado, prueba_reservada: c.prueba_reservada, telefono: c.telefono },
-      mensajes: db.prepare('SELECT id, autor, texto, tipo, created_at FROM messages WHERE conversation_id = ? ORDER BY id').all(id),
+      mensajes: db.prepare('SELECT id, autor, texto, tipo, adjunto, media_ruta IS NOT NULL tiene_medio, transcripcion, media_error, created_at FROM messages WHERE conversation_id = ? ORDER BY id').all(id),
       etiquetas: db.prepare('SELECT etiqueta_id id, origen, created_at puesta FROM conv_etiquetas WHERE conversation_id = ? ORDER BY created_at').all(id)
         .map((e) => ({ ...e, ...colorDe(e.id) })).filter((e) => e.nombre),
       altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: json(a.datos, {}) })),
@@ -167,6 +169,27 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete }) {
       pruebas().updateConv(c.id, { respond_at: null });
       return setter.responder(c.id);
     });
+  });
+
+  // Audio o imagen como si lo mandara el lead. Body: { datos (base64), mime, nombre, texto? }
+  r.post('/conversaciones/:id/adjunto', async (req, res) => {
+    let subida;
+    try { subida = await procesarSubida(req.body || {}, opciones.medios); } catch (e) { return res.status(400).json({ error: e.message }); }
+    const texto = typeof req.body?.texto === 'string' ? req.body.texto.trim() : '';
+    return turno(req, res, async (c, { setter }) => {
+      const r1 = await setter.onInbound({ conversationId: c.id, contactId: c.id, canal: c.channel, texto, nombre: c.nombre, telefono: c.telefono, messageId: crypto.randomUUID(), adjuntos: [], subida });
+      if (subida.adjunto === 'audio') sistema(c.id, [subida.transcripcion ? `Transcripción: «${subida.transcripcion}»` : `No se ha podido transcribir el audio${subida.media_error ? ` (${subida.media_error})` : ''}.`]);
+      if (r1?.socio) return { nota: 'Detectado como socio (teléfono en AimHarder): Sofía no contesta y avisa al equipo.' };
+      const conv = pruebas().getConv(c.id);
+      if (conv.ai_paused || conv.derivado) return { nota: `Sofía no contesta: ${conv.pause_reason || 'IA pausada en este chat'}.` };
+      pruebas().updateConv(c.id, { respond_at: null });
+      return setter.responder(c.id);
+    });
+  });
+
+  r.get('/conversaciones/:id/media/:msg', (req, res) => {
+    const m = pruebas().db.prepare('SELECT media_ruta, media_mime FROM messages WHERE id = ? AND conversation_id = ?').get(Number(req.params.msg), req.params.id);
+    return enviarMedio(res, m, opciones.medios?.base);
   });
 
   // «IA inicia (outbound)»: Sofía escribe primero
@@ -274,4 +297,14 @@ export function exportar(d, conAnalisis = true) {
     out.push(`[${h}] ${AUTOR[m.autor] || m.autor}: ${m.texto}`);
   }
   return out.join('\n') + '\n';
+}
+
+/** Envía un audio o imagen guardado (solo dentro de la carpeta de medios). */
+export function enviarMedio(res, m, base = carpetaMedios()) {
+  if (!m?.media_ruta) return res.status(404).json({ error: 'Sin archivo.' });
+  const abs = path.resolve(base, m.media_ruta);
+  if (!abs.startsWith(path.resolve(base) + path.sep) || !fs.existsSync(abs)) return res.status(404).json({ error: 'El archivo ya no está.' });
+  res.set('Cache-Control', 'private, max-age=3600');
+  if (m.media_mime) res.type(m.media_mime);
+  return res.sendFile(abs);
 }

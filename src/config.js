@@ -56,6 +56,16 @@ export const config = {
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
   },
+  media: {
+    // Carpeta donde se guardan audios e imágenes (por defecto, data/media junto a la base de datos)
+    dir: env('MEDIA_DIR', ''),
+    // faster-whisper en local: python con la librería y carpeta del modelo «small» ya descargado
+    python: env('TRANSCRIPTOR_PYTHON', '/opt/hermes-agent/.venv/bin/python'),
+    modelos: env('TRANSCRIPTOR_MODELOS', '/var/cache/metrito-stt'),
+    // Reserva si lo anterior falla: script del VPS con openai-whisper (más lento)
+    reserva: env('TRANSCRIPTOR_RESERVA', '/usr/local/bin/cfmp-whisper-transcribe'),
+    ffmpeg: env('FFMPEG', 'ffmpeg'),
+  },
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),

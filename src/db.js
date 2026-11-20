@@ -126,7 +126,13 @@ const COLUMNAS_NUEVAS = {
     ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno
     simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
   },
-  messages: { adjunto: 'TEXT' },  // imagen | audio | video | documento
+  messages: {
+    adjunto: 'TEXT',              // imagen | audio | video | documento
+    media_ruta: 'TEXT',           // archivo guardado (relativo a data/media)
+    media_mime: 'TEXT',
+    transcripcion: 'TEXT',        // texto de la nota de voz (Whisper local)
+    media_error: 'TEXT',
+  },
   conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
 };
 
@@ -161,13 +167,17 @@ export function repo(db) {
     },
     addMessage(m) {
       try {
-        return db.prepare(`INSERT INTO messages (conversation_id, external_id, autor, texto, tipo, enviado, adjunto, created_at)
-          VALUES (@conversation_id, @external_id, @autor, @texto, @tipo, @enviado, @adjunto, @created_at)`)
-          .run({ external_id: null, tipo: 'texto', enviado: 1, adjunto: null, created_at: now(), ...m });
+        return db.prepare(`INSERT INTO messages (conversation_id, external_id, autor, texto, tipo, enviado, adjunto, media_ruta, media_mime, transcripcion, media_error, created_at)
+          VALUES (@conversation_id, @external_id, @autor, @texto, @tipo, @enviado, @adjunto, @media_ruta, @media_mime, @transcripcion, @media_error, @created_at)`)
+          .run({ external_id: null, tipo: 'texto', enviado: 1, adjunto: null, media_ruta: null, media_mime: null, transcripcion: null, media_error: null, created_at: now(), ...m });
       } catch (e) {
         if (String(e.message).includes('UNIQUE')) return null; // duplicado: GHL reintenta webhooks
         throw e;
       }
+    },
+    updateMessage(id, patch) {
+      const keys = Object.keys(patch).filter((k) => patch[k] !== undefined);
+      if (keys.length) db.prepare(`UPDATE messages SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...Object.fromEntries(keys.map((k) => [k, patch[k]])), __id: id });
     },
     history: (convId, limit = 40) =>
       db.prepare('SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? AND enviado = 1 ORDER BY id DESC LIMIT ?) ORDER BY id ASC').all(convId, limit),
