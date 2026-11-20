@@ -8,6 +8,10 @@ clientes de las tres sedes con sus tarifas vigentes (`GET /clients?with-current-
 
 - Socio = tiene alguna tarifa vigente hoy → la IA no contesta, se etiqueta `socio` y se asigna a su sede.
 - Exsocio (ficha sin tarifa vigente) → se trata como lead y se etiqueta `exsocio`.
+- En el VPS se comparten los tokens de las demás apps: `AIMHARDER_TOKEN_STORE=/etc/aimharder-mcp.tokens.json`.
+  Ese fichero lo renueva cada hora un cron central (`aimharder-refresh-tokens.py`), que lo copia al resto de apps.
+  Sofía lo relee antes de cada petición y nunca renueva: si lo hiciera, la pareja nueva dejaría fuera a las demás.
+  El límite de peticiones de AimHarder probablemente es por centro o por IP, así que se comparte igualmente.
 - Tokens en `.env` (`AIMHARDER_TOKEN_*` y `AIMHARDER_REFRESH_*`). Cuando caducan (la API responde 410) se renuevan
   solos con el refresh token y la pareja nueva se guarda en `data/aimharder-tokens.json`.
 

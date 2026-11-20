@@ -2,18 +2,23 @@
 const BASE = 'https://api.aimharder.com';
 
 export class AimHarderApi {
-  /** tokens: { access, refresh, onRefresh? } — onRefresh(access, refresh) para guardar la pareja nueva. */
-  constructor({ access, refresh, onRefresh, fetchImpl = fetch }) {
-    Object.assign(this, { access, refresh, onRefresh, fetch: fetchImpl });
+  /**
+   * tokens: { access, refresh, onRefresh? } — onRefresh(access, refresh) para guardar la pareja nueva.
+   * O bien leerToken(): token compartido con otras apps. Se relee antes de cada petición y NUNCA se renueva
+   * aquí (lo renueva un cron central; renovarlo desde dos sitios deja sin acceso a los demás).
+   */
+  constructor({ access, refresh, onRefresh, leerToken, fetchImpl = fetch }) {
+    Object.assign(this, { access, refresh, onRefresh, leerToken, fetch: fetchImpl });
   }
 
   async req(method, path, body, reintento = true) {
+    if (this.leerToken) this.access = this.leerToken();
     const r = await this.fetch(BASE + path, {
       method,
       headers: { Authorization: `Bearer ${this.access}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (r.status === 410 && reintento && this.refresh) { // token caducado
+    if (r.status === 410 && reintento && this.refresh && !this.leerToken) { // token caducado
       await this.refrescar();
       return this.req(method, path, body, false);
     }

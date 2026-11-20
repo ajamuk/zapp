@@ -49,6 +49,7 @@ export const config = {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
       access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),
     }])),
+    tokenStore: env('AIMHARDER_TOKEN_STORE'),
     adminUrl: env('AIMHARDER_ADMIN_URL'),
     adminUser: env('AIMHARDER_ADMIN_USER'),
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),

@@ -24,3 +24,34 @@ test('índice de socios: socio con tarifa vigente, exsocio sin ella', async () =
   assert.equal(ex.esSocio, false);
   assert.equal(ex.exSocio, true);
 });
+
+test('token compartido: se relee en cada petición y nunca se renueva', async () => {
+  const { AimHarderApi } = await import('../src/aimharder/api.js');
+  let token = 'uno';
+  const llamadas = [];
+  const fetchImpl = async (url, opts) => {
+    llamadas.push([url, opts.headers.Authorization]);
+    if (url.includes('/auth/tokens/refresh')) throw new Error('no debe renovar');
+    const st = opts.headers.Authorization === 'Bearer caducado' ? 410 : 200;
+    return { status: st, ok: st === 200, text: async () => '{"data":[]}' };
+  };
+  const api = new AimHarderApi({ refresh: 'r', leerToken: () => token, fetchImpl });
+  await api.req('GET', '/x');
+  token = 'dos';
+  await api.req('GET', '/x');
+  assert.deepEqual(llamadas.map((l) => l[1]), ['Bearer uno', 'Bearer dos']);
+  token = 'caducado';
+  await assert.rejects(api.req('GET', '/x'), /410/);
+  assert.ok(!llamadas.some((l) => l[0].includes('refresh')));
+});
+
+test('lee el almacén compartido de aimharder-mcp', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { leerTokenCompartido } = await import('../src/aimharder/index.js');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ah-')), 't.json');
+  fs.writeFileSync(f, JSON.stringify({ centers: { las_rosas: { accessToken: 'tok', refreshToken: 'r' } } }));
+  assert.equal(leerTokenCompartido(f, 'las_rosas'), 'tok');
+  assert.throws(() => leerTokenCompartido(f, 'parla'), /no hay token de parla/);
+});

@@ -14,8 +14,30 @@ export function normalizarTelefono(t) {
   return sin.length >= 9 ? sin.slice(-9) : null;
 }
 
-/** Un cliente de API por sede. Los tokens renovados se guardan en data/aimharder-tokens.json. */
+/**
+ * Almacén de tokens compartido con las demás apps del VPS (formato de aimharder-mcp:
+ * { centers: { parla: { accessToken, refreshToken } } }). Lo mantiene al día un cron central.
+ */
+export function leerTokenCompartido(fichero, sede) {
+  const t = JSON.parse(fs.readFileSync(fichero, 'utf8')).centers?.[sede]?.accessToken;
+  if (!t) throw new Error(`AimHarder: no hay token de ${sede} en ${fichero}`);
+  return t;
+}
+
+/**
+ * Un cliente de API por sede. Con AIMHARDER_TOKEN_STORE se usan los tokens compartidos (sin renovarlos);
+ * si no, los del .env, y los renovados se guardan en data/aimharder-tokens.json.
+ */
 export function clientesApi() {
+  const store = config.aimharder.tokenStore;
+  if (store) {
+    const out = {};
+    for (const sede of SEDES) {
+      try { leerTokenCompartido(store, sede); } catch (e) { console.warn(e.message); continue; }
+      out[sede] = new AimHarderApi({ leerToken: () => leerTokenCompartido(store, sede) });
+    }
+    return out;
+  }
   let guardados = {};
   try { guardados = JSON.parse(fs.readFileSync(ficheroTokens(), 'utf8')); } catch { /* primera vez */ }
   const out = {};
