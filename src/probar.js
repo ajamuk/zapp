@@ -234,6 +234,12 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
 
   const borrar = (ids) => pruebas().db.transaction(() => {
     for (const id of ids) {
+      // Los audios e imágenes de la prueba también se borran del disco
+      const base = opciones.medios?.base || carpetaMedios();
+      for (const m of pruebas().db.prepare('SELECT media_ruta FROM messages WHERE conversation_id = ? AND media_ruta IS NOT NULL').all(id)) {
+        const abs = path.resolve(base, m.media_ruta);
+        if (abs.startsWith(path.resolve(base) + path.sep)) for (const f of [abs, abs.replace(/\.[^.]+$/, '') + '.modelo.jpg']) fs.rmSync(f, { force: true });
+      }
       for (const t of ['messages', 'scheduled', 'ai_runs', 'altas', 'conv_etiquetas']) pruebas().db.prepare(`DELETE FROM ${t} WHERE conversation_id = ?`).run(id);
       pruebas().db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
     }

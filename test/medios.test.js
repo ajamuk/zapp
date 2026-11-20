@@ -127,7 +127,12 @@ test('Probar IA: subir un audio lo transcribe y Sofía contesta; el panel sirve 
     const f = await fetch(`${url}/conversaciones/${c.id}/media/${audio.id}`, { headers: h });
     assert.equal(f.status, 200);
     assert.equal((await f.arrayBuffer()).byteLength, 2 * 1024 * 1024);
-    const mal = await fetch(`${url}/conversaciones/${c.id}/adjunto`, { method: 'POST', headers: h, body: JSON.stringify({ datos: 'eA==', mime: 'application/pdf', nombre: 'x.pdf' }) });
+    const ficheros = () => fs.readdirSync(b, { recursive: true }).filter((x) => /\.ogg$/.test(x)).length;
+    assert.equal(ficheros(), 1);
+    await fetch(`${url}/conversaciones/${c.id}`, { method: 'DELETE', headers: h });
+    assert.equal(ficheros(), 0);
+    const c2 = (await (await fetch(url + '/conversaciones', { method: 'POST', headers: h, body: '{"canal":"whatsapp"}' })).json()).conv;
+    const mal = await fetch(`${url}/conversaciones/${c2.id}/adjunto`, { method: 'POST', headers: h, body: JSON.stringify({ datos: 'eA==', mime: 'application/pdf', nombre: 'x.pdf' }) });
     assert.equal(mal.status, 400);
   } finally { srv.close(); }
 });
