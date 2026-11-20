@@ -8,7 +8,8 @@ import path from 'node:path';
 import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
-import { textoPrevisto } from './followups.js';
+import { textoPrevisto, programarManual, cancelarCita, destinatarios, validarLanzamiento, cancelarLanzamiento } from './followups.js';
+import * as reglasSeg from './reglas.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
@@ -141,6 +142,40 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
     if (!setter?.redactar || (!config.ai.apiKey && !complete)) return res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' });
     try { res.json(await textoPrevisto(setter, s, { forzar: req.body?.rehacer === true })); } catch (e) { console.error('Previa seguimiento:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
   });
+  // ---------- Reglas de seguimiento (editables) ----------
+  admin.get('/panel/reglas', (_req, res) => res.json({ reglas: reglasSeg.listar(db), etiquetas: etq.listar(db).map(({ id, nombre, color }) => ({ id, nombre, color })) }));
+  admin.post('/panel/reglas', (req, res) => { try { res.status(201).json(reglasSeg.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/reglas/:id', (req, res) => {
+    try { const r = reglasSeg.actualizar(db, req.params.id, req.body || {}); return r ? res.json(r) : res.status(404).json({ error: 'Esa regla no existe.' }); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.delete('/panel/reglas/:id', (req, res) => res.json({ ok: reglasSeg.borrar(db, req.params.id) }));
+
+  // Mensaje programado a mano desde un chat. Body: { texto, cuando (ISO) }
+  admin.post('/panel/conversaciones/:id/programar', (req, res) => {
+    try { res.status(201).json({ id: programarManual(repo, req.params.id, req.body?.texto, req.body?.cuando) }); } catch (e) { errorUsuario(res, e); }
+  });
+  // La clase de prueba se anula o se cambia: se cancelan sus recordatorios
+  admin.post('/panel/conversaciones/:id/prueba/cancelar', (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    cancelarCita(repo, req.params.id);
+    res.json({ ok: true });
+  });
+
+  // ---------- Lanzamientos ----------
+  admin.post('/panel/lanzamientos/previa', (req, res) => {
+    const b = req.body || {};
+    const d = destinatarios(db, { dias_actividad: b.dias_actividad, canales: b.canales || [], excluir_etiquetas: b.excluir_etiquetas || [], solo_etiquetas: b.solo_etiquetas || [] });
+    const fuera = d.filter((c) => !c.last_inbound_at || Date.now() - new Date(c.last_inbound_at) > 24 * 3600e3).length;
+    res.json({ total: d.length, por_plantilla: fuera, ejemplo: d.slice(0, 8).map((c) => c.nombre || c.id) });
+  });
+  admin.post('/panel/lanzamientos', (req, res) => {
+    let l; try { l = validarLanzamiento(req.body || {}); } catch (e) { return errorUsuario(res, e); }
+    const r = db.prepare(`INSERT INTO lanzamientos (nombre, texto, programado_at, dias_actividad, canales, excluir_etiquetas, solo_etiquetas)
+      VALUES (@nombre, @texto, @programado_at, @dias_actividad, @canales, @excluir_etiquetas, @solo_etiquetas)`).run(l);
+    res.status(201).json({ id: Number(r.lastInsertRowid) });
+  });
+  admin.post('/panel/lanzamientos/:id/cancelar', (req, res) => res.json({ ok: cancelarLanzamiento(db, Number(req.params.id)) }));
+
   admin.post('/panel/seguimientos/:id/cancelar', (req, res) => {
     repo.finishScheduled(Number(req.params.id), 'cancelado', 'cancelado desde el panel');
     res.json({ ok: true });

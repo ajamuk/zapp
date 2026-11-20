@@ -153,8 +153,9 @@ export function bloqueo(etq, idsActuales) {
  * - now(): fecha actual (para chats de prueba con hora simulada)
  */
 export class Etiquetador {
-  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date() }) {
-    Object.assign(this, { repo, catalogo, ghl, avisar, now });
+  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date(), alPoner = null, alQuitar = null }) {
+    // alPoner/alQuitar(convId, etiquetaId): para los seguimientos que dispara una etiqueta
+    Object.assign(this, { repo, catalogo, ghl, avisar, now, alPoner, alQuitar });
   }
 
   get db() { return this.repo.db; }
@@ -176,6 +177,7 @@ export class Etiquetador {
     this.db.prepare('INSERT OR IGNORE INTO conv_etiquetas (conversation_id, etiqueta_id, origen, created_at, ghl_sync) VALUES (?, ?, ?, ?, ?)')
       .run(convId, etq.id, origen, this.now().toISOString(), origen === 'ghl' ? 1 : 0);
     await this.acciones(conv, etq, origen, porInactividad);
+    await this.safe(async () => this.alPoner?.(convId, etq.id));
     return { puesta: true, etiqueta: { id: etq.id, nombre: etq.nombre, color: etq.color } };
   }
 
@@ -183,6 +185,7 @@ export class Etiquetador {
     const etq = obtener(this.catalogo, etiquetaId);
     const conv = this.repo.getConv(convId);
     const r = this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etiquetaId);
+    if (r.changes) await this.safe(async () => this.alQuitar?.(convId, etiquetaId));
     if (r.changes && etq && conv?.contact_id && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
       await this.safe(() => this.ghl?.removeTags(conv.contact_id, [clave(etq.nombre)]));
     }
@@ -248,7 +251,7 @@ export class Etiquetador {
         const estaEnGhl = enGhl.has(clave(etq.nombre));
         if (estaEnGhl && !enElChat) { if ((await this.poner(conv.id, etq.id, 'ghl')).puesta) out.puestas++; }
         else if (estaEnGhl && enElChat && !actuales.get(etq.id)) this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
-        else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; }
+        else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; await this.safe(async () => this.alQuitar?.(conv.id, etq.id)); }
         else if (!estaEnGhl && enElChat) { if (await this.subirAGhl(conv, etq)) out.subidas++; }
       }
     }

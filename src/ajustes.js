@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { knowledge } from './knowledge.js';
+import * as reglas from './reglas.js';
 
 /**
  * Ajustes que se cambian desde el panel sin reiniciar (se guardan en la base de datos).
@@ -8,7 +8,8 @@ import { knowledge } from './knowledge.js';
  */
 export function leerAjustes(repo) {
   const g = repo.ajustesGuardados();
-  const seguimientos = Object.fromEntries(knowledge.followups.reglas.map((r) => [r.id, g.seguimientos?.[r.id] ?? true]));
+  // Interruptores de los seguimientos: viven en cada regla (tabla reglas_seguimiento)
+  const seguimientos = Object.fromEntries(reglas.listar(repo.db).map((r) => [r.id, r.activo]));
   return {
     ia_activa: g.ia_activa ?? true,
     canales: { whatsapp: g.canales?.whatsapp ?? true, instagram: g.canales?.instagram ?? true },
@@ -38,8 +39,8 @@ export function guardarAjustes(repo, cambio = {}) {
   if (!hora(n.horaInicio) || !hora(n.horaFin)) throw new Error('Las horas van de 0 a 23');
   if (!(n.minDelay >= 0 && n.maxDelay >= n.minDelay && n.maxDelay <= 600)) throw new Error('Retraso: mínimo ≥ 0, máximo ≥ mínimo y como mucho 600 s');
   if (!(n.typingSpeed >= 1 && n.typingSpeed <= 20)) throw new Error('Velocidad de escritura: de 1 a 20 letras por segundo');
-  for (const id of Object.keys(n.seguimientos)) if (!knowledge.followups.reglas.some((r) => r.id === id)) delete n.seguimientos[id];
-  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'seguimientos']) {
+  for (const [id, on] of Object.entries(cambio.seguimientos || {})) repo.db.prepare('UPDATE reglas_seguimiento SET activo = ? WHERE id = ?').run(on ? 1 : 0, id);
+  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed']) {
     if (JSON.stringify(n[k]) !== JSON.stringify(actual[k])) repo.guardarAjuste(k, n[k]);
   }
   return aplicarAjustes(repo);

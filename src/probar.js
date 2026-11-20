@@ -11,6 +11,7 @@ import { Setter } from './setter.js';
 import { Etiquetador } from './etiquetas.js';
 import { buscarSocioPorTelefono } from './aimharder/index.js';
 import { reglaDe, textoPrevisto } from './followups.js';
+import * as reglasSeg from './reglas.js';
 import { leerAjustes } from './ajustes.js';
 import fs from 'node:fs';
 import { carpetaMedios, procesarSubida } from './medios.js';
@@ -56,7 +57,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
     const avisar = async (t) => { ghl.salida.push(`[aviso equipo] ${t}`); };
     const etiquetas = new Etiquetador({ repo: pruebas(), catalogo: repo.db, ghl, avisar, now });
     const setter = new Setter({
-      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas, ...(opciones.medios?.setter ? { medios: opciones.medios.setter } : {}),
+      repo: pruebas(), ghl, avisar, complete, live: true, sleep: async () => {}, now, etiquetas, catalogo: repo.db, ...(opciones.medios?.setter ? { medios: opciones.medios.setter } : {}),
       aimharder: {
         buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), // índice real, solo lectura
         prepararAlta: async () => ({ estado: 'simulada', detalle: 'chat de pruebas: no se guarda en AimHarder' }),
@@ -84,7 +85,13 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
       etiquetas: db.prepare('SELECT etiqueta_id id, origen, created_at puesta FROM conv_etiquetas WHERE conversation_id = ? ORDER BY created_at').all(id)
         .map((e) => ({ ...e, ...colorDe(e.id) })).filter((e) => e.nombre),
       altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: json(a.datos, {}) })),
-      seguimientos: knowledge.followups.reglas.filter((x) => x.canales.includes(c.channel)).map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, tipo: x.tipo || 'silencio', dias: x.dias, despuesDe: x.despuesDe || null, activo: Boolean(ajustes.seguimientos[x.id]) })),
+      // Reglas que aplican a esta prueba: las de silencio, las de largo plazo (si lo ha aplazado), las de las
+      // etiquetas que lleva y el recordatorio si ha pedido clase de prueba
+      seguimientos: reglasSeg.listar(repo.db).filter((x) => x.canales.includes(c.channel)
+        && (x.tipo === 'silencio' || (x.tipo === 'largo-plazo' && c.retomar) || (x.tipo === 'cita' && c.prueba_fecha)
+          || (x.tipo === 'etiqueta' && db.prepare('SELECT 1 FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').get(id, x.etiquetaId))))
+        .map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, tipo: x.tipo, dias: x.dias, despuesDe: x.despuesDe, activo: x.activo, modo: x.modo })),
+      prueba_fecha: c.prueba_fecha,
       retomar: json(c.retomar, null),
       ahora: ahoraDe(c)().toISOString(),
     };
@@ -206,16 +213,21 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
   const seguimientoSimulado = (c, regla) => {
     const ahora = ahoraDe(c)();
     const ret = json(c.retomar, null);
+    const clase = c.prueba_fecha ? new Date(c.prueba_fecha) : null;
+    if (regla.tipo === 'cita' && clase) {
+      return { id: null, conversation_id: c.id, regla_id: regla.id, tipo: 'cita', due_at: new Date(clase.getTime() - regla.minutos * 60000).toISOString(),
+        contexto: JSON.stringify({ prueba: clase.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }) };
+    }
     const due = regla.tipo === 'largo-plazo'
       ? new Date(Math.max(ahora.getTime() + 3 * 864e5, ret?.fecha ? Date.parse(`${ret.fecha}T10:00:00Z`) : ahora.getTime() + (regla.dias || 21) * 864e5) + (regla.despuesDe ? (regla.dias || 30) * 864e5 : 0))
       : new Date(ahora.getTime() + regla.minutos * 60000);
-    return { id: null, conversation_id: c.id, regla_id: regla.id, due_at: due.toISOString(), contexto: regla.tipo === 'largo-plazo' ? JSON.stringify({ fecha: ret?.fecha || due.toISOString().slice(0, 10), motivo: ret?.motivo || '' }) : null };
+    return { id: null, conversation_id: c.id, regla_id: regla.id, tipo: regla.tipo, due_at: due.toISOString(), contexto: regla.tipo === 'largo-plazo' ? JSON.stringify({ fecha: ret?.fecha || due.toISOString().slice(0, 10), motivo: ret?.motivo || '' }) : null };
   };
   const clavePrevia = (c, regla) => `${c.id}|${regla.id}|${pruebas().ultimoMensajeId(c.id)}`;
 
   r.post('/conversaciones/:id/seguimiento/:regla/previa', async (req, res) => {
     const c = pruebas().getConv(req.params.id);
-    const regla = reglaDe(req.params.regla);
+    const regla = reglaDe(repo.db, req.params.regla);
     if (!c || !regla) return res.status(404).json({ error: 'No existe.' });
     if (sinModelo(res)) return;
     const k = clavePrevia(c, regla);
@@ -229,7 +241,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
 
   // «Forzar» un seguimiento: envía ya el texto preparado (o lo prepara si no lo había)
   r.post('/conversaciones/:id/seguimiento', (req, res) => {
-    const regla = reglaDe(req.body?.regla);
+    const regla = reglaDe(repo.db, req.body?.regla);
     if (!regla) return res.status(400).json({ error: 'Seguimiento desconocido.' });
     return turno(req, res, async (c, { setter }) => {
       const k = clavePrevia(c, regla);

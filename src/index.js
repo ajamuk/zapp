@@ -5,7 +5,7 @@ import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizar
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
 import { aplicarAjustes } from './ajustes.js';
-import { procesarSeguimientos } from './followups.js';
+import { procesarSeguimientos, programarPorEtiqueta, cancelarPorEtiqueta } from './followups.js';
 import { crearApp } from './server.js';
 import { Etiquetador } from './etiquetas.js';
 
@@ -22,7 +22,12 @@ sincronizarSiHaceFalta(repo)
   .catch(avisoSync);
 setInterval(() => sincronizarSocios(repo).then((r) => console.log('Socios sincronizados:', JSON.stringify(r))).catch(avisoSync), 4 * 3600 * 1000);
 const ghl = new Ghl();
-const etiquetas = new Etiquetador({ repo, ghl, avisar: avisarEquipo });
+const etiquetas = new Etiquetador({
+  repo, ghl, avisar: avisarEquipo,
+  // Seguimientos que dispara una etiqueta: se programan al ponerla y se cancelan al quitarla
+  alPoner: (convId, etiquetaId) => programarPorEtiqueta(repo, repo.db, convId, etiquetaId),
+  alQuitar: (convId, etiquetaId) => cancelarPorEtiqueta(repo, repo.db, convId, etiquetaId),
+});
 const setter = new Setter({ repo, ghl, aimharder, avisar: avisarEquipo, etiquetas });
 
 const app = crearApp({ setter, repo, etiquetas });

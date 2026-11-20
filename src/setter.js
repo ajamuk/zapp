@@ -5,6 +5,8 @@ import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
+import * as reglasSeg from './reglas.js';
+import { programarCita } from './followups.js';
 
 const TAGS = knowledge.etiquetas;
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
@@ -20,8 +22,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, now, sleep, live, random });
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+    // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, now, sleep, live, random });
   }
 
   // ---------- Entrada ----------
@@ -297,11 +300,10 @@ export class Setter {
   programarSeguimientos(conv) {
     if (String(conv.id).startsWith('prueba-')) return; // chat de pruebas: se fuerzan a mano desde Probar IA
     const base = this.now().getTime();
-    const activos = leerAjustes(this.repo).seguimientos;
     this.repo.cancelScheduled(conv.id, 'Sofía volvió a responder', { soloCortos: true });
-    for (const regla of knowledge.followups.reglas) {
-      if (regla.tipo === 'largo-plazo' || !regla.canales.includes(conv.channel) || !activos[regla.id]) continue;
-      this.repo.schedule(conv.id, regla.id, new Date(base + regla.minutos * 60000).toISOString());
+    for (const regla of reglasSeg.listar(this.catalogo)) {
+      if (regla.tipo !== 'silencio' || !regla.canales.includes(conv.channel) || !regla.activo) continue;
+      this.repo.schedule(conv.id, regla.id, new Date(base + regla.minutos * 60000).toISOString(), null, 'silencio');
     }
   }
 
@@ -311,7 +313,7 @@ export class Setter {
    * Devuelve { fecha, motivo, segundo } o null si el canal no lo permite.
    */
   programarLargoPlazo(conv, { fecha = '', motivo = '' } = {}) {
-    const reglas = knowledge.followups.reglas.filter((r) => r.tipo === 'largo-plazo');
+    const reglas = reglasSeg.listar(this.catalogo).filter((r) => r.tipo === 'largo-plazo');
     const primera = reglas.find((r) => !r.despuesDe);
     const ahora = this.now();
     const dia = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 10, 0)); // 11:00 en invierno, 12:00 en verano
@@ -321,13 +323,14 @@ export class Setter {
     const info = { fecha: objetivo.toISOString().slice(0, 10), motivo: String(motivo || '').slice(0, 300), at: ahora.toISOString() };
     this.repo.updateConv(conv.id, { retomar: JSON.stringify(info) });
     if (!primera || !primera.canales.includes(conv.channel)) return { ...info, programado: false, nota: 'Instagram no deja escribir pasados unos días: no se programa' };
-    this.repo.cancelScheduled(conv.id, 'lo deja para más adelante');
+    this.repo.cancelScheduled(conv.id, 'lo deja para más adelante', { tipos: ['silencio', 'largo-plazo'] });
     if (String(conv.id).startsWith('prueba-')) return { ...info, programado: false, nota: 'chat de pruebas: usa «Forzar» para verlo' };
-    const activos = leerAjustes(this.repo).seguimientos;
-    let base = objetivo;
-    for (const r of [primera, ...reglas.filter((x) => x.despuesDe)]) {
-      if (r !== primera) base = new Date(base.getTime() + r.dias * 864e5);
-      if (activos[r.id]) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo });
+    // La primera en la fecha; las encadenadas (despuesDe), sus días después de la anterior
+    let base = objetivo; let anterior = primera;
+    if (primera.activo) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
+    for (let r = reglas.find((x) => x.despuesDe === anterior.id); r; anterior = r, r = reglas.find((x) => x.despuesDe === anterior.id)) {
+      base = new Date(base.getTime() + r.minutos * 60000);
+      if (r.activo) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     }
     return { ...info, programado: true };
   }
@@ -365,6 +368,7 @@ export class Setter {
       case 'reservar_prueba_parla': {
         efectos.tags.add(TAGS.tareas.prueba_parla);
         this.repo.updateConv(conv.id, { prueba_reservada: 1 });
+        programarCita(this.repo, this.catalogo, conv.id, input.fecha_hora, this.now()); // recordatorios antes de la clase
         await this.avisar?.(`Prueba en Parla pedida: ${input.modalidad} · ${input.fecha_hora}. Confirmar en el calendario y avisar al lead.`, { sede: 'parla' });
         return { ok: true, estado: 'solicitada', nota: 'Dile que se la dejas apuntada y que el equipo se la confirma por aquí. Es sin coste.' };
       }

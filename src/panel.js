@@ -1,5 +1,6 @@
 import { knowledge } from './knowledge.js';
 import { deChats } from './etiquetas.js';
+import * as reglasSeg from './reglas.js';
 
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
 const PRUEBAS = "c.id NOT LIKE 'prueba-%'";
@@ -191,7 +192,7 @@ export function detalle(db, id) {
     seguimientos: (() => {
       const ultimo = db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(id)?.m ?? 0;
       return db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id)
-        .map((x) => ({ ...x, nombre: knowledge.followups.reglas.find((r) => r.id === x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }));
+        .map((x) => ({ ...x, nombre: x.tipo === 'manual' ? 'Mensaje programado' : x.tipo === 'lanzamiento' ? 'Lanzamiento' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }));
     })(),
     altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: JSON.parse(a.datos) })),
     ia: db.prepare('SELECT * FROM ai_runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id),
@@ -205,16 +206,20 @@ export function altas(db, limite = 100) {
 }
 
 export function seguimientos(db) {
-  const reglas = knowledge.followups.reglas.map((r) => ({
-    id: r.id, nombre: r.nombre, minutos: r.minutos, tipo: r.tipo || 'silencio', dias: r.dias, despuesDe: r.despuesDe || null, canales: r.canales, condicion: r.condicion, instrucciones: r.instrucciones,
-    plantilla: r.plantillaWhatsapp?.nombre || null,
+  const reglas = reglasSeg.listar(db).map((r) => ({
+    ...r, etiqueta: r.etiquetaId ? db.prepare('SELECT nombre, color FROM etiquetas WHERE id = ?').get(r.etiquetaId) : null,
     ...Object.fromEntries(['enviado', 'omitido', 'cancelado', 'error', 'pendiente'].map((e) => [e,
       db.prepare(`SELECT count(*) n FROM scheduled WHERE regla_id = ? AND estado = ? AND conversation_id NOT LIKE 'prueba-%' AND datetime(created_at) >= datetime('now', '-7 days')`).get(r.id, e).n])),
   }));
   const proximos = db.prepare(`SELECT s.*, c.nombre, c.channel, c.sede,
       (s.texto_previsto IS NOT NULL AND s.previsto_msg = (SELECT max(id) FROM messages m WHERE m.conversation_id = s.conversation_id AND m.enviado = 1)) vigente
     FROM scheduled s LEFT JOIN conversations c ON c.id = s.conversation_id
-    WHERE s.estado = 'pendiente' AND s.conversation_id NOT LIKE 'prueba-%' ORDER BY s.due_at LIMIT 100`).all()
-    .map((x) => ({ ...x, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: Boolean(x.vigente) }));
-  return { reglas, proximos };
+    WHERE s.estado = 'pendiente' AND s.conversation_id NOT LIKE 'prueba-%' AND IFNULL(s.tipo, '') != 'lanzamiento' ORDER BY s.due_at LIMIT 100`).all()
+    .map((x) => ({ ...x, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: Boolean(x.vigente) || x.tipo === 'manual',
+      regla_nombre: x.tipo === 'manual' ? 'Mensaje programado' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id }));
+  const lanzamientos = db.prepare('SELECT * FROM lanzamientos ORDER BY programado_at DESC LIMIT 50').all().map((l) => ({
+    ...l, canales: JSON.parse(l.canales), excluir_etiquetas: JSON.parse(l.excluir_etiquetas), solo_etiquetas: JSON.parse(l.solo_etiquetas),
+    ...Object.fromEntries(['enviado', 'omitido', 'error', 'pendiente', 'cancelado'].map((e) => [e, db.prepare('SELECT count(*) n FROM scheduled WHERE regla_id = ? AND estado = ?').get(`lanzamiento-${l.id}`, e).n])),
+  }));
+  return { reglas, proximos, lanzamientos };
 }

@@ -21,7 +21,7 @@
   #raiz button:disabled, #raiz input:disabled { opacity: .55; cursor: default; }
   #raiz button.primario, #raiz .filtros button.activo, .secciones a[aria-current="page"] { background: var(--green); border-color: var(--green); color: #fff; }
   #raiz button.peligro { border-color: #d9b8b8; color: var(--red); background: #fff; }
-  #raiz input:not([type="checkbox"]), #raiz select { min-height: 42px; max-width: 100%; background: var(--panel); border: 1px solid #becdb8; border-radius: 7px; padding: 7px 10px; }
+  #raiz input:not([type="checkbox"]):not([type="radio"]), #raiz select { min-height: 42px; max-width: 100%; background: var(--panel); border: 1px solid #becdb8; border-radius: 7px; padding: 7px 10px; }
   .sofia { max-width: 1280px; margin: auto; padding: 32px clamp(16px, 3vw, 40px) 24px; }
   .sofia-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
   .sofia-cabecera h1 { font-size: 30px; line-height: 1.15; letter-spacing: -.7px; margin: 0; }
@@ -250,6 +250,15 @@
   .fu-cab { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
   .fu-texto { font-size: 12px; margin-top: 3px; }
   td.fu-texto { min-width: 220px; max-width: 380px; }
+  .grupo-seg { margin-top: 18px; }
+  .grupo-seg h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px !important; }
+  .regla.apagada { opacity: .6; }
+  .prog { display: grid; gap: 6px; margin-top: 6px; }
+  .prog textarea { width: 100%; font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 6px 8px; }
+  .editor input[type="radio"] { accent-color: var(--green); width: 17px; height: 17px; }
+  .fila-f label.check { display: flex; font-weight: 400; }
+  .hilo .pie { max-height: 300px; }
+  .editor .ch input[type="radio"] { display: none; }
 </style>
 </head>
 <body>
@@ -331,6 +340,7 @@ window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1).split('/')[0];
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
   if (id !== 'etiquetas') estado.editEtq = null;
+  if (id !== 'seguimientos') { estado.editRegla = null; estado.nuevoLanz = false; }
   estado.seccion = id || 'resumen';
   pintar();
 });
@@ -651,15 +661,24 @@ async function abrir(id) {
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
+      c.prueba_fecha ? `<b>📅 Clase de prueba</b><br>${fechaCorta(c.prueba_fecha)} <button type="button" class="mini" id="banprueba" title="Cancela sus recordatorios">Anular o cambiada</button>` : '',
+      `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? `<form id="fprog" class="prog"><textarea id="ptxt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead"></textarea><div class="fila-f"><input type="datetime-local" id="pfec" value="${fechaLocal(new Date(Date.now() + 3600e3).toISOString())}" aria-label="Fecha y hora"><button class="primario mini">Programar</button></div><p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, va por plantilla.</p><p class="error" id="perr"></p></form>` : ''}`,
       c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
       d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
-        ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
+        ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
     ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = 1e9;
   cargarMedios($('#msgs'));
   $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); abrir(id); });
+  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id).then(() => $('#ptxt')?.focus()); };
+  $('#banprueba') && ($('#banprueba').onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); abrir(id); });
+  $('#fprog') && ($('#fprog').onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify({ texto: $('#ptxt').value, cuando: new Date($('#pfec').value).toISOString() }) }); estado.progAbierto = false; abrir(id); }
+    catch (err) { $('#perr').textContent = err.message; }
+  });
   if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
     (x) => api(`/panel/seguimientos/${x.id}/previa`, { method: 'POST' }),
     (x, r) => { const el = $(`#hilo [data-fu-id="${x.id}"] .fu-texto`); if (el && estado.conv === id) el.innerHTML = r.error ? `<span class="error">${esc(r.error)}</span>` : htmlPrevisto(r.texto, r.plantilla); });
@@ -848,27 +867,169 @@ async function altas() {
   $('#main').querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
 }
 
+// ---------- Seguimientos: reglas, próximos y lanzamientos ----------
+const TIPOS_SEG = [
+  ['silencio', 'Cuando el lead se queda callado', 'Salen si el lead no contesta a la última respuesta de Sofía. Se cancelan si el lead escribe. Pasadas 24 h desde su último mensaje, WhatsApp solo deja plantillas.'],
+  ['etiqueta', 'Al ponerse una etiqueta', 'Salen un tiempo después de poner una etiqueta (Sofía, el equipo, una regla o GHL). Una vez por chat y etiqueta. Sobreviven a que el lead escriba; se cancelan si quitan la etiqueta. Ej.: «Le parece caro» + 2 días.'],
+  ['cita', 'Antes de la clase de prueba', 'Se preparan cuando Sofía pide la clase de prueba de Parla y se cancelan si se anula desde el chat. Salen aunque el lead haya escrito entre medias.'],
+  ['largo-plazo', '🗓️ Cuando lo deja para más adelante', 'Cuando el lead dice que lo decidirá o se apuntará más adelante: en la fecha que dé (o a los días indicados), sustituyendo a los de silencio. Sofía comprueba antes si siguen teniendo sentido. Solo WhatsApp.'],
+];
+const unidades = (min) => (min % 1440 === 0 ? [min / 1440, 'dias'] : min % 60 === 0 ? [min / 60, 'horas'] : [min, 'minutos']);
+const textoEspera = (r) => { const [n, u] = unidades(r.minutos); const t = `${n} ${u === 'dias' ? (n === 1 ? 'día' : 'días') : u === 'horas' ? (n === 1 ? 'hora' : 'horas') : 'min'}`;
+  return r.tipo === 'cita' ? `${t} antes` : r.tipo === 'largo-plazo' ? (r.despuesDe ? `${t} después del anterior` : `fecha que dé el lead o ${t}`) : `${t} después`; };
+
 async function seguimientos() {
+  if (estado.editRegla) return editorRegla();
+  if (estado.nuevoLanz) return editorLanzamiento();
   $('#main').innerHTML = '<h2>Seguimientos</h2><div class="vacio">Cargando…</div>';
-  const [s, aj] = [await api('/panel/seguimientos'), estado.info.ajustes];
+  const s = await api('/panel/seguimientos');
   if (estado.seccion !== 'seguimientos') return;
-  $('#main').innerHTML = `<h2>Seguimientos</h2>
-    <p style="color:var(--muted);margin-top:-8px">Los normales cuentan desde el último mensaje de Sofía sin respuesta y se cancelan si el lead contesta. Los 🗓️ de largo plazo se programan cuando el lead dice que lo decidirá o se apuntará más adelante (en la fecha que dé, o a los 21 días) y sustituyen a los normales; no se cancelan si el lead escribe: Sofía comprueba antes de enviarlos si siguen teniendo sentido. Pasadas 24 h desde el último mensaje del lead, WhatsApp solo deja enviar por plantilla. En modo prueba, al vencer quedan como borrador. Ningún follow-up sale si la conversación está pausada o derivada.</p>
-    ${s.reglas.map((r) => `<div class="regla"><div class="cab"><div><b>${r.tipo === 'largo-plazo' ? '🗓️ ' : ''}${esc(r.nombre)}</b> <span class="chip">${cuandoRegla(r)}</span> ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')} ${r.plantilla ? `<span class="chip">plantilla ${esc(r.plantilla)}</span>` : ''}</div>
-      <label class="interruptor"><input type="checkbox" data-r="${esc(r.id)}" aria-label="${esc(r.nombre)}" ${aj.seguimientos[r.id] ? 'checked' : ''}><span></span></label></div>
-      <p><b>Cuándo:</b> ${esc(r.condicion)}</p><p><b>Qué dice:</b> ${esc(r.instrucciones)}</p>
-      <p>Últimos 7 días: ${r.enviado} enviados · ${r.omitido} no enviados · ${r.cancelado} cancelados${r.error ? ` · <span class="error">${r.error} con error</span>` : ''} · ${r.pendiente} programados</p></div>`).join('')}
-    <h3>Próximos</h3>
-    ${s.proximos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Chat</th><th>Follow-up</th><th>Texto previsto</th><th></th></tr>${s.proximos.map((p) => `<tr><td>${fechaCorta(p.due_at)}</td><td>${esc(p.nombre || p.conversation_id)} <span class="chip">${CANAL[p.channel] || ''}</span></td><td>${esc((s.reglas.find((r) => r.id === p.regla_id) || {}).nombre || p.regla_id)}${p.contexto?.motivo ? `<div class="ayuda">${esc(p.contexto.motivo)}</div>` : ''}</td>
-      <td class="fu-texto" data-prev="${p.id}">${p.vigente ? htmlPrevisto(p.texto_previsto) : `<button class="mini" data-ver="${p.id}" ${estado.info.modelo_configurado ? '' : 'disabled'}>Ver texto</button>`}</td><td><button data-x="${p.id}">Cancelar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">No hay seguimientos programados</div>'}`;
-  $('#main').querySelectorAll('[data-ver]').forEach((b) => b.onclick = async () => {
+  estado.segDatos = s;
+  const tarjeta = (r) => `<div class="regla ${r.activo ? '' : 'apagada'}"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${textoEspera(r)}</span>
+      ${r.etiqueta ? pill({ nombre: r.etiqueta.nombre, color: r.etiqueta.color }) : ''} ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')}
+      <span class="chip ${r.modo === 'fijo' ? 'azul' : 'violeta'}">${r.modo === 'fijo' ? 'texto fijo' : 'lo escribe Sofía'}</span>${r.plantilla && r.canales.includes('whatsapp') ? ' <span class="chip">plantilla si &gt;24 h</span>' : ''}</div>
+      <div class="acciones-f"><button class="mini" data-ed="${esc(r.id)}">Editar</button><label class="interruptor"><input type="checkbox" data-on="${esc(r.id)}" aria-label="${esc(r.nombre)} activo" ${r.activo ? 'checked' : ''}><span></span></label></div></div>
+      ${r.condicion ? `<p><b>Solo si:</b> ${esc(r.condicion)}</p>` : '<p><b>Siempre</b> (salvo que no tenga sentido con la conversación delante)</p>'}
+      <p><b>${r.modo === 'fijo' ? 'Texto' : 'Qué dice'}:</b> ${esc(r.modo === 'fijo' ? r.textoFijo : r.instrucciones)}</p>
+      <p class="ayuda">Últimos 7 días: ${r.enviado} enviados · ${r.omitido} no enviados · ${r.cancelado} cancelados${r.error ? ` · <span class="error">${r.error} con error</span>` : ''} · ${r.pendiente} programados</p></div>`;
+  const lz = s.lanzamientos;
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Seguimientos</h2><div class="acciones-f"><button id="nlanz">+ Lanzamiento</button><button class="primario" id="nregla">+ Nuevo seguimiento</button></div></div>
+    <p class="intro">Antes de enviar, Sofía mira la conversación y, si no se cumple la condición, no manda nada. Lo que escribe se puede ver antes en cada chat («texto previsto»). En modo prueba quedan como borrador. Ninguno de Sofía sale si el chat está pausado o derivado (salvo los de etiqueta o cita que lo permitan).</p>
+    ${TIPOS_SEG.map(([t, titulo, ayuda]) => `<section class="grupo-seg"><h3>${titulo} <button class="mini" data-nt="${t}">+ Añadir</button></h3><p class="ayuda">${ayuda}</p>
+      ${s.reglas.filter((r) => r.tipo === t).map(tarjeta).join('') || '<div class="vacio">Ninguno todavía</div>'}</section>`).join('')}
+    <h3>Próximos envíos</h3>
+    ${s.proximos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Chat</th><th>Seguimiento</th><th>Texto previsto</th><th></th></tr>${s.proximos.map((p) => `<tr><td>${fechaCorta(p.due_at)}</td><td>${esc(p.nombre || p.conversation_id)} <span class="chip">${CANAL[p.channel] || ''}</span></td><td>${esc(p.regla_nombre)}${p.contexto?.motivo ? `<div class="ayuda">${esc(p.contexto.motivo)}</div>` : ''}${p.contexto?.prueba ? `<div class="ayuda">Prueba: ${esc(p.contexto.prueba)}</div>` : ''}</td>
+      <td class="fu-texto" data-prev="${p.id}">${p.vigente ? htmlPrevisto(p.texto_previsto) : `<button class="mini" data-ver="${p.id}" ${estado.info.modelo_configurado ? '' : 'disabled'}>Ver texto</button>`}</td><td><button class="mini" data-x="${p.id}">Cancelar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">No hay seguimientos programados</div>'}
+    <h3>Lanzamientos <span class="ayuda">avisos con fecha y hora para toda la base activa</span></h3>
+    ${lz.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Lanzamiento</th><th>Estado</th><th></th></tr>${lz.map((l) => `<tr><td>${fechaCorta(l.programado_at)}</td><td><b>${esc(l.nombre)}</b><div class="previsto">«${esc(l.texto)}»</div><div class="ayuda">${l.canales.map((c) => CANAL[c]).join(' y ')} · activos en ${l.dias_actividad} días</div></td>
+      <td><span class="chip ${l.estado === 'enviado' ? 'verde' : l.estado === 'cancelado' ? 'rojo' : 'ambar'}">${esc(l.estado)}</span>${l.total != null ? `<div class="ayuda">${l.enviado} de ${l.total} enviados${l.omitido ? ` · ${l.omitido} no` : ''}${l.error ? ` · ${l.error} error` : ''}</div>` : ''}</td>
+      <td>${['programado', 'enviando'].includes(l.estado) ? `<button class="mini peligro" data-lc="${l.id}">Cancelar</button>` : ''}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Ningún lanzamiento. Sirven para una oferta, una apertura o un evento con fecha.</div>'}`;
+  const m = $('#main');
+  $('#nregla').onclick = () => { estado.editRegla = { nuevo: 'silencio' }; seguimientos(); };
+  $('#nlanz').onclick = () => { estado.nuevoLanz = true; seguimientos(); };
+  m.querySelectorAll('[data-nt]').forEach((b) => b.onclick = () => { estado.editRegla = { nuevo: b.dataset.nt }; seguimientos(); });
+  m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editRegla = { id: b.dataset.ed }; seguimientos(); });
+  m.querySelectorAll('[data-on]').forEach((i) => i.onchange = async () => { await api('/panel/reglas/' + encodeURIComponent(i.dataset.on), { method: 'PUT', body: JSON.stringify({ activo: i.checked }) }); i.closest('.regla').classList.toggle('apagada', !i.checked); });
+  m.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); seguimientos(); });
+  m.querySelectorAll('[data-lc]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro?'; return; }
+    await api(`/panel/lanzamientos/${b.dataset.lc}/cancelar`, { method: 'POST' }); seguimientos();
+  });
+  m.querySelectorAll('[data-ver]').forEach((b) => b.onclick = async () => {
     const td = $(`[data-prev="${b.dataset.ver}"]`); td.innerHTML = htmlPrevisto(null);
     try { const r = await api(`/panel/seguimientos/${b.dataset.ver}/previa`, { method: 'POST' }); td.innerHTML = htmlPrevisto(r.texto, r.plantilla); } catch (e) { td.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
   });
-  $('#main').querySelectorAll('[data-r]').forEach((i) => i.onchange = async () => {
-    estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ seguimientos: { [i.dataset.r]: i.checked } }) });
+}
+
+async function editorRegla() {
+  const { reglas: todas, etiquetas: etqs } = await api('/panel/reglas');
+  if (estado.seccion !== 'seguimientos') return;
+  const original = estado.editRegla.id ? todas.find((r) => r.id === estado.editRegla.id) : null;
+  const d = original ? JSON.parse(JSON.stringify(original)) : { nombre: '', tipo: estado.editRegla.nuevo, canales: ['whatsapp', 'instagram'], minutos: estado.editRegla.nuevo === 'cita' ? 180 : estado.editRegla.nuevo === 'largo-plazo' ? 30 * 1440 : 1440, modo: 'ia', instrucciones: '', textoFijo: '', condicion: '', excluir: { clientes: true, pausada: true, calladasHoras: 0 }, plantilla: true, activo: true, etiquetaId: etqs[0]?.id || null, ponerEtiqueta: null, despuesDe: null };
+  if (d.tipo === 'largo-plazo' && !original) d.canales = ['whatsapp'];
+  const m = $('#main');
+  const salir = () => { estado.editRegla = null; seguimientos(); };
+  const pintar = () => {
+    const [n, u] = unidades(d.minutos);
+    m.innerHTML = `<div class="cab-seccion"><h2>${original ? `Editar «${esc(original.nombre)}»` : 'Nuevo seguimiento'}</h2><button id="rvol">Volver</button></div>
+    <form id="fr" class="editor">
+      <section><h3>Nombre</h3><input id="rnom" value="${esc(d.nombre)}" maxlength="60" placeholder="Ej: Retomar a los que les parece caro" required style="width:100%"></section>
+      <section><h3>¿Cuándo se envía?</h3>
+        <div class="chips-f">${TIPOS_SEG.map(([t, tt]) => `<label class="ch ${d.tipo === t ? 'on' : ''}"><input type="radio" name="rtipo" value="${t}" ${d.tipo === t ? 'checked' : ''} ${original && (original.tipo === 'largo-plazo') !== (t === 'largo-plazo') ? 'disabled' : ''} hidden>${tt}</label>`).join('')}</div>
+        <div class="fila-f" style="margin-top:10px">
+          <input type="number" id="rnum" min="1" value="${n}" style="width:90px" aria-label="Cantidad">
+          <select id="runi" aria-label="Unidad">${[['minutos', 'minutos'], ['horas', 'horas'], ['dias', 'días']].map(([v, t]) => `<option value="${v}" ${u === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <span>${{ silencio: 'después de la última respuesta de Sofía sin contestar', etiqueta: 'después de ponerse la etiqueta', cita: 'antes de la clase de prueba', 'largo-plazo': d.despuesDe ? 'después del seguimiento anterior' : 'si el lead no da fecha' }[d.tipo]}</span></div>
+        ${d.tipo === 'etiqueta' ? `<label class="fila-f" style="margin-top:8px">Etiqueta: <select id="retq">${etqs.map((e) => `<option value="${e.id}" ${d.etiquetaId === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></label>${etqs.length ? '' : '<p class="error">Crea antes alguna etiqueta.</p>'}` : ''}
+        ${d.tipo === 'largo-plazo' ? `<label class="fila-f" style="margin-top:8px">Va detrás de: <select id="rdesp"><option value="">Ninguno (es el primero)</option>${todas.filter((r) => r.tipo === 'largo-plazo' && r.id !== d.id).map((r) => `<option value="${esc(r.id)}" ${d.despuesDe === r.id ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('')}</select></label>` : ''}
+        <div class="fila-f" style="margin-top:8px">Canales: ${['whatsapp', 'instagram'].map((c) => `<label class="check"><input type="checkbox" data-can="${c}" ${d.canales.includes(c) ? 'checked' : ''}> ${CANAL[c]}</label>`).join('')}</div>
+      </section>
+      <section><h3>¿Se envía siempre?</h3>
+        <label class="check"><input type="radio" name="rcond" value="no" ${d.condicion || estado.condAbierta ? '' : 'checked'}> Siempre <span class="ayuda">(salvo que no tenga ningún sentido con la conversación delante)</span></label>
+        <label class="check"><input type="radio" name="rcond" value="si" ${d.condicion || estado.condAbierta ? 'checked' : ''}> Solo si se cumple una condición <span class="ayuda">(Sofía la comprueba justo antes de enviar)</span></label>
+        ${d.condicion || estado.condAbierta ? `<textarea id="rcondt" rows="2" placeholder="Ej: solo si preguntó precios y no ha dicho que no le interesa">${esc(d.condicion)}</textarea>` : ''}
+      </section>
+      <section><h3>¿Quién escribe el mensaje?</h3>
+        <label class="check"><input type="radio" name="rmodo" value="ia" ${d.modo === 'ia' ? 'checked' : ''}> Lo escribe Sofía <span class="ayuda">en el momento, con toda la conversación delante</span></label>
+        <label class="check"><input type="radio" name="rmodo" value="fijo" ${d.modo === 'fijo' ? 'checked' : ''}> Un texto fijo que escribo yo</label>
+        ${d.modo === 'ia' ? `<textarea id="rins" rows="3" placeholder="Qué debe decir Sofía. Ej: retoma la duda de precio, recuérdale que no hay permanencia y propón empezar un mes">${esc(d.instrucciones)}</textarea>`
+          : `<textarea id="rfijo" rows="3" placeholder="Ej: hola [nombre], ¿al final te encaja empezar en [sede]?">${esc(d.textoFijo)}</textarea><p class="ayuda">Lo que pongas [entre corchetes] lo rellena Sofía leyendo el chat, sin tocar el resto (como mucho 3). Si el chat no le da ese dato, ese mensaje no sale: mejor eso que inventar.</p>`}
+      </section>
+      <section><h3>A quién no le llega</h3>
+        <label class="check"><input type="checkbox" id="rxcli" ${d.excluir.clientes ? 'checked' : ''}> A quien ya es socio o tiene el alta hecha</label>
+        <label class="check"><input type="checkbox" id="rxpau" ${d.excluir.pausada ? 'checked' : ''}> A los chats con Sofía pausada o derivados ${['silencio', 'largo-plazo'].includes(d.tipo) ? '<span class="ayuda">(en este tipo, siempre)</span>' : ''}</label>
+        <label class="check"><input type="checkbox" id="rxcal" ${d.excluir.calladasHoras ? 'checked' : ''}> Solo si lleva <input type="number" id="rxcalh" min="1" max="720" value="${d.excluir.calladasHoras || 24}" style="width:70px"> horas o más sin escribir</label>
+      </section>
+      <section><h3>Al enviarse</h3>
+        <label class="fila-f">Poner la etiqueta <select id="rpon"><option value="">Ninguna</option>${etqs.map((e) => `<option value="${e.id}" ${d.ponerEtiqueta === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></label>
+        <label class="check"><input type="checkbox" id="rpla" ${d.plantilla ? 'checked' : ''}> En WhatsApp, si han pasado más de 24 h, enviarlo por plantilla <span class="ayuda">(si no, no sale)</span></label>
+        <label class="check"><input type="checkbox" id="ract" ${d.activo ? 'checked' : ''}> Activo</label>
+      </section>
+      <p class="error" id="rerr" role="alert"></p>
+      <div class="acciones-f"><button class="primario">${original ? 'Guardar cambios' : 'Crear seguimiento'}</button><button type="button" id="rcan">Cancelar</button>${original ? '<button type="button" class="peligro" id="rbor">Borrar</button>' : ''}</div>
+    </form>`;
+    const leer = () => {
+      d.nombre = $('#rnom').value; d.minutos = Math.round(Number($('#rnum').value) * { minutos: 1, horas: 60, dias: 1440 }[$('#runi').value]);
+      if ($('#retq')) d.etiquetaId = Number($('#retq').value); if ($('#rdesp')) d.despuesDe = $('#rdesp').value || null;
+      d.canales = [...m.querySelectorAll('[data-can]')].filter((x) => x.checked).map((x) => x.dataset.can);
+      if ($('#rcondt')) d.condicion = $('#rcondt').value; if ($('#rins')) d.instrucciones = $('#rins').value; if ($('#rfijo')) d.textoFijo = $('#rfijo').value;
+      d.excluir = { clientes: $('#rxcli').checked, pausada: $('#rxpau').checked, calladasHoras: $('#rxcal').checked ? Number($('#rxcalh').value) : 0 };
+      d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
+    };
+    m.querySelectorAll('[name="rtipo"]').forEach((x) => x.onchange = () => { leer(); d.tipo = x.value; pintar(); });
+    m.querySelectorAll('[name="rmodo"]').forEach((x) => x.onchange = () => { leer(); d.modo = x.value; pintar(); });
+    m.querySelectorAll('[name="rcond"]').forEach((x) => x.onchange = () => { leer(); estado.condAbierta = x.value === 'si'; if (x.value === 'no') d.condicion = ''; pintar(); $('#rcondt')?.focus(); });
+    $('#rdesp') && ($('#rdesp').onchange = () => { leer(); pintar(); });
+    $('#rvol').onclick = salir; $('#rcan').onclick = salir;
+    $('#rbor') && ($('#rbor').onclick = async () => { const b = $('#rbor'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Borrar? Se cancelan sus envíos pendientes'; return; } await api('/panel/reglas/' + encodeURIComponent(original.id), { method: 'DELETE' }); salir(); });
+    $('#fr').onsubmit = async (e) => {
+      e.preventDefault(); leer();
+      if ([...m.querySelectorAll('[name="rcond"]')].find((x) => x.checked)?.value === 'si' && !d.condicion.trim()) { $('#rerr').textContent = 'Escribe la condición o marca «Siempre».'; return; }
+      try { await api(original ? '/panel/reglas/' + encodeURIComponent(original.id) : '/panel/reglas', { method: original ? 'PUT' : 'POST', body: JSON.stringify(d) }); estado.condAbierta = false; salir(); }
+      catch (err) { $('#rerr').textContent = err.message; }
+    };
+  };
+  estado.condAbierta = Boolean(d.condicion);
+  pintar();
+}
+
+async function editorLanzamiento() {
+  const { etiquetas: etqs } = await api('/panel/reglas');
+  if (estado.seccion !== 'seguimientos') return;
+  const m = $('#main');
+  const manana = new Date(Date.now() + 864e5); manana.setHours(11, 0, 0, 0);
+  m.innerHTML = `<div class="cab-seccion"><h2>Nuevo lanzamiento</h2><button id="lvol">Volver</button></div>
+    <p class="intro">Un aviso con fecha y hora para todos los leads que os escribieron en los últimos días: una oferta, una apertura, un evento. Se envía tal cual, repartido (uno cada 20 segundos). En WhatsApp, a quien escribió hace más de 24 h le llega por plantilla (Meta cobra cada mensaje). En modo prueba solo queda como borrador. No llega a socios ni a chats derivados.</p>
+    <form id="fl" class="editor">
+      <section><h3>Mensaje</h3><input id="lnom" placeholder="Nombre interno. Ej: Black Friday 2026" maxlength="60" style="width:100%;margin-bottom:8px">
+        <textarea id="ltxt" rows="4" maxlength="1000" placeholder="Ej: este viernes y sábado, primer mes con un 20 % de descuento en las 3 sedes 🎉 escríbeme si quieres que te lo deje apuntado"></textarea></section>
+      <section><h3>Cuándo y a quién</h3>
+        <div class="fila-f"><label>Fecha y hora <input type="datetime-local" id="lfec" value="${fechaLocal(manana.toISOString())}"></label>
+          <label>Leads que escribieron en los últimos <input type="number" id="ldias" min="1" max="365" value="30" style="width:80px"> días</label></div>
+        <div class="fila-f" style="margin-top:8px">Canales: <label class="check"><input type="checkbox" data-lcan="whatsapp" checked> WhatsApp</label><label class="check"><input type="checkbox" data-lcan="instagram"> Instagram <span class="ayuda">(solo a quien escribió en las últimas 24 h)</span></label></div>
+        ${etqs.length ? `<div class="cond"><b>Solo a quien lleva</b> <span class="ayuda">(opcional)</span><div class="chips-f">${etqs.map((e) => `<button type="button" class="ch etq-f" style="--c:${esc(e.color)}" data-solo="${e.id}" aria-pressed="false">${esc(e.nombre)}</button>`).join('')}</div></div>
+        <div class="cond"><b>Excepto a quien lleva</b><div class="chips-f">${etqs.map((e) => `<button type="button" class="ch etq-f" style="--c:${esc(e.color)}" data-exc="${e.id}" aria-pressed="false">${esc(e.nombre)}</button>`).join('')}</div></div>` : ''}
+        <p id="lprev" class="aviso-mini" role="status">Calculando a quién le llega…</p>
+      </section>
+      <p class="error" id="lerr" role="alert"></p>
+      <div class="acciones-f"><button class="primario">Programar lanzamiento</button><button type="button" id="lcan">Cancelar</button></div>
+    </form>`;
+  const salir = () => { estado.nuevoLanz = false; seguimientos(); };
+  const datos = () => ({
+    nombre: $('#lnom').value, texto: $('#ltxt').value, programado_at: $('#lfec').value ? new Date($('#lfec').value).toISOString() : '', dias_actividad: Number($('#ldias').value),
+    canales: [...m.querySelectorAll('[data-lcan]')].filter((x) => x.checked).map((x) => x.dataset.lcan),
+    solo_etiquetas: [...m.querySelectorAll('[data-solo][aria-pressed="true"]')].map((x) => Number(x.dataset.solo)),
+    excluir_etiquetas: [...m.querySelectorAll('[data-exc][aria-pressed="true"]')].map((x) => Number(x.dataset.exc)),
   });
-  $('#main').querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); seguimientos(); });
+  let t; const previa = () => { clearTimeout(t); t = setTimeout(async () => {
+    try { const r = await api('/panel/lanzamientos/previa', { method: 'POST', body: JSON.stringify(datos()) });
+      if ($('#lprev')) $('#lprev').innerHTML = `Le llegaría a <b>${r.total}</b> lead${r.total === 1 ? '' : 's'} hoy${r.por_plantilla ? ` (${r.por_plantilla} por plantilla de WhatsApp)` : ''}${r.ejemplo.length ? `: ${r.ejemplo.map(esc).join(', ')}${r.total > r.ejemplo.length ? '…' : ''}` : ''}. Se vuelve a calcular el día del envío.`;
+    } catch (e) { if ($('#lprev')) $('#lprev').textContent = e.message; } }, 300); };
+  m.querySelectorAll('[data-solo],[data-exc]').forEach((b) => b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on); b.classList.toggle('on', on); previa(); });
+  m.querySelectorAll('#ldias,[data-lcan]').forEach((x) => x.oninput = previa);
+  previa();
+  $('#lvol').onclick = salir; $('#lcan').onclick = salir;
+  $('#fl').onsubmit = async (e) => { e.preventDefault(); try { await api('/panel/lanzamientos', { method: 'POST', body: JSON.stringify(datos()) }); salir(); } catch (err) { $('#lerr').textContent = err.message; } };
 }
 
 // ---------- Probar IA ----------

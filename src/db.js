@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { sembrarReglas } from './reglas.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -102,6 +103,38 @@ CREATE TABLE IF NOT EXISTS vistas (
   orden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS reglas_seguimiento (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  tipo TEXT NOT NULL,               -- silencio | etiqueta | cita | largo-plazo
+  canales TEXT NOT NULL DEFAULT '["whatsapp","instagram"]',
+  minutos INTEGER NOT NULL DEFAULT 0, -- silencio/etiqueta: después; cita: antes; largo-plazo: por defecto
+  despues_de TEXT,                  -- largo-plazo: va detrás de otra regla
+  etiqueta_id INTEGER,              -- etiqueta: la que la dispara
+  condicion TEXT,                   -- vacía = siempre
+  instrucciones TEXT,
+  modo TEXT NOT NULL DEFAULT 'ia',  -- ia | fijo
+  texto_fijo TEXT,                  -- modo fijo; lo que va entre [corchetes] lo rellena Sofía
+  excluir TEXT NOT NULL DEFAULT '{}', -- JSON: { clientes, pausada, calladas_horas }
+  poner_etiqueta INTEGER,           -- etiqueta que se pone al enviarlo
+  plantilla INTEGER NOT NULL DEFAULT 1, -- fuera de las 24 h de WhatsApp, por plantilla
+  activo INTEGER NOT NULL DEFAULT 1,
+  orden INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS lanzamientos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,
+  texto TEXT NOT NULL,
+  programado_at TEXT NOT NULL,
+  dias_actividad INTEGER NOT NULL DEFAULT 30,
+  canales TEXT NOT NULL DEFAULT '["whatsapp"]',
+  excluir_etiquetas TEXT NOT NULL DEFAULT '[]',
+  solo_etiquetas TEXT NOT NULL DEFAULT '[]',
+  estado TEXT NOT NULL DEFAULT 'programado', -- programado | enviando | enviado | cancelado
+  total INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON
@@ -115,6 +148,7 @@ export function openDb(dbPath) {
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA);
   migrar(db);
+  sembrarReglas(db);
   return db;
 }
 
@@ -126,6 +160,7 @@ const COLUMNAS_NUEVAS = {
     ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno
     simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
     retomar: 'TEXT',              // JSON: { fecha, motivo, at } cuando el lead lo deja para más adelante
+    prueba_fecha: 'TEXT',         // instante de la clase de prueba pedida (para los recordatorios)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -136,6 +171,7 @@ const COLUMNAS_NUEVAS = {
   },
   conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
   scheduled: {
+    tipo: 'TEXT',                  // silencio | etiqueta | cita | largo-plazo | manual | lanzamiento
     texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
     previsto_msg: 'INTEGER',       // último mensaje del chat cuando se preparó (si cambia, se vuelve a redactar)
     previsto_at: 'TEXT',
@@ -148,6 +184,7 @@ function migrar(db) {
     const existen = new Set(db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name));
     for (const [col, tipo] of Object.entries(cols)) if (!existen.has(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
   }
+  db.exec(`UPDATE scheduled SET tipo = CASE WHEN regla_id LIKE 'largo-plazo%' THEN 'largo-plazo' ELSE 'silencio' END WHERE tipo IS NULL`);
 }
 
 export function repo(db) {
@@ -188,12 +225,22 @@ export function repo(db) {
     },
     history: (convId, limit = 40) =>
       db.prepare('SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? AND enviado = 1 ORDER BY id DESC LIMIT ?) ORDER BY id ASC').all(convId, limit),
-    schedule: (convId, reglaId, dueAt, contexto = null) =>
-      db.prepare('INSERT INTO scheduled (conversation_id, regla_id, due_at, contexto) VALUES (?, ?, ?, ?)').run(convId, reglaId, dueAt, contexto ? JSON.stringify(contexto) : null),
-    /** Cancela los pendientes. Con `soloCortos`, deja los de largo plazo (los decide Sofía antes de enviar). */
-    cancelScheduled: (convId, motivo, { soloCortos = false, soloLargo = false } = {}) =>
-      db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado = 'pendiente'
-        ${soloCortos ? "AND regla_id NOT LIKE 'largo-plazo%'" : ''} ${soloLargo ? "AND regla_id LIKE 'largo-plazo%'" : ''}`).run(motivo, convId),
+    schedule: (convId, reglaId, dueAt, contexto = null, tipo = null, texto = null) => {
+      const t = tipo || (String(reglaId).startsWith('largo-plazo') ? 'largo-plazo' : 'silencio');
+      return db.prepare('INSERT INTO scheduled (conversation_id, regla_id, due_at, contexto, tipo, texto_previsto) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(convId, reglaId, dueAt, contexto ? JSON.stringify(contexto) : null, t, texto);
+    },
+    /**
+     * Cancela los pendientes de un chat. Por defecto los que dependen de que Sofía esté al mando
+     * (silencio y largo plazo); los de etiqueta, cita, manuales y lanzamientos siguen. `tipos` para elegir.
+     * `soloCortos`: solo los de silencio (el lead escribió: los de largo plazo los revisa Sofía antes de enviar).
+     */
+    cancelScheduled: (convId, motivo, { soloCortos = false, tipos = null, reglaIds = null } = {}) => {
+      const t = tipos || (soloCortos ? ['silencio'] : ['silencio', 'largo-plazo']);
+      const filtroRegla = reglaIds ? `AND regla_id IN (${reglaIds.map(() => '?').join(',') || "''"})` : '';
+      return db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado = 'pendiente'
+        AND IFNULL(tipo, 'silencio') IN (${t.map(() => '?').join(',')}) ${filtroRegla}`).run(motivo, convId, ...t, ...(reglaIds || []));
+    },
     guardarPrevisto: (id, texto, msgId) =>
       db.prepare("UPDATE scheduled SET texto_previsto = ?, previsto_msg = ?, previsto_at = datetime('now') WHERE id = ?").run(texto, msgId, id),
     ultimoMensajeId: (convId) => db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(convId)?.m ?? 0,
