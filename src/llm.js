@@ -110,23 +110,33 @@ const getClient = () => (client ??= new Anthropic({ apiKey: config.ai.apiKey }))
  * `complete` se puede sustituir en tests.
  */
 export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta }) {
-  const llamar = complete || ((req) => getClient().messages.create(req));
+  // Sonnet 5.5 no admite forzar herramienta (tool_choice any/tool → 400): se pide en modo auto y, si contesta
+  // en texto sin llamar a `responder`, se le recuerda una vez. Si el modelo se niega por seguridad, la API
+  // reintenta con su modelo de respaldo (fallbacks "default").
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }));
   const conv = [...messages];
+  let recordatorios = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
     const t0 = Date.now();
     const res = await llamar({
       model: config.ai.model,
-      max_tokens: 1024,
+      max_tokens: 8000, // el razonamiento interno (siempre activo en este modelo) cuenta dentro de este límite
       system,
       tools: TOOLS,
-      tool_choice: { type: 'any' },
+      tool_choice: { type: 'auto' },
       messages: conv,
     });
     onUsage?.(res.usage || {}, Date.now() - t0);
+    if (res.stop_reason === 'refusal') throw new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`);
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
-    if (!usos.length) throw new Error('El modelo no usó ninguna herramienta');
     const final = usos.find((u) => u.name === 'responder');
     if (final) return { respuesta: final.input, herramientas: conv.length - messages.length };
+    if (!usos.length) {
+      if (recordatorios++ >= 1) throw new Error('El modelo no usó la herramienta responder');
+      conv.push({ role: 'assistant', content: res.content });
+      conv.push({ role: 'user', content: '(Mensaje del sistema, no del lead) Termina el turno llamando a la herramienta `responder`: lo que escribas fuera de ella no le llega al lead.' });
+      continue;
+    }
     conv.push({ role: 'assistant', content: res.content });
     const resultados = [];
     for (const u of usos) {

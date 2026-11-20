@@ -229,3 +229,17 @@ test('Sofía apagada desde el panel: no contesta y el chat queda para el equipo'
   assert.equal(llamadas.requests.length, 0);
   assert.equal(repo.getConv('c1').respond_at, null);
 });
+
+test('si el modelo contesta en texto sin llamar a responder, se le recuerda una vez', async () => {
+  const { runTurn } = await import('../src/llm.js');
+  const reqs = [];
+  const cola = [
+    { content: [{ type: 'text', text: 'hola!' }], stop_reason: 'end_turn' },
+    { content: [{ type: 'tool_use', id: 't1', name: 'responder', input: { mensajes: ['hola!'], fase: 'f1 apertura' } }], stop_reason: 'tool_use' },
+  ];
+  const r = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete: async (req) => { reqs.push(structuredClone(req)); return cola.shift(); } });
+  assert.deepEqual(r.respuesta.mensajes, ['hola!']);
+  assert.equal(reqs[0].tool_choice.type, 'auto');
+  assert.match(reqs[1].messages.at(-1).content, /responder/);
+  await assert.rejects(runTurn({ system: [], messages: [{ role: 'user', content: 'x' }], ejecutarHerramienta: async () => ({}), complete: async () => ({ content: [], stop_reason: 'refusal', stop_details: { category: 'cyber' } }) }), /negado.*cyber/);
+});
