@@ -47,3 +47,17 @@ npx playwright install --with-deps chromium
 ```
 
 Si un alta falla, se guarda una captura en `data/` y el equipo recibe los datos por Telegram para hacerla a mano.
+
+## Procedimiento de alta (20 nov 2026)
+
+1. **Datos**: nombre y apellidos, fecha de nacimiento, teléfono y email. Sofía pide solo el que falte. Edad mínima 16 años.
+2. **Confirmación**: sede, tarifa y fecha de inicio confirmadas por el lead. Sin matrícula ni promociones.
+3. **Ficha**: nueva o, si es antiguo socio en esa sede (índice por teléfono), la suya. Si `/api/checkmail` dice que el email ya existe y no tenemos su ficha, se pasa al equipo para no duplicar.
+4. **Forma de pago**: `#clformapago` = 4 (Pago automático con TPV RedSys). Tras guardar se comprueba con `GET /api/client/{id}`.
+5. **Tarifa**: AimHarder calcula el prorrateo. Primer recibo manual y pendiente.
+6. **Emisión**: en `/payments`, `fichaPago(id)` → `#pgDesde` = hoy → `guardarPago`. Se comprueba con `GET /api/pendingPayments?clientId=` que `since` = hoy. El importe pendiente verificado es el que se da al lead.
+7. **Antiguo socio**: `POST /api/inviteClient {clid, clmail, box}` y se comprueba `state == 1`. El nuevo recibe la invitación al guardar.
+8. **Aviso al lead** (salvo `avisar_lead: false`): sede, fecha de inicio, correo y app (o recuperar contraseña), y firmar documentos y pagar el primer recibo en la app con el importe verificado. Se comprueba que GHL devuelve el id de cada mensaje; si no, aviso al equipo.
+9. **Nunca** se firma por el lead ni se marca un pago como pagado.
+
+El `box` de cada sede se lee del propio panel (Parla: 9146).

@@ -72,4 +72,11 @@ export function buscarSocioPorTelefono(repo, telefono) {
   };
 }
 
+/** Ficha de AimHarder de ese teléfono en esa sede (antiguo socio), para reutilizarla en el alta. */
+export function fichaEnSede(repo, telefono, sede) {
+  const tel = normalizarTelefono(telefono);
+  if (!tel) return null;
+  return repo.sociosPorTelefono(tel).find((f) => f.sede === sede && f.aimharder_id) || null;
+}
+
 export { prepararAltaNavegador } from './alta-navegador.js';

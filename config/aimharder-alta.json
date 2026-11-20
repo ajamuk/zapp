@@ -1,4 +1,5 @@
 {
+  "_procedimiento": "Forma de pago TPV RedSys (clformapago 4) · prorrateo de AimHarder · primer recibo manual pendiente con fecha de emisión = día del alta (/payments, #pgDesde) · antiguo socio: misma ficha y /api/inviteClient · sin matrícula ni promociones",
   "_nota": "Alta en el panel de AimHarder. Mapeado el 20 nov 2026 sobre el formulario real de Getafe (mismo panel en las tres sedes). Los IDs de tarifa salen de la API (GET /memberships).",
   "configurado": true,
   "subdominios": {
@@ -26,6 +27,8 @@
     "tarifa": "#nwPrTarifa",
     "inicioTarifa": "#nwPrFecIni",
     "descuento": "#nwPrDto",
-    "pagoPendiente": "#nwPrCashnull"
+    "pagoPendiente": "#nwPrCashnull",
+    "formaPago": "#clformapago",
+    "emisionRecibo": "#pgDesde"
   }
 }

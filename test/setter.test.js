@@ -155,7 +155,7 @@ test('alta sin configurar: el equipo recibe los datos y la IA no dice que está 
   avanzar(60000);
   await setter.tick();
   assert.equal(repo.getConv('c1').alta_estado, 'pendiente');
-  assert.match(llamadas.avisos.at(-1), /primer recibo 28 €/);
+  assert.match(llamadas.avisos.at(-1), /prorrateo previsto 28 €/);
   const resultado = llamadas.requests[1].messages.at(-1).content[0].content;
   assert.match(resultado, /pendiente_equipo/);
 });
@@ -199,4 +199,22 @@ test('menciones en historias no despiertan a la IA', async () => {
   const { setter } = montar();
   const r = await setter.handleWebhook(entrante('[story_mention]', 'w1', { canal: 'instagram' }));
   assert.equal(r.ignorado, 'mención o reacción');
+});
+
+test('alta verificada: el sistema avisa al lead con sede, fecha e importe pendiente de AimHarder', async () => {
+  const { setter, repo, llamadas, avanzar } = montar({
+    alta: { estado: 'preparada', exSocio: false, pendiente: 22.67, tarifa: 'CrossFit Academy 2 días', detalle: 'ok' },
+    respuestas: [
+      [{ name: 'preparar_alta', input: { nombre_completo: 'Ana Prueba', email: 'ana@example.com', fecha_nacimiento: '1990-05-01', sede: 'parla', tarifa: 'academy_2', fecha_inicio: '2026-11-23' } }],
+      [{ name: 'responder', input: { mensajes: ['bienvenida a la familia'], fase: 'f5 cierre' } }],
+    ],
+  });
+  await setter.handleWebhook(entrante('sí, adelante'));
+  avanzar(60000);
+  await setter.tick();
+  assert.equal(repo.getConv('c1').alta_estado, 'preparada');
+  const textos = repo.history('c1').filter((m) => m.autor === 'ia').map((m) => m.texto);
+  assert.ok(textos.some((t) => /alta hecha en Parla para empezar el lunes, 23 de noviembre/.test(t)));
+  assert.ok(textos.some((t) => /22,67 €/.test(t)));
+  assert.match(llamadas.avisos.at(-1), /verificada en AimHarder/);
 });

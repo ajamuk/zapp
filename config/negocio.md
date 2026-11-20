@@ -82,13 +82,15 @@ Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consul
 
 ## Alta, pagos y condiciones
 
-- No hay matrícula, inscripción ni permanencia. Sin penalizaciones por cancelar o no asistir.
-- Alta a mitad de mes: el primer recibo es la parte proporcional de los días que quedan del mes.
+- No hay matrícula, inscripción ni permanencia, y ahora mismo no hay promociones ni descuentos. Sin penalizaciones por cancelar o no asistir.
+- Alta a mitad de mes: el primer recibo es la parte proporcional de los días que quedan del mes (la calcula AimHarder). El recibo se emite el día que se tramita el alta, aunque empiece a entrenar más adelante.
+- El cobro de las cuotas es con tarjeta en la app (pago automático con TPV RedSys).
 - El lead hace el primer pago desde la app (AimHarder) tras recibir la invitación por email.
 - La cuota se renueva sola el día 1 de cada mes.
 - En el box se puede pagar en efectivo o por Bizum.
-- El medio exacto del cobro mensual (domiciliación, tarjeta, transferencia) lo confirma el equipo.
-- Datos para el alta: nombre completo, email y fecha de nacimiento. Además: sede, tarifa y fecha de inicio.
+- Datos para el alta: nombre y apellidos, fecha de nacimiento, teléfono y email. Además, sede, tarifa y fecha de inicio confirmadas por el lead.
+- Antiguos socios: se reutiliza su ficha y se le reenvía la invitación. Si no recuerda la contraseña, la recupera desde la propia app.
+- Antes de la primera clase tiene que firmar los documentos y pagar el primer recibo en la app. Nadie del equipo firma ni marca un pago por él.
 - Edad mínima: 16 años. Menores: autorización de padre, madre o tutor.
 - Bajas y gestiones concretas de socios: las lleva una persona del equipo.
 
