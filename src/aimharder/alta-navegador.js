@@ -3,16 +3,16 @@ import path from 'node:path';
 import { config } from '../config.js';
 
 /**
- * Alta de socio en AimHarder rellenando el panel de administración con un navegador (Playwright).
- * La API de AimHarder no permite fijar la fecha de inicio, las condiciones ni los descuentos que hacen falta.
+ * Alta de socio en el panel de AimHarder con un navegador sin pantalla (Playwright).
+ * La API pública crea la ficha, pero no la tarifa con fecha de inicio, el primer pago ni el descuento,
+ * así que se usa el propio panel: se rellena la ficha, se añade la tarifa con las funciones del panel
+ * (las mismas que llama el botón «Nueva tarifa») y se guarda.
  *
- * Los selectores del formulario viven en config/aimharder-alta.json y hay que grabarlos una vez
- * sobre el panel real (ver docs/aimharder.md). Mientras falten, la función devuelve `no_configurado`
- * y el sistema avisa al equipo para hacer el alta a mano.
+ * Mapeado sobre el formulario real el 20 nov 2026 (config/aimharder-alta.json).
+ * Con dryRun (por defecto) se rellena todo y se comprueba, pero NO se pulsa Guardar.
  */
-export function cargarPasos() {
-  const f = path.join(config.root, 'config', 'aimharder-alta.json');
-  return JSON.parse(fs.readFileSync(f, 'utf8'));
+export function cargarConfig() {
+  return JSON.parse(fs.readFileSync(path.join(config.root, 'config', 'aimharder-alta.json'), 'utf8'));
 }
 
 export function validarDatos(d) {
@@ -25,45 +25,124 @@ export function validarDatos(d) {
   return null;
 }
 
-const rellenar = (plantilla, datos) => String(plantilla).replace(/\{(\w+)\}/g, (_, k) => datos[k] ?? '');
+/** «Ana María López García» → nombre «Ana María», apellidos «López» y «García». */
+export function partirNombre(completo) {
+  const p = String(completo).trim().split(/\s+/);
+  if (p.length <= 2) return { nombre: p[0] || '', apellido1: p[1] || '', apellido2: '' };
+  if (p.length === 3) return { nombre: p[0], apellido1: p[1], apellido2: p[2] };
+  return { nombre: p.slice(0, p.length - 2).join(' '), apellido1: p[p.length - 2], apellido2: p[p.length - 1] };
+}
 
-export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.altaDryRun, pasos = cargarPasos() } = {}) {
+export const aDdMmYyyy = (iso) => iso.split('-').reverse().join('/');
+
+/** Construye los datos que se meten en el formulario. Separado para poder probarlo sin navegador. */
+export function prepararFormulario(d, cfg = cargarConfig()) {
+  const tarifaId = cfg.tarifas[d.sede]?.[d.tarifa];
+  if (!tarifaId) throw new Error(`Tarifa ${d.tarifa} no encontrada en ${d.sede}`);
+  const sub = cfg.subdominios[d.sede];
+  return {
+    url: `https://${sub}.aimharder.com/clients?new`,
+    ...partirNombre(d.nombre_completo),
+    email: d.email.trim().toLowerCase(),
+    movil: String(d.telefono || '').replace(/^\+?34/, '').replace(/\D/g, ''),
+    nacimiento: aDdMmYyyy(d.fecha_nacimiento),
+    inicio: aDdMmYyyy(d.fecha_inicio),
+    tarifaId,
+    origen: cfg.origen[d.canal] || null,
+    descuento: d.descuento || null,
+    primerRecibo: d.primer_recibo ?? null,
+    notas: `Alta preparada por Sofía (setter IA) desde ${d.canal || 'chat'}.`,
+  };
+}
+
+async function login(page) {
+  await page.goto('https://aimharder.com/login', { waitUntil: 'networkidle' });
+  if (!/login/.test(page.url())) return; // sesión ya abierta
+  await page.fill('input[type="email"], input[name*="mail" i]', config.aimharder.adminUser);
+  await page.fill('input[type="password"]', config.aimharder.adminPassword);
+  await Promise.all([page.waitForURL((u) => !/login/.test(String(u)), { timeout: 20000 }), page.keyboard.press('Enter')]);
+}
+
+export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.altaDryRun, cfg = cargarConfig() } = {}) {
   const error = validarDatos(datos);
   if (error) return { estado: 'rechazada', detalle: error };
-  if (!pasos.configurado || !config.aimharder.adminUrl) {
-    return { estado: 'no_configurado', detalle: 'Faltan los selectores del panel de AimHarder o AIMHARDER_ADMIN_URL.' };
+  if (!cfg.configurado || !config.aimharder.adminUser || !config.aimharder.adminPassword) {
+    return { estado: 'no_configurado', detalle: 'Faltan AIMHARDER_ADMIN_USER / AIMHARDER_ADMIN_PASSWORD.' };
   }
+  let f;
+  try { f = prepararFormulario(datos, cfg); } catch (e) { return { estado: 'rechazada', detalle: e.message }; }
+
   let playwright;
   try { playwright = await import('playwright'); } catch {
-    return { estado: 'no_configurado', detalle: 'Playwright no está instalado (npm i playwright && npx playwright install chromium).' };
+    return { estado: 'no_configurado', detalle: 'Playwright no está instalado (npm i playwright && npx playwright install --with-deps chromium).' };
   }
+  const sesion = path.join(path.dirname(config.dbPath), 'aimharder-sesion.json');
   const browser = await playwright.chromium.launch({ headless: true });
-  const page = await browser.newPage();
-  const ctx = {
-    ...datos,
-    usuario: config.aimharder.adminUser,
-    password: config.aimharder.adminPassword,
-    tarifa_aimharder: pasos.tarifas?.[datos.sede]?.[datos.tarifa] || '',
-    descuento_aimharder: datos.descuento ? pasos.descuentos?.[datos.descuento] || '' : '',
-  };
+  const context = await browser.newContext(fs.existsSync(sesion) ? { storageState: sesion } : {});
+  const page = await context.newPage();
+  page.on('dialog', (d) => d.dismiss().catch(() => {}));
   try {
-    await page.goto(config.aimharder.adminUrl, { waitUntil: 'domcontentloaded' });
-    for (const paso of pasos.pasos) {
-      if (paso.soloSi && !ctx[paso.soloSi]) continue;
-      if (paso.guardar && dryRun) continue; // en pruebas se rellena todo pero no se guarda
-      const sel = rellenar(paso.selector || '', ctx);
-      switch (paso.accion) {
-        case 'ir': await page.goto(rellenar(paso.url, ctx), { waitUntil: 'domcontentloaded' }); break;
-        case 'escribir': await page.fill(sel, rellenar(paso.valor, ctx)); break;
-        case 'click': await page.click(sel); break;
-        case 'elegir': await page.selectOption(sel, { label: rellenar(paso.valor, ctx) }); break;
-        case 'esperar': await page.waitForSelector(sel, { timeout: paso.timeout || 15000 }); break;
-        default: throw new Error(`Acción desconocida: ${paso.accion}`);
+    await login(page);
+    await context.storageState({ path: sesion });
+    await page.goto(f.url, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#clnom', { timeout: 20000 });
+
+    // ¿Existe ya alguien con ese email en esta sede? El panel lo comprueba con /api/checkmail
+    const c = cfg.campos;
+    await page.fill(c.nombre, f.nombre);
+    await page.fill(c.apellido1, f.apellido1);
+    await page.fill(c.apellido2, f.apellido2);
+    await page.fill(c.movil, f.movil);
+    await page.fill(c.email, f.email);
+    await page.fill(c.notas, f.notas);
+    await page.evaluate(({ c, f }) => {
+      const $ = window.jQuery;
+      $(c.nacimiento).datepicker('setDate', f.nacimiento);
+      $(c.alta).datepicker('setDate', new Date());
+      if (f.origen) { const o = [...document.querySelectorAll(`${c.origen} option`)].find((x) => x.text.trim() === f.origen); if (o) $(c.origen).val(o.value).change(); }
+    }, { c, f });
+
+    // Tarifa: mismo camino que el botón «Nueva tarifa» → elegir tarifa → día de inicio → pago pendiente → Continuar
+    const tarifa = await page.evaluate(({ c, f }) => {
+      const $ = window.jQuery;
+      window.hideSumaTotal(false);
+      window.cargaSelTarifa(null);
+      if (![...document.querySelectorAll(`${c.tarifa} option`)].some((o) => o.value === String(f.tarifaId))) return { ok: false, error: `La tarifa ${f.tarifaId} no está en el desplegable` };
+      $(c.tarifa).val(String(f.tarifaId)).change();
+      $(c.inicioTarifa).datepicker('setDate', f.inicio);
+      window.cargaNwPrPago(false);
+      // Primer recibo: el panel calcula la parte proporcional del mes (comprobado: 23 nov, 105 € → 28 €)
+      window.calcularProrrateo();
+      const cantidad = Number($('#nwPrCantidad').val());
+      if (f.primerRecibo != null && Math.abs(cantidad - f.primerRecibo) > 0.01) return { ok: false, error: `El prorrateo de AimHarder (${cantidad} €) no coincide con el calculado (${f.primerRecibo} €)` };
+      if (f.descuento) {
+        const o = [...document.querySelectorAll(`${c.descuento} option`)].find((x) => x.text.trim().toLowerCase() === f.descuento.toLowerCase());
+        if (!o) return { ok: false, error: `Descuento «${f.descuento}» no existe en esta sede` };
+        $(c.descuento).val(o.value).change();
       }
+      const pend = document.querySelector(c.pagoPendiente); if (pend) { pend.checked = true; $(pend).change(); }
+      window.guardaTarifa(false);
+      const sel = window.tarifasSel || [];
+      return { ok: sel.length > 0 && String(sel[0].id) === String(f.tarifaId), tarifa: sel[0]?.nom, desde: sel[0]?.desde, cantidad };
+    }, { c, f });
+    if (!tarifa.ok) throw new Error(tarifa.error || 'La tarifa no quedó añadida a la ficha');
+
+    if (dryRun) {
+      return { estado: 'simulada', detalle: `Ficha y tarifa rellenadas sin guardar: ${tarifa.tarifa} desde ${tarifa.desde}, primer recibo ${tarifa.cantidad} €.` };
     }
-    return { estado: dryRun ? 'simulada' : 'preparada', detalle: dryRun ? 'Formulario rellenado sin guardar (dry run).' : 'Alta guardada en AimHarder.' };
+
+    // Guardar. El panel envía la ficha y la tarifa juntas a /api/client y, con email, manda la invitación.
+    const respuesta = page.waitForResponse((r) => /\/api\/client\b/.test(r.url()) && r.request().method() === 'POST', { timeout: 30000 });
+    await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('[onclick]')].find((e) => e.getAttribute('onclick') === 'guardarCliente(this, false);');
+      window.guardarCliente(btn, false);
+    });
+    const r = await respuesta;
+    const cuerpo = await r.text();
+    if (!r.ok() || /error/i.test(cuerpo.slice(0, 200))) throw new Error(`AimHarder no guardó la ficha: ${r.status()} ${cuerpo.slice(0, 200)}`);
+    return { estado: 'preparada', detalle: `Alta guardada: ${tarifa.tarifa} desde ${tarifa.desde}, primer recibo ${tarifa.cantidad} € pendiente.` };
   } catch (e) {
-    const shot = path.join(config.root, 'data', `alta-error-${Date.now()}.png`);
+    const shot = path.join(path.dirname(config.dbPath), `alta-error-${Date.now()}.png`);
     await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
     return { estado: 'fallida', detalle: `${e.message} (captura: ${shot})` };
   } finally {

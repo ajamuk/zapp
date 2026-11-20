@@ -248,8 +248,9 @@ export class Setter {
 
   async alta(conv, datos, efectos) {
     const sede = normalizarSede(datos.sede);
-    const d = { ...datos, sede, telefono: conv.telefono || '' };
+    const d = { ...datos, sede, telefono: conv.telefono || '', canal: conv.channel };
     const recibo = calcularPrimerRecibo({ sede, tarifa: d.tarifa, fecha_inicio: d.fecha_inicio });
+    if (recibo.ok) d.primer_recibo = recibo.primer_recibo;
     const res = await this.aimharder.prepararAlta(d);
     this.repo.addAlta(conv.id, d, res.estado, res.detalle);
     if (res.estado === 'rechazada') return { ok: false, error: res.detalle };
