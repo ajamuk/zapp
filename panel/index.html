@@ -278,7 +278,7 @@ async function api(ruta, opciones = {}) {
   }
   if (!integrado && r.status === 401) { salir(); throw new Error('Clave incorrecta.'); }
   const j = r.headers.get('content-type')?.includes('application/json') ? await r.json() : {};
-  if (!r.ok) throw new Error(j.error || 'No se ha podido completar la petición.');
+  if (!r.ok) throw new Error(j.error || (r.status === 413 ? 'El archivo es demasiado grande para enviarlo.' : r.status === 502 || r.status === 504 ? 'El servidor ha tardado demasiado en responder. Inténtalo otra vez.' : `No se ha podido completar la petición (error ${r.status}).`));
   return j;
 }
 
@@ -945,9 +945,17 @@ function pintarPrueba(d, escribiendo = false) {
     if (p.grabando) { p.grabadora.stop(); return; }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return alertaP('Este navegador no permite grabar audio. Adjunta un archivo de audio.');
     let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return alertaP('No hay permiso para usar el micrófono.'); }
-    const trozos = []; const rec = new MediaRecorder(flujo);
+    const tipos = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac'];
+    const tipo = tipos.find((t) => MediaRecorder.isTypeSupported?.(t));
+    const trozos = []; const rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
     rec.ondataavailable = (e) => trozos.push(e.data);
-    rec.onstop = () => { flujo.getTracks().forEach((t) => t.stop()); p.grabando = false; const blob = new Blob(trozos, { type: rec.mimeType.split(';')[0] || 'audio/webm' }); pintarPrueba(d); subir(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm')); };
+    rec.onstop = () => {
+      flujo.getTracks().forEach((t) => t.stop()); p.grabando = false;
+      const blob = new Blob(trozos, { type: (rec.mimeType || tipo || 'audio/mp4').split(';')[0] });
+      pintarPrueba(d);
+      if (!blob.size) return alertaP('La grabación ha salido vacía. Mantén pulsado un poco más o adjunta el audio con 📎.');
+      subir(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('webm') ? 'webm' : 'm4a'));
+    };
     p.grabadora = rec; p.grabando = true; rec.start(); pintarPrueba(d);
   };
   $('#psim').onclick = () => { p.verSim = !p.verSim; pintarPrueba(d); };
