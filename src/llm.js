@@ -96,6 +96,14 @@ export const TOOLS = [
         etiquetas: { type: 'array', items: { type: 'string' } },
         analisis: { type: 'string', description: 'Nota interna (no se envía): qué sabes del lead y en qué punto está, en una o dos frases.' },
         siguiente_paso: { type: 'string', description: 'Nota interna (no se envía): qué buscas conseguir con el próximo mensaje.' },
+        retomar: {
+          type: 'object',
+          description: 'Solo si el lead dice que lo decidirá o se apuntará más adelante (después de vacaciones, cuando cobre, en enero, cuando se recupere...). Programa volver a escribirle entonces.',
+          properties: {
+            fecha: { type: 'string', description: 'AAAA-MM-DD en la que tiene sentido volver a escribirle según lo que ha dicho. Vacía si no da ninguna pista.' },
+            motivo: { type: 'string', description: 'Lo que dijo, en pocas palabras (p. ej. «se apunta en septiembre, ahora está de vacaciones»).' },
+          },
+        },
       },
       required: ['mensajes', 'fase'],
     },

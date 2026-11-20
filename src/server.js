@@ -8,6 +8,7 @@ import path from 'node:path';
 import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
+import { textoPrevisto } from './followups.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
@@ -133,6 +134,13 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
   });
   admin.get('/panel/altas', (_req, res) => res.json(panel.altas(db)));
   admin.get('/panel/seguimientos', (_req, res) => res.json(panel.seguimientos(db)));
+  // Prepara (o devuelve) el texto que Sofía enviará en ese seguimiento
+  admin.post('/panel/seguimientos/:id/previa', async (req, res) => {
+    const s = db.prepare('SELECT * FROM scheduled WHERE id = ?').get(Number(req.params.id));
+    if (!s) return res.status(404).json({ error: 'Ese seguimiento no existe.' });
+    if (!setter?.redactar || (!config.ai.apiKey && !complete)) return res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' });
+    try { res.json(await textoPrevisto(setter, s, { forzar: req.body?.rehacer === true })); } catch (e) { console.error('Previa seguimiento:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
+  });
   admin.post('/panel/seguimientos/:id/cancelar', (req, res) => {
     repo.finishScheduled(Number(req.params.id), 'cancelado', 'cancelado desde el panel');
     res.json({ ok: true });

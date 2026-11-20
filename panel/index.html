@@ -242,6 +242,14 @@
   #raiz button.icono { min-width: 42px; padding: 0; font-size: 18px; }
   #raiz button.grabando { background: #fde8e8; border-color: var(--red); animation: latido 1s infinite; }
   @keyframes latido { 50% { opacity: .55; } }
+  .fu-chat { border-top: 1px dashed var(--line); padding: 6px 0; }
+  .fu-chat:first-of-type { border-top: 0; }
+  .previsto { font-style: italic; color: var(--text); background: var(--panel2); border-radius: 6px; padding: 5px 8px; margin-top: 3px; }
+  #raiz button.mini { min-height: 28px; padding: 2px 8px; font-size: 12px; margin-left: 4px; }
+  .fu li { display: block !important; }
+  .fu-cab { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .fu-texto { font-size: 12px; margin-top: 3px; }
+  td.fu-texto { min-width: 220px; max-width: 380px; }
 </style>
 </head>
 <body>
@@ -467,6 +475,18 @@ async function cargarMedios(cont) {
   }
 }
 
+
+// ---------- Seguimientos: texto previsto ----------
+const cuandoRegla = (r) => r.tipo === 'largo-plazo' ? (r.despuesDe ? `${r.dias} días después del anterior` : `a los ${r.dias} días o la fecha que diga el lead`) : `a las ${minutos(r.minutos)}`;
+const fechaCorta = (iso) => new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const htmlPrevisto = (t, plantilla) => t == null ? '<span class="ayuda">Preparando el texto…</span>' : t === '' ? '<span class="ayuda">Sofía no lo enviaría ahora: no se cumple la condición.</span>' : `<div class="previsto">${plantilla ? '<span class="chip">plantilla WhatsApp</span> ' : ''}«${esc(t)}»</div>`;
+// Pide los textos de uno en uno (cada uno es una llamada al modelo)
+async function prepararTextos(items, pedir, pintar) {
+  for (const it of items) {
+    try { const r = await pedir(it); pintar(it, r); } catch (e) { pintar(it, { error: e.message }); }
+  }
+}
+
 // ---------- Chats: vistas y filtros ----------
 const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
@@ -631,11 +651,18 @@ async function abrir(id) {
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
-      d.seguimientos.length ? '<b>Follow-ups</b><br>' + d.seguimientos.map((s) => `${esc(s.regla_id)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}`).join('<br>') : '',
+      c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
+      d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
+        ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
+        : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
     ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = 1e9;
   cargarMedios($('#msgs'));
+  $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); abrir(id); });
+  if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
+    (x) => api(`/panel/seguimientos/${x.id}/previa`, { method: 'POST' }),
+    (x, r) => { const el = $(`#hilo [data-fu-id="${x.id}"] .fu-texto`); if (el && estado.conv === id) el.innerHTML = r.error ? `<span class="error">${esc(r.error)}</span>` : htmlPrevisto(r.texto, r.plantilla); });
   $('#bv').onclick = () => { estado.conv = null; $('#ch').classList.remove('con-hilo'); };
   const recargar = async () => { await lista(); abrir(id); };
   const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
@@ -826,13 +853,18 @@ async function seguimientos() {
   const [s, aj] = [await api('/panel/seguimientos'), estado.info.ajustes];
   if (estado.seccion !== 'seguimientos') return;
   $('#main').innerHTML = `<h2>Seguimientos</h2>
-    <p style="color:var(--muted);margin-top:-8px">Cuentan desde el último mensaje de Sofía sin respuesta. Antes de enviar, Sofía comprueba la condición y, si no se cumple, no manda nada. Se cancelan si el lead contesta, si escribe alguien del equipo o si la conversación está pausada o derivada.</p>
-    ${s.reglas.map((r) => `<div class="regla"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${minutos(r.minutos)}</span> ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')} ${r.plantilla ? `<span class="chip">plantilla ${esc(r.plantilla)}</span>` : ''}</div>
+    <p style="color:var(--muted);margin-top:-8px">Los normales cuentan desde el último mensaje de Sofía sin respuesta y se cancelan si el lead contesta. Los 🗓️ de largo plazo se programan cuando el lead dice que lo decidirá o se apuntará más adelante (en la fecha que dé, o a los 21 días) y sustituyen a los normales; no se cancelan si el lead escribe: Sofía comprueba antes de enviarlos si siguen teniendo sentido. Pasadas 24 h desde el último mensaje del lead, WhatsApp solo deja enviar por plantilla. En modo prueba, al vencer quedan como borrador. Ningún follow-up sale si la conversación está pausada o derivada.</p>
+    ${s.reglas.map((r) => `<div class="regla"><div class="cab"><div><b>${r.tipo === 'largo-plazo' ? '🗓️ ' : ''}${esc(r.nombre)}</b> <span class="chip">${cuandoRegla(r)}</span> ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')} ${r.plantilla ? `<span class="chip">plantilla ${esc(r.plantilla)}</span>` : ''}</div>
       <label class="interruptor"><input type="checkbox" data-r="${esc(r.id)}" aria-label="${esc(r.nombre)}" ${aj.seguimientos[r.id] ? 'checked' : ''}><span></span></label></div>
       <p><b>Cuándo:</b> ${esc(r.condicion)}</p><p><b>Qué dice:</b> ${esc(r.instrucciones)}</p>
       <p>Últimos 7 días: ${r.enviado} enviados · ${r.omitido} no enviados · ${r.cancelado} cancelados${r.error ? ` · <span class="error">${r.error} con error</span>` : ''} · ${r.pendiente} programados</p></div>`).join('')}
     <h3>Próximos</h3>
-    ${s.proximos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Chat</th><th>Follow-up</th><th></th></tr>${s.proximos.map((p) => `<tr><td>${hora(p.due_at)}</td><td>${esc(p.nombre || p.conversation_id)} <span class="chip">${CANAL[p.channel] || ''}</span></td><td>${esc((s.reglas.find((r) => r.id === p.regla_id) || {}).nombre || p.regla_id)}</td><td><button data-x="${p.id}">Cancelar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">No hay seguimientos programados</div>'}`;
+    ${s.proximos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Chat</th><th>Follow-up</th><th>Texto previsto</th><th></th></tr>${s.proximos.map((p) => `<tr><td>${fechaCorta(p.due_at)}</td><td>${esc(p.nombre || p.conversation_id)} <span class="chip">${CANAL[p.channel] || ''}</span></td><td>${esc((s.reglas.find((r) => r.id === p.regla_id) || {}).nombre || p.regla_id)}${p.contexto?.motivo ? `<div class="ayuda">${esc(p.contexto.motivo)}</div>` : ''}</td>
+      <td class="fu-texto" data-prev="${p.id}">${p.vigente ? htmlPrevisto(p.texto_previsto) : `<button class="mini" data-ver="${p.id}" ${estado.info.modelo_configurado ? '' : 'disabled'}>Ver texto</button>`}</td><td><button data-x="${p.id}">Cancelar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">No hay seguimientos programados</div>'}`;
+  $('#main').querySelectorAll('[data-ver]').forEach((b) => b.onclick = async () => {
+    const td = $(`[data-prev="${b.dataset.ver}"]`); td.innerHTML = htmlPrevisto(null);
+    try { const r = await api(`/panel/seguimientos/${b.dataset.ver}/previa`, { method: 'POST' }); td.innerHTML = htmlPrevisto(r.texto, r.plantilla); } catch (e) { td.innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  });
   $('#main').querySelectorAll('[data-r]').forEach((i) => i.onchange = async () => {
     estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ seguimientos: { [i.dataset.r]: i.checked } }) });
   });
@@ -994,13 +1026,20 @@ function pintarAnalisis(d, escribiendo) {
     ${bloque('Siguiente paso', c.siguiente_paso ? `<p>${esc(c.siguiente_paso)}</p>` : '')}
     ${bloque('Último turno', t ? `<ul class="herr">${t.herramientas.map((h) => `<li><details><summary>${HERR[h.nombre] || esc(h.nombre)}</summary><div class="ayuda">Pidió: ${resumirJson(h.entrada)}</div><div class="ayuda">Respuesta: ${resumirJson(h.resultado)}</div></details></li>`).join('') || '<li class="ayuda">Contestó sin consultar herramientas</li>'}</ul>
       ${t.etiquetas?.length ? `<p class="ayuda">✨ Etiquetas puestas: ${t.etiquetas.map(esc).join(', ')}</p>` : ''}${t.tags_ghl?.length ? `<p class="ayuda">Tags en GHL: ${t.tags_ghl.map(esc).join(', ')}</p>` : ''}` : '')}
-    ${bloque('Follow-ups', `<p class="ayuda">En producción salen solos si el lead no contesta. «Forzar» lo lanza ya: Sofía decide si se cumple su condición.</p>
-      <ul class="fu">${d.seguimientos.map((s) => `<li><span>${esc(s.nombre)} <span class="ayuda">· ${minutos(s.minutos)}${s.activo ? '' : ' · desactivado'}</span></span><button type="button" data-fu="${esc(s.id)}" ${estado.info.modelo_configurado && !escribiendo ? '' : 'disabled'}>Forzar</button></li>`).join('')}</ul>`)}
+    ${d.retomar ? bloque('🗓️ Lo deja para más adelante', `<p>Retomar el <b>${new Date(d.retomar.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</b>${d.retomar.motivo ? ` · ${esc(d.retomar.motivo)}` : ''}</p><p class="ayuda">En un chat real se programarían «Retomar más adelante» y el segundo intento, y se cancelarían los follow-ups cortos.</p>`) : ''}
+    ${bloque('Follow-ups', `<p class="ayuda">Debajo de cada uno, el texto que Sofía enviaría ahora mismo si el lead no contesta. «Forzar» lo envía ya, tal cual.</p>
+      <ul class="fu">${d.seguimientos.filter((s) => s.tipo !== 'largo-plazo' || d.retomar).map((s) => `<li data-fu-li="${esc(s.id)}"><div class="fu-cab"><span>${s.tipo === 'largo-plazo' ? '🗓️ ' : ''}${esc(s.nombre)} <span class="ayuda">· ${cuandoRegla(s)}${s.activo ? '' : ' · desactivado'}</span></span><button type="button" data-fu="${esc(s.id)}" ${estado.info.modelo_configurado && !escribiendo ? '' : 'disabled'}>Forzar</button></div><div class="fu-texto">${estado.info.modelo_configurado ? htmlPrevisto(null) : ''}</div></li>`).join('')}</ul>
+      ${d.retomar ? '' : '<p class="ayuda">🗓️ Los de largo plazo aparecen cuando el lead dice que lo decidirá o se apuntará más adelante.</p>'}`)}
     ${bloque('Altas simuladas', d.altas.map((a) => `<p><span class="chip ambar">${esc(a.estado)}</span> ${esc(a.datos.nombre_completo || '')} · ${esc(a.datos.tarifa || '')} · ${esc(SEDES[a.datos.sede] || a.datos.sede || '')}</p>`).join(''))}`;
   const recargar = (nd) => { if (p.id === c.id) pintarPrueba(nd); };
   $('#padd') && ($('#padd').onchange = async (e) => { if (!e.target.value) return; try { recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/etiquetas`, { method: 'POST', body: JSON.stringify({ etiqueta: Number(e.target.value) }) })); } catch (err) { alertaP(err.message); } });
   $('#panal').querySelectorAll('[data-pq]').forEach((b) => b.onclick = async () => recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/etiquetas/${b.dataset.pq}`, { method: 'DELETE' })));
   $('#preanudar') && ($('#preanudar').onclick = async () => recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/reanudar`, { method: 'POST' })));
+  if (estado.info.modelo_configurado && !escribiendo && d.mensajes.length) {
+    const ids = [...$('#panal').querySelectorAll('[data-fu-li]')].map((li) => li.dataset.fuLi);
+    prepararTextos(ids, (rid) => api(`/probar/conversaciones/${encodeURIComponent(c.id)}/seguimiento/${encodeURIComponent(rid)}/previa`, { method: 'POST' }),
+      (rid, r) => { const el = $(`#panal [data-fu-li="${rid}"] .fu-texto`); if (el && p.id === c.id) el.innerHTML = r.error ? `<span class="error">${esc(r.error)}</span>` : htmlPrevisto(r.texto, r.plantilla); });
+  } else $('#panal').querySelectorAll('[data-fu-li] .fu-texto').forEach((el) => { el.innerHTML = d.mensajes.length ? '' : '<span class="ayuda">Escribe primero algo como lead.</span>'; });
   $('#panal').querySelectorAll('[data-fu]').forEach((b) => b.onclick = async () => {
     pintarPrueba(d, true);
     try { recargar(await api(`/probar/conversaciones/${encodeURIComponent(c.id)}/seguimiento`, { method: 'POST', body: JSON.stringify({ regla: b.dataset.fu }) })); }

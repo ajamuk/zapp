@@ -77,5 +77,6 @@ curl -s localhost:3200/admin/costes -H "Authorization: Bearer $ADMIN_TOKEN"
 - [ ] Pasar `npm run evaluar` y revisar el informe; luego modo prueba con conversaciones reales en GHL.
 - [ ] Configurar el modelo y validar altas en AimHarder por sede con la cuenta y el navegador de esa integración.
 - [ ] Confirmar la cobertura de las solicitudes de prueba en Parla. El flujo existente pide confirmación al equipo.
-- [ ] Comprobar en GHL los nombres exactos de campos del webhook y de la plantilla `zapp_seguimiento_programado`.
+- [ ] Comprobar en GHL los nombres exactos de campos del webhook.
+- [ ] Crear la plantilla de WhatsApp y el workflow «Sofía · enviar plantilla» (ver `docs/seguimientos.md`).
 - [ ] Aprobación de Carlos → traspaso del número a GHL → `MODE=live`.

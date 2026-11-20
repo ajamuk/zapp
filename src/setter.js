@@ -64,7 +64,7 @@ export class Setter {
     }
     const ahora = this.now();
     this.repo.updateConv(conv.id, { last_inbound_at: ahora.toISOString() });
-    this.repo.cancelScheduled(conv.id, 'el lead escribió');
+    this.repo.cancelScheduled(conv.id, 'el lead escribió', { soloCortos: true }); // los de largo plazo los revisa Sofía antes de enviar
 
     // Etiquetas de control puestas a mano en GHL
     const tags = (evt.tags || []).map((t) => String(t).toLowerCase());
@@ -144,6 +144,7 @@ export class Setter {
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
       `- Alta: ${conv.alta_estado || 'no iniciada'}. Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`,
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
+      conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       this.etiquetas?.contextoIA(conv.id) || '',
       extra,
     ].filter(Boolean).join('\n');
@@ -216,8 +217,13 @@ export class Setter {
     if (plantilla) mensajes = mensajes.slice(0, 1);
     if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
     if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
-    if (motivo === 'respuesta' && mensajes.length && !efectos.derivado && this.live) this.programarSeguimientos(conv);
-    const turno = { at: this.now().toISOString(), motivo, herramientas: efectos.herramientas, etiquetas: efectos.etiquetas, tags_ghl: [...efectos.tags], derivado: efectos.derivado };
+    // Seguimientos (también en modo prueba: al vencer quedan como borrador). Si lo deja para más adelante,
+    // en vez de los cortos se programa el de largo plazo.
+    let largoPlazo = null;
+    if (motivo === 'respuesta' && !efectos.derivado && respuesta.retomar && (respuesta.retomar.fecha || respuesta.retomar.motivo)) {
+      largoPlazo = this.programarLargoPlazo(conv, respuesta.retomar);
+    } else if (motivo === 'respuesta' && mensajes.length && !efectos.derivado) this.programarSeguimientos(conv);
+    const turno = { at: this.now().toISOString(), motivo, herramientas: efectos.herramientas, etiquetas: efectos.etiquetas, tags_ghl: [...efectos.tags], derivado: efectos.derivado, ...(largoPlazo ? { retomar: largoPlazo } : {}) };
     this.repo.updateConv(convId, { ultimo_turno: JSON.stringify(turno) });
     return { ...respuesta, mensajes, turno };
   }
@@ -261,7 +267,7 @@ export class Setter {
       return [];
     }
     if (plantilla) {
-      const r = await this.ghl.sendTemplate({ contactId: conv.contact_id, plantilla: plantilla.nombre, variables: [mensajes[0]] });
+      const r = await this.ghl.enviarPorPlantilla({ contactId: conv.contact_id, texto: mensajes[0] });
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[0], tipo: 'plantilla' });
       this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
       return [r?.messageId || null];
@@ -289,13 +295,63 @@ export class Setter {
   }
 
   programarSeguimientos(conv) {
-    if (String(conv.id).startsWith('prueba-')) return; // chat de pruebas: sin seguimientos reales
+    if (String(conv.id).startsWith('prueba-')) return; // chat de pruebas: se fuerzan a mano desde Probar IA
     const base = this.now().getTime();
     const activos = leerAjustes(this.repo).seguimientos;
+    this.repo.cancelScheduled(conv.id, 'Sofía volvió a responder', { soloCortos: true });
     for (const regla of knowledge.followups.reglas) {
-      if (!regla.canales.includes(conv.channel) || !activos[regla.id]) continue;
+      if (regla.tipo === 'largo-plazo' || !regla.canales.includes(conv.channel) || !activos[regla.id]) continue;
       this.repo.schedule(conv.id, regla.id, new Date(base + regla.minutos * 60000).toISOString());
     }
+  }
+
+  /**
+   * El lead lo deja para más adelante: se cancelan los cortos y se programan los de largo plazo (fecha que indica
+   * Sofía, entre 3 días y 1 año; si no hay fecha, la de la regla). Salen a las 11:00 de Madrid.
+   * Devuelve { fecha, motivo, segundo } o null si el canal no lo permite.
+   */
+  programarLargoPlazo(conv, { fecha = '', motivo = '' } = {}) {
+    const reglas = knowledge.followups.reglas.filter((r) => r.tipo === 'largo-plazo');
+    const primera = reglas.find((r) => !r.despuesDe);
+    const ahora = this.now();
+    const dia = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 10, 0)); // 11:00 en invierno, 12:00 en verano
+    let objetivo = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? new Date(`${fecha}T10:00:00Z`) : null;
+    const min = ahora.getTime() + 3 * 864e5, max = ahora.getTime() + 365 * 864e5;
+    if (!objetivo || Number.isNaN(objetivo.getTime()) || objetivo < min || objetivo > max) objetivo = dia(new Date(ahora.getTime() + (primera?.dias || 21) * 864e5));
+    const info = { fecha: objetivo.toISOString().slice(0, 10), motivo: String(motivo || '').slice(0, 300), at: ahora.toISOString() };
+    this.repo.updateConv(conv.id, { retomar: JSON.stringify(info) });
+    if (!primera || !primera.canales.includes(conv.channel)) return { ...info, programado: false, nota: 'Instagram no deja escribir pasados unos días: no se programa' };
+    this.repo.cancelScheduled(conv.id, 'lo deja para más adelante');
+    if (String(conv.id).startsWith('prueba-')) return { ...info, programado: false, nota: 'chat de pruebas: usa «Forzar» para verlo' };
+    const activos = leerAjustes(this.repo).seguimientos;
+    let base = objetivo;
+    for (const r of [primera, ...reglas.filter((x) => x.despuesDe)]) {
+      if (r !== primera) base = new Date(base.getTime() + r.dias * 864e5);
+      if (activos[r.id]) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo });
+    }
+    return { ...info, programado: true };
+  }
+
+  /**
+   * Redacta un mensaje sin enviarlo ni cambiar nada (para preparar el texto de un seguimiento).
+   * Solo puede usar herramientas de consulta. Devuelve el texto ('' si Sofía decide no enviar nada).
+   */
+  async redactar(convId, extraContexto = '') {
+    const conv = this.repo.getConv(convId);
+    if (!conv) return '';
+    const system = systemBlocks(knowledge.prompt, knowledge.negocio, this.contexto(conv, extraContexto));
+    const messages = await this.mensajesModelo(this.repo.history(convId));
+    const consulta = { consultar_horarios: consultarHorarios, consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
+    const { respuesta } = await runTurn({
+      system, messages, complete: this.complete,
+      ejecutarHerramienta: async (n, i) => (consulta[n] ? consulta[n](i) : { ok: false, error: 'Ahora solo estás redactando un mensaje: no uses esta herramienta.' }),
+      onUsage: (u, ms) => this.repo.logRun({
+        conversation_id: convId, motivo: 'redactar-seguimiento', modelo: config.ai.model, ms,
+        tokens_in: u.input_tokens || 0, tokens_out: u.output_tokens || 0,
+        tokens_cache_read: u.cache_read_input_tokens || 0, tokens_cache_write: u.cache_creation_input_tokens || 0,
+      }),
+    });
+    return (respuesta.mensajes || []).map((m) => m.trim()).filter(Boolean).join('\n');
   }
 
   // ---------- Herramientas ----------

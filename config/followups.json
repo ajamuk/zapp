@@ -1,11 +1,14 @@
 {
-  "_nota": "Copiado de Zapp (reglas activas a 19 nov 2026). 'minutos' cuenta desde el último mensaje de la IA sin respuesta del lead. La IA decide en cada caso si la condición se cumple; si no, no envía.",
+  "_nota": "Copiado de Zapp (reglas activas a 19 nov 2026). 'minutos' cuenta desde el último mensaje de la IA sin respuesta del lead. La IA decide en cada caso si la condición se cumple; si no, no envía. Las reglas con tipo 'largo-plazo' no van por minutos: se programan cuando el lead dice que lo decidirá o se apuntará más adelante (Sofía indica la fecha en `retomar`; si no hay fecha, 'dias'). Solo WhatsApp: Instagram no deja escribir pasados unos días.",
   "estiloComun": "Sin ¿ ni ¡ ni punto final; minúscula inicial; 1-2 frases; como mucho un emoji (😊💪👍😅); de tú. No ofrezcas clases de prueba ni visitas, no prometas plazas ni horarios. Si la objeción pendiente es la clase de prueba y aún no se explicó, explica que una sesión no permite conocer la experiencia y que sin permanencia puede entrenar un mes y decidir. Si ayuda, puedes compartir https://www.instagram.com/metropolitano_crossfit/ una sola vez.",
   "reglas": [
     {
       "id": "comercial-5h",
       "nombre": "Follow-up comercial 5h",
-      "canales": ["whatsapp", "instagram"],
+      "canales": [
+        "whatsapp",
+        "instagram"
+      ],
       "minutos": 300,
       "condicion": "Enviar solo si hubo interés real (preguntó precio, horarios o modalidad, eligió sede o dejó una objeción concreta). No enviar si ya respondió, compró, pidió no recibir mensajes, fue derivado a una persona, o si el alta está pendiente de preparar. No enviar ante un simple saludo, agradecimiento o conversación cerrada.",
       "instrucciones": "Retoma el último dato o la duda concreta sin culpar ni repetir y termina en pregunta o propuesta concreta."
@@ -13,7 +16,10 @@
     {
       "id": "info-tras-reserva",
       "nombre": "Información tras reserva",
-      "canales": ["whatsapp", "instagram"],
+      "canales": [
+        "whatsapp",
+        "instagram"
+      ],
       "minutos": 361,
       "condicion": "Solo si existe una reserva de prueba confirmada (Parla) y el lead no ha vuelto a escribir. No enviar si está cancelada o sin verificar.",
       "instrucciones": "Un único mensaje operativo: dirección y mapa de la sede reservada (copiados de la base de conocimiento), la clase dura 1 hora con calentamiento, venir con margen y calzado deportivo limpio. Sin preguntas ni venta."
@@ -21,7 +27,10 @@
     {
       "id": "ultimo-intento-24h",
       "nombre": "Último intento 24h",
-      "canales": ["whatsapp", "instagram"],
+      "canales": [
+        "whatsapp",
+        "instagram"
+      ],
       "minutos": 1438,
       "condicion": "Solo si no respondió al follow-up de 5h, el hilo sigue vivo y hubo interés real. No enviar si respondió, reservó, compró, pidió no recibir mensajes, fue derivado o hay alta pendiente.",
       "instrucciones": "Último intento: responde primero a la duda u objeción pendiente, reduce fricción y deja una propuesta concreta o la puerta abierta sin presión."
@@ -29,11 +38,50 @@
     {
       "id": "cierre-4-dias",
       "nombre": "Cierre a 4 días",
-      "canales": ["whatsapp"],
+      "canales": [
+        "whatsapp"
+      ],
       "minutos": 5760,
       "condicion": "Solo leads con interés real que siguen sin responder. No enviar si hay reserva, compra, derivación, petición de no recibir mensajes o alta pendiente.",
       "instrucciones": "Último toque elegante, sin presión ni urgencia y con la puerta abierta. Responde primero a la duda pendiente y deja un siguiente paso claro.",
-      "plantillaWhatsapp": { "nombre": "zapp_seguimiento_programado", "idioma": "es", "variables": 1 }
+      "plantillaWhatsapp": {
+        "nombre": "zapp_seguimiento_programado",
+        "idioma": "es",
+        "variables": 1
+      }
+    },
+    {
+      "id": "largo-plazo",
+      "nombre": "Retomar más adelante",
+      "tipo": "largo-plazo",
+      "canales": [
+        "whatsapp"
+      ],
+      "dias": 21,
+      "condicion": "Solo si el lead dijo que lo decidiría o se apuntaría más adelante y desde entonces no se ha apuntado ni ha retomado la conversación con interés. No enviar si compró, tiene el alta pendiente, fue derivado o pidió no recibir mensajes.",
+      "instrucciones": "Retómalo con naturalidad recordando lo que dijo (el momento o motivo que dio), sin presión ni culpa. Pregunta si ya es buen momento y deja un siguiente paso concreto (por ejemplo, mirarle horarios o ayudarle a empezar).",
+      "plantillaWhatsapp": {
+        "nombre": "zapp_seguimiento_programado",
+        "idioma": "es",
+        "variables": 1
+      }
+    },
+    {
+      "id": "largo-plazo-2",
+      "nombre": "Segundo intento a largo plazo",
+      "tipo": "largo-plazo",
+      "canales": [
+        "whatsapp"
+      ],
+      "dias": 30,
+      "despuesDe": "largo-plazo",
+      "condicion": "Solo si no contestó al mensaje de «Retomar más adelante» y sigue sin apuntarse. No enviar si compró, tiene el alta pendiente, fue derivado o pidió no recibir mensajes.",
+      "instrucciones": "Último mensaje, muy breve y amable: deja la puerta abierta para cuando quiera, sin preguntas insistentes ni urgencia.",
+      "plantillaWhatsapp": {
+        "nombre": "zapp_seguimiento_programado",
+        "idioma": "es",
+        "variables": 1
+      }
     }
   ]
 }

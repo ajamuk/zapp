@@ -10,7 +10,7 @@ import { openDb, repo as crearRepo } from './db.js';
 import { Setter } from './setter.js';
 import { Etiquetador } from './etiquetas.js';
 import { buscarSocioPorTelefono } from './aimharder/index.js';
-import { contextoSeguimiento } from './followups.js';
+import { reglaDe, textoPrevisto } from './followups.js';
 import { leerAjustes } from './ajustes.js';
 import fs from 'node:fs';
 import { carpetaMedios, procesarSubida } from './medios.js';
@@ -22,6 +22,7 @@ export class GhlCaptura {
   constructor() { this.salida = []; }
   async sendMessage({ texto }) { this.salida.push(texto); return { messageId: null }; }
   async sendTemplate({ variables }) { this.salida.push(`[plantilla] ${variables[0]}`); return {}; }
+  async enviarPorPlantilla({ texto }) { this.salida.push(`[plantilla de WhatsApp] ${texto}`); return { messageId: null }; }
   async addTags(_, t) { this.salida.push(`[GHL] etiquetas: ${t.join(', ')}`); }
   async removeTags(_, t) { this.salida.push(`[GHL] quita etiquetas: ${t.join(', ')}`); }
   async assign() {}
@@ -83,7 +84,8 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
       etiquetas: db.prepare('SELECT etiqueta_id id, origen, created_at puesta FROM conv_etiquetas WHERE conversation_id = ? ORDER BY created_at').all(id)
         .map((e) => ({ ...e, ...colorDe(e.id) })).filter((e) => e.nombre),
       altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: json(a.datos, {}) })),
-      seguimientos: knowledge.followups.reglas.filter((x) => x.canales.includes(c.channel)).map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, activo: Boolean(ajustes.seguimientos[x.id]) })),
+      seguimientos: knowledge.followups.reglas.filter((x) => x.canales.includes(c.channel)).map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, tipo: x.tipo || 'silencio', dias: x.dias, despuesDe: x.despuesDe || null, activo: Boolean(ajustes.seguimientos[x.id]) })),
+      retomar: json(c.retomar, null),
       ahora: ahoraDe(c)().toISOString(),
     };
   };
@@ -198,13 +200,47 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
     return setter.responder(c.id, { extraContexto: '# Tarea\nEl lead todavía no ha escrito: abre tú la conversación con un primer mensaje (flujo outbound).', motivo: 'outbound' });
   }));
 
-  // «Forzar» un seguimiento ahora, como si hubiera pasado su tiempo sin respuesta
+  // Seguimiento de prueba como si hubiera vencido: fila simulada con la fecha prevista y, si es de largo plazo,
+  // la fecha y el motivo que dio el lead. El texto se prepara una vez por estado del chat.
+  const previas = new Map();
+  const seguimientoSimulado = (c, regla) => {
+    const ahora = ahoraDe(c)();
+    const ret = json(c.retomar, null);
+    const due = regla.tipo === 'largo-plazo'
+      ? new Date(Math.max(ahora.getTime() + 3 * 864e5, ret?.fecha ? Date.parse(`${ret.fecha}T10:00:00Z`) : ahora.getTime() + (regla.dias || 21) * 864e5) + (regla.despuesDe ? (regla.dias || 30) * 864e5 : 0))
+      : new Date(ahora.getTime() + regla.minutos * 60000);
+    return { id: null, conversation_id: c.id, regla_id: regla.id, due_at: due.toISOString(), contexto: regla.tipo === 'largo-plazo' ? JSON.stringify({ fecha: ret?.fecha || due.toISOString().slice(0, 10), motivo: ret?.motivo || '' }) : null };
+  };
+  const clavePrevia = (c, regla) => `${c.id}|${regla.id}|${pruebas().ultimoMensajeId(c.id)}`;
+
+  r.post('/conversaciones/:id/seguimiento/:regla/previa', async (req, res) => {
+    const c = pruebas().getConv(req.params.id);
+    const regla = reglaDe(req.params.regla);
+    if (!c || !regla) return res.status(404).json({ error: 'No existe.' });
+    if (sinModelo(res)) return;
+    const k = clavePrevia(c, regla);
+    if (!previas.has(k)) {
+      const sim = seguimientoSimulado(c, regla);
+      const { setter } = sandbox(c);
+      previas.set(k, (async () => ({ ...(await textoPrevisto(setter, sim)), due_at: sim.due_at }))().catch((e) => { previas.delete(k); throw e; }));
+    }
+    try { res.json(await previas.get(k)); } catch (e) { console.error('Probar previa:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
+  });
+
+  // «Forzar» un seguimiento: envía ya el texto preparado (o lo prepara si no lo había)
   r.post('/conversaciones/:id/seguimiento', (req, res) => {
-    const regla = knowledge.followups.reglas.find((x) => x.id === req.body?.regla);
+    const regla = reglaDe(req.body?.regla);
     if (!regla) return res.status(400).json({ error: 'Seguimiento desconocido.' });
     return turno(req, res, async (c, { setter }) => {
-      const out = await setter.responder(c.id, { extraContexto: contextoSeguimiento(regla), motivo: 'followup' });
-      return out?.mensajes?.length ? out : { ...out, nota: `Seguimiento «${regla.nombre}»: Sofía decide no enviarlo (no se cumple la condición).` };
+      const k = clavePrevia(c, regla);
+      const sim = seguimientoSimulado(c, regla);
+      const previa = previas.has(k) ? await previas.get(k).catch(() => null) : null;
+      const { texto, plantilla } = previa || (await textoPrevisto(setter, sim));
+      previas.delete(k);
+      if (!texto) return { nota: `Seguimiento «${regla.nombre}»: Sofía decide no enviarlo (no se cumple la condición).` };
+      const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
+      await setter.enviar(pruebas().getConv(c.id), plantilla ? burbujas.slice(0, 1) : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null);
+      return { mensajes: plantilla ? [] : burbujas, nota: `Seguimiento «${regla.nombre}» enviado${plantilla ? ' por plantilla de WhatsApp' : ''}.` };
     });
   });
 

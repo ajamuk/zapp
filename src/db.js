@@ -125,6 +125,7 @@ const COLUMNAS_NUEVAS = {
     siguiente_paso: 'TEXT',       // qué busca conseguir en el siguiente mensaje
     ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno
     simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
+    retomar: 'TEXT',              // JSON: { fecha, motivo, at } cuando el lead lo deja para más adelante
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -134,6 +135,12 @@ const COLUMNAS_NUEVAS = {
     media_error: 'TEXT',
   },
   conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
+  scheduled: {
+    texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
+    previsto_msg: 'INTEGER',       // último mensaje del chat cuando se preparó (si cambia, se vuelve a redactar)
+    previsto_at: 'TEXT',
+    contexto: 'TEXT',              // JSON (largo plazo): { fecha, motivo }
+  },
 };
 
 function migrar(db) {
@@ -181,10 +188,15 @@ export function repo(db) {
     },
     history: (convId, limit = 40) =>
       db.prepare('SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? AND enviado = 1 ORDER BY id DESC LIMIT ?) ORDER BY id ASC').all(convId, limit),
-    schedule: (convId, reglaId, dueAt) =>
-      db.prepare('INSERT INTO scheduled (conversation_id, regla_id, due_at) VALUES (?, ?, ?)').run(convId, reglaId, dueAt),
-    cancelScheduled: (convId, motivo) =>
-      db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado = 'pendiente'`).run(motivo, convId),
+    schedule: (convId, reglaId, dueAt, contexto = null) =>
+      db.prepare('INSERT INTO scheduled (conversation_id, regla_id, due_at, contexto) VALUES (?, ?, ?, ?)').run(convId, reglaId, dueAt, contexto ? JSON.stringify(contexto) : null),
+    /** Cancela los pendientes. Con `soloCortos`, deja los de largo plazo (los decide Sofía antes de enviar). */
+    cancelScheduled: (convId, motivo, { soloCortos = false, soloLargo = false } = {}) =>
+      db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado = 'pendiente'
+        ${soloCortos ? "AND regla_id NOT LIKE 'largo-plazo%'" : ''} ${soloLargo ? "AND regla_id LIKE 'largo-plazo%'" : ''}`).run(motivo, convId),
+    guardarPrevisto: (id, texto, msgId) =>
+      db.prepare("UPDATE scheduled SET texto_previsto = ?, previsto_msg = ?, previsto_at = datetime('now') WHERE id = ?").run(texto, msgId, id),
+    ultimoMensajeId: (convId) => db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(convId)?.m ?? 0,
     dueResponses: (at) => db.prepare('SELECT * FROM conversations WHERE respond_at IS NOT NULL AND respond_at <= ? ORDER BY respond_at').all(at),
     dueScheduled: (at) => db.prepare(`SELECT * FROM scheduled WHERE estado = 'pendiente' AND due_at <= ? ORDER BY due_at`).all(at),
     finishScheduled: (id, estado, detalle = null) =>

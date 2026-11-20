@@ -188,7 +188,11 @@ export function detalle(db, id) {
     conv: { ...conv, ultimo_turno: conv.ultimo_turno ? JSON.parse(conv.ultimo_turno) : null },
     etiquetas: deChats(db, [id])[id] || [],
     mensajes: db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY id').all(id),
-    seguimientos: db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id),
+    seguimientos: (() => {
+      const ultimo = db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(id)?.m ?? 0;
+      return db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id)
+        .map((x) => ({ ...x, nombre: knowledge.followups.reglas.find((r) => r.id === x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }));
+    })(),
     altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: JSON.parse(a.datos) })),
     ia: db.prepare('SELECT * FROM ai_runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id),
   };
@@ -202,12 +206,15 @@ export function altas(db, limite = 100) {
 
 export function seguimientos(db) {
   const reglas = knowledge.followups.reglas.map((r) => ({
-    id: r.id, nombre: r.nombre, minutos: r.minutos, canales: r.canales, condicion: r.condicion, instrucciones: r.instrucciones,
+    id: r.id, nombre: r.nombre, minutos: r.minutos, tipo: r.tipo || 'silencio', dias: r.dias, despuesDe: r.despuesDe || null, canales: r.canales, condicion: r.condicion, instrucciones: r.instrucciones,
     plantilla: r.plantillaWhatsapp?.nombre || null,
     ...Object.fromEntries(['enviado', 'omitido', 'cancelado', 'error', 'pendiente'].map((e) => [e,
       db.prepare(`SELECT count(*) n FROM scheduled WHERE regla_id = ? AND estado = ? AND conversation_id NOT LIKE 'prueba-%' AND datetime(created_at) >= datetime('now', '-7 days')`).get(r.id, e).n])),
   }));
-  const proximos = db.prepare(`SELECT s.*, c.nombre, c.channel, c.sede FROM scheduled s LEFT JOIN conversations c ON c.id = s.conversation_id
-    WHERE s.estado = 'pendiente' AND s.conversation_id NOT LIKE 'prueba-%' ORDER BY s.due_at LIMIT 100`).all();
+  const proximos = db.prepare(`SELECT s.*, c.nombre, c.channel, c.sede,
+      (s.texto_previsto IS NOT NULL AND s.previsto_msg = (SELECT max(id) FROM messages m WHERE m.conversation_id = s.conversation_id AND m.enviado = 1)) vigente
+    FROM scheduled s LEFT JOIN conversations c ON c.id = s.conversation_id
+    WHERE s.estado = 'pendiente' AND s.conversation_id NOT LIKE 'prueba-%' ORDER BY s.due_at LIMIT 100`).all()
+    .map((x) => ({ ...x, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: Boolean(x.vigente) }));
   return { reglas, proximos };
 }

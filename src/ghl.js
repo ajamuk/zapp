@@ -67,11 +67,34 @@ export class Ghl {
     return this.req('POST', '/conversations/messages', { type, contactId, message: texto });
   }
 
-  sendTemplate({ contactId, plantilla, variables = [] }) {
-    // Plantilla aprobada de WhatsApp para escribir fuera de la ventana de 24 h.
-    return this.req('POST', '/conversations/messages', {
-      type: 'WhatsApp', contactId, templateId: plantilla, templateParams: variables,
-    });
+  /**
+   * Plantilla de WhatsApp (fuera de la ventana de 24 h). La API de GHL no admite variables de plantilla, así que
+   * se hace con un workflow de GHL: se guarda el texto en el campo «Sofía · Texto de seguimiento» del contacto y
+   * se pone la etiqueta `sofia-enviar-plantilla`; el workflow envía la plantilla con ese campo como variable.
+   * Ver docs/seguimientos.md.
+   */
+  async enviarPorPlantilla({ contactId, texto }) {
+    const campo = await this.campoPlantilla();
+    await this.req('PUT', `/contacts/${contactId}`, { customFields: [{ id: campo, field_value: texto }] });
+    const tag = config.ghl.tagPlantilla;
+    await this.removeTags(contactId, [tag]).catch(() => null); // quitar y poner, para que el workflow salte otra vez
+    await this.addTags(contactId, [tag]);
+    return { messageId: null, via: 'workflow' };
+  }
+
+  // Compatibilidad: el nombre antiguo
+  sendTemplate({ contactId, variables = [] }) { return this.enviarPorPlantilla({ contactId, texto: variables[0] || '' }); }
+
+  /** Id del campo de contacto donde va el texto de la plantilla (se crea la primera vez). */
+  async campoPlantilla() {
+    if (this._campo) return this._campo;
+    const nombre = config.ghl.campoPlantilla;
+    const r = await this.req('GET', `/locations/${config.ghl.locationId}/customFields?model=contact`);
+    let f = (r?.customFields || []).find((x) => x.name === nombre);
+    if (!f) f = (await this.req('POST', `/locations/${config.ghl.locationId}/customFields`, { name: nombre, dataType: 'LARGE_TEXT', model: 'contact' }))?.customField;
+    if (!f?.id) throw new Error('No se ha podido preparar el campo de la plantilla en GHL');
+    this._campo = f.id;
+    return f.id;
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }

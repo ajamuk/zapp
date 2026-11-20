@@ -14,6 +14,7 @@ function montar({ respuestas, socio = false, live = true, alta = { estado: 'prep
   const ghl = {
     sendMessage: async ({ texto }) => { llamadas.enviados.push(texto); return { messageId: `m${llamadas.enviados.length}` }; },
     sendTemplate: async ({ variables }) => { llamadas.plantillas.push(variables[0]); return {}; },
+    enviarPorPlantilla: async ({ texto }) => { llamadas.plantillas.push(texto); return { messageId: null }; },
     addTags: async (_, t) => llamadas.tags.push(...t),
     removeTags: async () => {},
     assign: async (_, u) => llamadas.asignados.push(u),

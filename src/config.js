@@ -45,6 +45,9 @@ export const config = {
       el_canaveral: env('GHL_USER_LAS_ROSAS'),
     },
     calendarPruebaParla: env('GHL_CALENDAR_PRUEBA_PARLA'),
+    // Envío por plantilla de WhatsApp a través de un workflow de GHL (ver docs/seguimientos.md)
+    tagPlantilla: env('GHL_TAG_PLANTILLA', 'sofia-enviar-plantilla'),
+    campoPlantilla: env('GHL_CAMPO_PLANTILLA', 'Sofía · Texto de seguimiento'),
   },
   aimharder: {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
