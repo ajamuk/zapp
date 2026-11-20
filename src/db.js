@@ -74,6 +74,11 @@ CREATE TABLE IF NOT EXISTS altas (
   detalle TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS ajustes (
+  clave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL,              -- JSON
+  actualizado TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export function openDb(dbPath) {
@@ -135,6 +140,10 @@ export function repo(db) {
       const ins = db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)');
       for (const f of filas) ins.run(f);
     }),
+    ajustesGuardados: () => Object.fromEntries(db.prepare('SELECT clave, valor FROM ajustes').all().map((r) => [r.clave, JSON.parse(r.valor)])),
+    guardarAjuste: (clave, valor) =>
+      db.prepare(`INSERT INTO ajustes (clave, valor, actualizado) VALUES (?, ?, datetime('now'))
+        ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado = excluded.actualizado`).run(clave, JSON.stringify(valor)),
     sociosPorTelefono: (tel) => db.prepare('SELECT * FROM socios WHERE telefono = ?').all(tel),
     addAlta: (convId, datos, estado, detalle = null) =>
       db.prepare('INSERT INTO altas (conversation_id, datos, estado, detalle) VALUES (?, ?, ?, ?)').run(convId, JSON.stringify(datos), estado, detalle),

@@ -3,6 +3,9 @@ import express from 'express';
 import { config } from './config.js';
 import { parseWebhook } from './ghl.js';
 import { Setter } from './setter.js';
+import path from 'node:path';
+import { leerAjustes, guardarAjustes } from './ajustes.js';
+import * as panel from './panel.js';
 
 const igual = (a, b) => {
   const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || ''));
@@ -24,6 +27,9 @@ class GhlCaptura {
 export function crearApp({ setter, repo, aimharder, avisar, complete }) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+
+  // Panel de control (la página es pública; los datos piden el token de administración)
+  app.get('/panel', (_req, res) => res.sendFile(path.join(config.root, 'panel', 'index.html')));
 
   app.get('/health', (_req, res) => res.json({ ok: true, modo: config.mode }));
 
@@ -66,6 +72,40 @@ export function crearApp({ setter, repo, aimharder, avisar, complete }) {
   admin.post('/conversaciones/:id/reanudar', (req, res) => {
     repo.updateConv(req.params.id, { ai_paused: 0, derivado: 0, pause_reason: null });
     res.json({ ok: true });
+  });
+
+  // ---------- Panel ----------
+  const db = repo.db;
+  admin.get('/panel/estado', (_req, res) => res.json({
+    modo: config.mode, modelo: config.ai.model, alta_en_pruebas: config.aimharder.altaDryRun,
+    ajustes: leerAjustes(repo), contadores: panel.contadores(db),
+  }));
+  admin.get('/panel/resumen', (req, res) => res.json(panel.resumen(db, req.query.dias)));
+  admin.get('/panel/conversaciones', (req, res) => res.json(panel.conversaciones(db, req.query)));
+  admin.get('/panel/conversaciones/:id', (req, res) => {
+    const d = panel.detalle(db, req.params.id);
+    return d ? res.json(d) : res.status(404).json({ error: 'no existe' });
+  });
+  admin.post('/panel/conversaciones/:id/pausar', (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    repo.updateConv(req.params.id, { ai_paused: 1, pause_reason: 'pausada desde el panel', respond_at: null });
+    repo.cancelScheduled(req.params.id, 'pausada desde el panel');
+    res.json({ ok: true });
+  });
+  admin.post('/panel/conversaciones/:id/reanudar', (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    repo.updateConv(req.params.id, { ai_paused: 0, derivado: 0, pause_reason: null });
+    res.json({ ok: true });
+  });
+  admin.get('/panel/altas', (_req, res) => res.json(panel.altas(db)));
+  admin.get('/panel/seguimientos', (_req, res) => res.json(panel.seguimientos(db)));
+  admin.post('/panel/seguimientos/:id/cancelar', (req, res) => {
+    repo.finishScheduled(Number(req.params.id), 'cancelado', 'cancelado desde el panel');
+    res.json({ ok: true });
+  });
+  admin.get('/panel/ajustes', (_req, res) => res.json(leerAjustes(repo)));
+  admin.put('/panel/ajustes', (req, res) => {
+    try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
   app.use('/admin', admin);
