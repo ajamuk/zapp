@@ -24,6 +24,8 @@ Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 | `src/followups.js` | Seguimientos (ventana de 24 h y plantilla de WhatsApp) |
 | `docs/analisis-conversaciones.md` | Análisis de 200 conversaciones de Zapp |
 | `docs/aimharder.md` | Cómo terminar la parte de AimHarder |
+| `docs/ghl.md` | Conectar GHL paso a paso |
+| `scripts/comprobar-ghl.js` | Comprobación de token, permisos, usuarios y etiquetas (`npm run comprobar-ghl`) |
 
 ## Probar en local
 
@@ -53,16 +55,16 @@ El simulador HTML independiente se puede regenerar con `npm run build-simulador`
 
 ## Conectar GHL
 
-1. En GHL: Ajustes → Integraciones privadas → token con permisos de conversaciones (leer/escribir), contactos (leer/escribir) y notas. Va a `GHL_TOKEN`.
-2. Workflow «Mensaje entrante» (disparador *Customer Replied*, canales WhatsApp e Instagram) → acción *Webhook* a
-   la URL HTTPS del webhook del VPS con la cabecera `x-setter-secret` = `WEBHOOK_SECRET`.
-   Incluir conversationId, contactId, messageType, body, messageId, phone, tags y nombre del contacto.
-3. Mensajes que envía el equipo: para que la IA se aparte cuando escribe una persona, el servicio entiende el evento
-   `OutboundMessage` de GHL (con `userId`). Si no se puede suscribir ese evento, el equipo pone la etiqueta `parar ia`
-   antes de escribir. **A confirmar al conectar.**
-4. Rellenar los IDs de usuario de cada sede (`GHL_USER_*`).
+Guía completa en [`docs/ghl.md`](docs/ghl.md). Resumen:
+
+1. Token de integración privada → `GHL_TOKEN`; `WEBHOOK_SECRET` con `openssl rand -hex 32`.
+2. `npm run comprobar-ghl` en el VPS: valida el token y lista los IDs de usuario para `GHL_USER_*`.
+3. Workflow *Customer Replied* (WhatsApp e Instagram) → *Webhook* a `/webhooks/ghl` con la cabecera `x-setter-secret`.
+   El servicio acepta el formato del workflow (etiquetas en texto, sin `conversationId`, canal numérico) y completa lo que falte preguntando a GHL.
+4. `GHL_WEBHOOK_ENABLED=true` con `MODE=shadow` y revisar lo recibido en `GET /admin/webhooks`.
 
 Etiquetas de control en GHL: `parar ia` pausa la IA en ese contacto; `continuar ia` la reanuda.
+Mientras no llegue el evento `OutboundMessage`, el equipo pone `parar ia` antes de escribir.
 
 ## Herramientas de administración (solo desde el VPS)
 
@@ -70,6 +72,7 @@ Etiquetas de control en GHL: `parar ia` pausa la IA en ese contacto; `continuar 
 curl -s -X POST localhost:3200/admin/probar -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'content-type: application/json' -d '{"sesion":"carlos","texto":"cuánto cuesta en getafe?"}'
 curl -s localhost:3200/admin/costes -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -s localhost:3200/admin/webhooks?limite=10 -H "Authorization: Bearer $ADMIN_TOKEN"   # últimos webhooks de GHL
 ```
 
 ## Pendiente antes de producción

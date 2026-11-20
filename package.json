@@ -12,6 +12,7 @@
     "simular": "node scripts/simular.js",
     "sync-aimharder": "node scripts/sync-aimharder.js",
     "evaluar": "node scripts/evaluar.js",
+    "comprobar-ghl": "node scripts/comprobar-ghl.js",
     "build-simulador": "node scripts/build-simulador.js"
   },
   "dependencies": {

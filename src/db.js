@@ -74,6 +74,12 @@ CREATE TABLE IF NOT EXISTS altas (
   detalle TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS webhook_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recibido TEXT NOT NULL DEFAULT (datetime('now')),
+  resultado TEXT,                   -- JSON con lo que hizo el setter (o el error)
+  payload TEXT NOT NULL             -- JSON tal cual llegó de GHL (para comprobar el formato real)
+);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON
@@ -94,6 +100,15 @@ export function repo(db) {
   return {
     db,
     getConv: (id) => db.prepare('SELECT * FROM conversations WHERE id = ?').get(id),
+    getConvByContact: (contactId) => db.prepare('SELECT * FROM conversations WHERE contact_id = ? ORDER BY updated_at DESC LIMIT 1').get(contactId),
+    /** Guarda el webhook recibido y conserva solo los últimos 500. */
+    logWebhook(payload, resultado) {
+      const r = db.prepare('INSERT INTO webhook_log (payload, resultado) VALUES (?, ?)').run(JSON.stringify(payload ?? null), JSON.stringify(resultado ?? null));
+      db.prepare('DELETE FROM webhook_log WHERE id <= ?').run(Number(r.lastInsertRowid) - 500);
+      return r.lastInsertRowid;
+    },
+    webhooks: (limit = 50) => db.prepare('SELECT * FROM webhook_log ORDER BY id DESC LIMIT ?').all(limit)
+      .map((w) => ({ ...w, payload: JSON.parse(w.payload), resultado: JSON.parse(w.resultado) })),
     upsertConv(c) {
       const cur = this.getConv(c.id);
       if (!cur) {

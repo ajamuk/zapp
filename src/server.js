@@ -47,9 +47,16 @@ export function crearApp({ setter, repo, complete, embudoOpciones }) {
   app.post('/webhooks/ghl', async (req, res) => {
     if (!igual(req.get('x-setter-secret'), config.webhookSecret)) return res.status(401).json({ error: 'secreto no válido' });
     if (!config.ghlWebhookEnabled) return res.status(503).json({ error: 'entrada de GHL desactivada' });
-    const evt = parseWebhook(req.body);
     res.json({ recibido: true });
-    try { await setter.handleWebhook(evt); } catch (e) { console.error('Webhook:', e); }
+    let resultado;
+    try {
+      resultado = await setter.handleWebhook(parseWebhook(req.body));
+      if (resultado?.ignorado) console.warn('Webhook ignorado:', resultado.ignorado);
+    } catch (e) {
+      console.error('Webhook:', e);
+      resultado = { error: e.message };
+    }
+    try { repo.logWebhook(req.body, resultado); } catch (e) { console.error('No se pudo guardar el webhook:', e.message); }
   });
 
   const admin = express.Router();
@@ -93,6 +100,9 @@ export function crearApp({ setter, repo, complete, embudoOpciones }) {
     })();
     res.json({ ok: true });
   });
+
+  // Últimos webhooks recibidos de GHL, tal cual llegaron y con lo que hizo Sofía (para comprobar el formato).
+  admin.get('/webhooks', (req, res) => res.json(repo.webhooks(Math.min(Number(req.query.limite) || 50, 500))));
 
   admin.get('/costes', (req, res) => res.json(repo.costes(Number(req.query.dias) || 7)));
 

@@ -141,3 +141,26 @@ test('panel: embudo por sede pide la clave y valida el mes', async () => {
     assert.match(p, /Embudo por sede/);
   } finally { srv.close(); }
 });
+
+test('webhook de GHL: exige el secreto, responde enseguida y guarda lo recibido', async () => {
+  config.webhookSecret = 'secreto-de-prueba-largo-123456';
+  const vistos = [];
+  const repo = crearRepo(openDb(':memory:'));
+  const setter = { handleWebhook: async (evt) => { vistos.push(evt); return { programada: 'x' }; } };
+  const srv = crearApp({ setter, repo }).listen(0);
+  await new Promise((r) => srv.once('listening', r));
+  const url = `http://127.0.0.1:${srv.address().port}/webhooks/ghl`;
+  const cuerpo = JSON.stringify({ contact_id: 'k1', tags: 'parla,lead', message: { body: 'hola' } });
+  try {
+    assert.equal((await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-setter-secret': 'otro' }, body: cuerpo })).status, 401);
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-setter-secret': config.webhookSecret }, body: cuerpo });
+    assert.equal(r.status, 200);
+    await new Promise((ok) => setTimeout(ok, 20));
+    assert.deepEqual(vistos[0].tags, ['parla', 'lead']);
+    const [w] = repo.webhooks();
+    assert.equal(w.payload.contact_id, 'k1');
+    assert.equal(w.resultado.programada, 'x');
+    const lista = await fetch(url.replace('/webhooks/ghl', '/admin/webhooks'), { headers: { authorization: 'Bearer clave-test' } });
+    assert.equal((await lista.json()).length, 1);
+  } finally { srv.close(); }
+});

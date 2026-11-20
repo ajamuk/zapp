@@ -19,6 +19,7 @@ function montar({ respuestas, socio = false, live = true, alta = { estado: 'prep
     assign: async (_, u) => llamadas.asignados.push(u),
     addNote: async (_, n) => llamadas.notas.push(n),
     getContact: async () => ({ contact: { phone: '+34600000000' } }),
+    buscarConversacion: async (contactId) => { llamadas.busquedas = (llamadas.busquedas || 0) + 1; return { id: `conv-${contactId}`, canal: 'whatsapp' }; },
   };
   let reloj = new Date(T0);
   const cola = [...(respuestas || [])];
@@ -46,6 +47,61 @@ test('webhook de GHL se normaliza', () => {
   assert.deepEqual([e.evento, e.canal, e.texto], ['inbound', 'whatsapp', 'hola']);
   const o = parseWebhook({ type: 'OutboundMessage', conversationId: 'c', contactId: 'k', messageType: 'IG', userId: 'u1' });
   assert.deepEqual([o.evento, o.canal, o.userId], ['outbound', 'instagram', 'u1']);
+});
+
+test('webhook de un workflow: etiquetas en texto, customData y campos en snake_case', () => {
+  const e = parseWebhook({
+    contact_id: 'k9', full_name: 'Ana López', phone: '+34611111111', tags: 'Captación, parar ia ,parla',
+    message: { type: 19, body: 'hola, precios?' },
+    customData: { conversationId: 'c9', messageType: 'TYPE_WHATSAPP' },
+  });
+  assert.equal(e.evento, 'inbound');
+  assert.equal(e.contactId, 'k9');
+  assert.equal(e.conversationId, 'c9');
+  assert.equal(e.canal, 'whatsapp');
+  assert.equal(e.texto, 'hola, precios?');
+  assert.equal(e.nombre, 'Ana López');
+  assert.deepEqual(e.tags, ['captación', 'parar ia', 'parla']);
+  // Tipo numérico sin más pistas: no se adivina
+  assert.equal(parseWebhook({ contact_id: 'k', message: { type: 19, body: 'x' } }).canal, 'desconocido');
+  assert.deepEqual(parseWebhook({ contactId: 'k', tags: [{ name: 'Parla' }] }).tags, ['parla']);
+  assert.deepEqual(parseWebhook({ contactId: 'k' }).tags, []);
+});
+
+test('webhook de workflow sin conversationId ni canal: se pregunta a GHL una vez y luego se reutiliza', async () => {
+  const { setter, repo, llamadas } = montar();
+  const evt = parseWebhook({ contact_id: 'k7', phone: '+34600000000', tags: 'lead', message: { type: 19, body: 'hola' } });
+  const r = await setter.handleWebhook(evt);
+  assert.ok(r.programada);
+  const c = repo.getConv('conv-k7');
+  assert.equal(c.channel, 'whatsapp');
+  assert.equal(llamadas.busquedas, 1);
+  // Segundo mensaje con canal conocido: no hace falta preguntar la conversación
+  await setter.handleWebhook(parseWebhook({ contact_id: 'k7', tags: 'lead', customData: { messageType: 'WhatsApp' }, message: { body: 'sigo aquí' } }));
+  assert.equal(llamadas.busquedas, 1);
+  assert.equal(repo.history('conv-k7').length, 2);
+});
+
+test('la etiqueta «parar ia» en texto pausa la IA', async () => {
+  const { setter, repo } = montar();
+  const r = await setter.handleWebhook(parseWebhook({ contact_id: 'k8', conversation_id: 'c8', messageType: 'WhatsApp', body: 'hola', tags: 'parla,Parar IA' }));
+  assert.equal(r.pausada, true);
+  assert.equal(repo.getConv('c8').ai_paused, 1);
+});
+
+test('canales que no atiende Sofía (SMS, email) se ignoran', async () => {
+  const { setter, repo } = montar();
+  const r = await setter.handleWebhook(parseWebhook({ contactId: 'k', conversationId: 'cs', messageType: 'SMS', body: 'hola' }));
+  assert.match(r.ignorado, /canal/);
+  assert.equal(repo.getConv('cs'), undefined);
+});
+
+test('saliente del equipo sin conversationId: pausa la conversación del contacto', async () => {
+  const { setter, repo } = montar();
+  await setter.handleWebhook(entrante('hola'));
+  const r = await setter.handleWebhook(parseWebhook({ type: 'OutboundMessage', contactId: 'k1', messageType: 'WhatsApp', userId: 'u1', body: 'te escribo yo', messageId: 'h1' }));
+  assert.equal(r.pausada, true);
+  assert.equal(repo.getConv('c1').ai_paused, 1);
 });
 
 test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa', async () => {

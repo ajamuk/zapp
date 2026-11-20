@@ -1,10 +1,12 @@
 import { config } from './config.js';
+import { listaEtiquetas } from './ghl.js';
 import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede } from './knowledge.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
 
 const TAGS = knowledge.etiquetas;
+const CANALES = ['whatsapp', 'instagram']; // canales que atiende Sofía
 const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
@@ -24,15 +26,36 @@ export class Setter {
   // ---------- Entrada ----------
 
   async handleWebhook(evt) {
-    if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
+    if (!evt.contactId) return { ignorado: 'falta contactId' };
+    evt = await this.completarEvento(evt);
     if (evt.evento === 'outbound') return this.onOutbound(evt);
+    if (!evt.conversationId) return { ignorado: 'no se encontró la conversación en GHL' };
+    if (!CANALES.includes(evt.canal)) return { ignorado: `canal no atendido: ${evt.canal}` };
     return this.onInbound(evt);
+  }
+
+  /**
+   * El webhook de un workflow puede no traer conversationId o el canal. Se completan con lo que ya
+   * sabemos del contacto y, si no, preguntando a GHL por su conversación.
+   */
+  async completarEvento(evt) {
+    const conocida = (evt.conversationId && this.repo.getConv(evt.conversationId)) || this.repo.getConvByContact(evt.contactId);
+    const out = { ...evt };
+    const faltaCanal = out.canal === 'desconocido'; // SMS o email son canales conocidos que Sofía no atiende
+    if (!out.conversationId && conocida) out.conversationId = conocida.id;
+    if (!out.conversationId || (faltaCanal && out.evento === 'inbound')) {
+      const g = await this.safe(() => this.ghl.buscarConversacion?.(out.contactId));
+      if (g?.id && !out.conversationId) out.conversationId = g.id;
+      if (faltaCanal && CANALES.includes(g?.canal)) out.canal = g.canal;
+    }
+    if (out.canal === 'desconocido' && conocida && CANALES.includes(conocida.channel)) out.canal = conocida.channel;
+    return out;
   }
 
   async onOutbound(evt) {
     // Mensajes que envía el propio sistema ya están registrados (mismo external_id) → se ignoran.
     if (!evt.userId) return { ignorado: 'saliente sin usuario (sistema o plantilla)' };
-    const conv = this.repo.getConv(evt.conversationId);
+    const conv = (evt.conversationId && this.repo.getConv(evt.conversationId)) || this.repo.getConvByContact(evt.contactId);
     if (!conv) return { ignorado: 'conversación desconocida' };
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto });
     if (!ins) return { ignorado: 'duplicado' };
@@ -51,7 +74,7 @@ export class Setter {
     this.repo.cancelScheduled(conv.id, 'el lead escribió');
 
     // Etiquetas de control puestas a mano en GHL
-    const tags = (evt.tags || []).map((t) => String(t).toLowerCase());
+    const tags = listaEtiquetas(evt.tags);
     if (tags.includes(TAGS.control.reanudar_ia) && conv.ai_paused) {
       this.repo.updateConv(conv.id, { ai_paused: 0, pause_reason: null, derivado: 0 });
       await this.safe(() => this.ghl.removeTags(conv.contact_id, [TAGS.control.reanudar_ia]));
