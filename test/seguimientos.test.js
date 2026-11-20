@@ -62,6 +62,7 @@ test('texto previsto: se ve antes y se envía tal cual si el chat no cambia; si 
   assert.deepEqual(sal.enviados, ['te paso horarios', 'sigues interesada en parla?']);
   // Al redactar no puede usar herramientas con efectos
   assert.match(sal.requests.at(-1).system.at(-1).text, /Follow-up comercial 5h/);
+  assert.match(sal.requests.at(-1).system.at(-1).text, /se enviará el martes, 17 de noviembre de 2026/); // preparado antes de tiempo
 });
 
 test('largo plazo: «me apunto en enero» cancela los cortos y programa dos intentos; el lead escribiendo no los borra', async () => {

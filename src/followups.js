@@ -20,9 +20,12 @@ export const reglaDe = (id) => knowledge.followups.reglas.find((r) => r.id === i
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 
 /** Instrucciones completas para redactar un seguimiento programado (incluye el motivo si es de largo plazo). */
-export function contextoTarea(regla, s, { plantilla = false } = {}) {
+export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() } = {}) {
   const c = json(s?.contexto);
+  const futuro = s?.due_at && new Date(s.due_at) - ahora > 60000;
+  const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
+    futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
     contextoSeguimiento(regla),
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
     plantilla ? 'El texto irá dentro de una plantilla aprobada de WhatsApp: una sola frase, sin saltos de línea.' : '',
@@ -46,7 +49,7 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
   const ultimo = repo.ultimoMensajeId(conv.id);
   if (!forzar && s.texto_previsto != null && s.previsto_msg === ultimo) return { texto: s.texto_previsto, vigente: true, plantilla: fueraDeVentana(conv, s.due_at) };
   const plantilla = fueraDeVentana(conv, s.due_at);
-  let texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla }));
+  let texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now() }));
   if (plantilla) texto = texto.split('\n')[0] || ''; // la plantilla lleva una sola frase
   if (s.id) repo.guardarPrevisto(s.id, texto, ultimo);
   return { texto, vigente: true, plantilla };
