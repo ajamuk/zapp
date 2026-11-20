@@ -49,7 +49,29 @@ cp .env.example .env && nano .env         # rellenar claves; dejar MODE=shadow
 pm2 start deploy/ecosystem.config.cjs && pm2 save
 ```
 
-Nginx: `deploy/nginx-setter.conf` (expone solo el webhook y /health) + `certbot --nginx -d setter.crossfitmpo.com`.
+Nginx: `deploy/nginx-setter.conf` + `certbot --nginx -d setter.crossfitmpo.com`. Las rutas expuestas (webhook, /health,
+/panel y /admin con token) están en `deploy/nginx-locations.conf`, que el bloque del servidor incluye.
+
+### Despliegue automático (GitHub Actions)
+
+Cada push a `main` (o a la rama de trabajo de Claude) pasa los tests y, si van bien, entra por SSH al VPS, deja el
+código en esa versión y ejecuta `deploy/desplegar.sh` (npm install, `pm2 reload`, recarga de Nginx y comprobación de
+/health). No toca `.env` ni `data/`: `MODE` sigue como esté en el VPS. También se puede lanzar a mano desde *Actions*.
+
+Preparación (una sola vez, en el VPS):
+
+```sh
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/github_deploy          # clave solo para desplegar
+cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys
+cat ~/.ssh/github_deploy                                       # → secreto VPS_SSH_KEY
+ssh-keyscan -p 22 localhost | sed "s/^localhost/<IP o dominio>/"   # → secreto VPS_KNOWN_HOSTS (opcional)
+```
+
+- En el bloque `server` de `/etc/nginx/sites-available/setter.crossfitmpo.com`, cambiar las líneas `location` por
+  `include /opt/metro-setter/deploy/nginx-locations.conf;` y `nginx -t && systemctl reload nginx`.
+- Si el usuario de SSH no es root: `usuario ALL=(root) NOPASSWD: /usr/sbin/nginx, /usr/bin/systemctl reload nginx` en `visudo`.
+- En GitHub → Settings → Secrets and variables → Actions: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+  (y opcionales `VPS_PORT`, `VPS_KNOWN_HOSTS`).
 
 ## Conectar GHL
 
