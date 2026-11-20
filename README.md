@@ -49,7 +49,7 @@ cp .env.example .env && nano .env         # rellenar claves; dejar MODE=shadow
 pm2 start deploy/ecosystem.config.cjs && pm2 save
 ```
 
-Nginx: `deploy/nginx-setter.conf` (expone solo el webhook y /health) + `certbot --nginx -d setter.crossfitmpo.com`.
+Nginx: `deploy/nginx-setter.conf` (expone el webhook, /health y el panel en `/panel`; el resto de /admin solo desde el VPS) + `certbot --nginx -d setter.crossfitmpo.com`.
 
 ## Conectar GHL
 
