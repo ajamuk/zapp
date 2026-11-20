@@ -186,6 +186,10 @@
   .regla-f input:not([type="number"]) { flex: 1; min-width: 140px; }
   .anadir-regla { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--muted); }
   #raiz .anadir-regla button { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+  .importar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 14px; display: grid; gap: 10px; }
+  .importar h3 { margin: 0 !important; }
+  .lista-imp { max-height: 260px; overflow: auto; }
+  .lista-imp label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
   .cond { margin-bottom: 10px; } .cond b { display: block; font-size: 13px; margin-bottom: 6px; }
   /* Probar IA */
   .probar2 { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; gap: 12px; height: max(460px, calc(100dvh - 260px)); }
@@ -435,7 +439,7 @@ const chipsConv = (c) => [
 const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
 const vacios = (c) => !Object.keys(c || {}).filter((k) => k !== 'modo').length;
-const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
+const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía', ghl: 'desde GHL' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
 
 async function cargarOpciones() { estado.opciones = await api('/panel/opciones'); return estado.opciones; }
 
@@ -615,7 +619,6 @@ const ACCIONES = [
   ['forzar_respuesta', '⚡ Forzar respuesta', 'Sofía contesta ya (respeta su horario). No actúa con reglas de inactividad.'],
   ['derivar', '🙋 Derivar al equipo', 'Pausa a Sofía y marca el chat como derivado.'],
   ['avisar', '🔔 Avisar al equipo', 'Manda un aviso por Telegram cuando se pone.'],
-  ['ghl', '🏷️ Copiar a GHL', 'Pone la misma etiqueta (tag) al contacto en GHL.'],
 ];
 const REGLA_NUEVA = { texto: { tipo: 'texto', quien: 'lead', operador: 'contiene', patron: '' }, adjunto: { tipo: 'adjunto', quien: 'lead', media: 'cualquiera' }, inactividad: { tipo: 'inactividad', horas: 24 }, fase: { tipo: 'fase', fase: 'f5 cierre' }, sede: { tipo: 'sede', sede: 'parla' } };
 
@@ -625,19 +628,47 @@ async function etiquetas() {
   estado.catalogo = r;
   if (estado.editEtq) return editorEtiqueta(estado.editEtq === 'nueva' ? null : r.etiquetas.find((e) => e.id === estado.editEtq));
   const m = $('#main');
-  m.innerHTML = `<div class="cab-seccion"><h2>Etiquetas</h2><button class="primario" id="enueva">+ Nueva etiqueta</button></div>
-    <p class="intro">Ponlas a mano en cada chat, deja que se pongan solas con reglas (palabras, adjuntos, inactividad, fase o sede) o escribe un criterio para que las ponga Sofía. Al ponerse pueden pausar o reanudar a Sofía, derivar, avisar al equipo y copiarse a GHL. Luego filtra los chats por ellas.</p>
+  m.innerHTML = `<div class="cab-seccion"><h2>Etiquetas</h2><div class="acciones-f"><button id="esync" title="Trae de GHL las etiquetas puestas o quitadas allí y reintenta las pendientes">Sincronizar con GHL</button><button id="eimport">Importar de GHL</button><button class="primario" id="enueva">+ Nueva etiqueta</button></div></div>
+    <p class="intro">Ponlas a mano en cada chat, deja que se pongan solas con reglas (palabras, adjuntos, inactividad, fase o sede) o escribe un criterio para que las ponga Sofía. Al ponerse pueden pausar o reanudar a Sofía, derivar y avisar al equipo. Luego filtra los chats por ellas.</p>
+    <p class="intro">🔄 <b>Sincronizadas con GHL</b>: cada etiqueta es un tag de GHL con el mismo nombre (en minúsculas). Lo que pongas o quites aquí se pone o quita en el contacto, y lo que pongan o quiten en GHL llega aquí (al momento por el webhook y, además, cada 15 minutos). Crear o renombrar una etiqueta la crea o renombra en GHL.</p>
+    <div id="eimpp"></div><p id="esyncr" class="ayuda" role="status"></p>
     ${r.etiquetas.length ? `<div class="etq-grid">${r.etiquetas.map((e) => `<article class="etq-card ${e.activa ? '' : 'inactiva'}">
       <header>${pill(e)}<span class="chip">${e.chats} chat${e.chats === 1 ? '' : 's'}</span>${e.activa ? '' : '<span class="chip ambar">desactivada</span>'}</header>
       ${e.criterio_ia ? `<p class="criterio">✨ Sofía: ${esc(e.criterio_ia)}</p>` : ''}
       ${e.reglas_texto.length ? `<ul class="reglas">${e.reglas_texto.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${!e.criterio_ia && !e.reglas.length ? '<p class="ayuda">Solo a mano</p>' : ''}
       ${condicionesTexto(e, r.etiquetas)}
-      <div class="acc">${ACCIONES.filter(([k]) => e.acciones[k] && k !== 'ghl').map(([, t]) => `<span class="chip">${t}</span>`).join('')}${e.acciones.ghl ? '' : '<span class="chip">sin copiar a GHL</span>'}</div>
+      <div class="acc">${ACCIONES.filter(([k]) => e.acciones[k]).map(([, t]) => `<span class="chip">${t}</span>`).join('')}</div>
       <footer><button data-ed="${e.id}">Editar</button>${e.reglas.some((x) => x.tipo !== 'inactividad') ? `<button data-ap="${e.id}" title="Busca en los chats que ya existen los que cumplen sus reglas">Aplicar a chats de antes</button>` : ''}
         <a href="#chats" data-fil="${e.id}">Ver chats</a></footer></article>`).join('')}</div>`
       : '<div class="vacio">Todavía no hay etiquetas. Crea la primera: por ejemplo «Interesado en Hyrox» con un criterio para Sofía, o «Lesión» con la regla «si el lead escribe la palabra lesión».</div>'}`;
   $('#enueva').onclick = () => { estado.editEtq = 'nueva'; etiquetas(); };
+  $('#esync').onclick = async () => {
+    const b = $('#esync'); b.disabled = true; b.textContent = 'Sincronizando…';
+    let msg;
+    try { const x = await api('/panel/etiquetas/sincronizar', { method: 'POST' }); msg = `Revisados ${x.contactos} contactos de GHL: ${x.puestas} etiquetas añadidas, ${x.quitadas} quitadas y ${x.subidas} subidas a GHL${x.errores ? ` (${x.errores} errores)` : ''}.`; }
+    catch (err) { msg = err.message; }
+    await etiquetas();
+    if ($('#esyncr')) $('#esyncr').textContent = msg;
+  };
+  $('#eimport').onclick = async () => {
+    const p = $('#eimpp'); p.innerHTML = '<div class="vacio">Leyendo las etiquetas de GHL…</div>';
+    let tags; try { ({ tags } = await api('/panel/etiquetas/ghl')); } catch (err) { p.innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
+    p.innerHTML = `<section class="importar"><h3>Importar de GHL</h3><p class="ayuda">Elige las que quieras gestionar desde aquí. Se crean sin reglas (solo a mano o desde GHL); luego puedes añadirles reglas o criterio para Sofía. Los chats que ya las llevan en GHL las recibirán al sincronizar.</p>
+      <input id="ibusca" type="search" placeholder="Buscar entre ${tags.length} etiquetas de GHL" aria-label="Buscar etiquetas de GHL">
+      <div class="chips-f lista-imp">${tags.map((t) => `<label class="ch"><input type="checkbox" value="${esc(t)}"> ${esc(t)}</label>`).join('') || '<span class="ayuda">Todas las etiquetas de GHL ya están en el panel.</span>'}</div>
+      <div class="acciones-f"><button class="primario" id="iok">Importar seleccionadas</button><button id="icanc">Cancelar</button></div></section>`;
+    $('#ibusca').oninput = (e) => { const q = e.target.value.toLowerCase(); p.querySelectorAll('.lista-imp label').forEach((l) => l.hidden = !l.textContent.toLowerCase().includes(q)); };
+    $('#icanc').onclick = () => { p.innerHTML = ''; };
+    $('#iok').onclick = async () => {
+      const nombres = [...p.querySelectorAll('.lista-imp input:checked')].map((i) => i.value);
+      if (!nombres.length) return;
+      $('#iok').disabled = true; $('#iok').textContent = 'Importando…';
+      const r = await api('/panel/etiquetas/importar', { method: 'POST', body: JSON.stringify({ nombres }) });
+      estado.opciones = null; etiquetas();
+      setTimeout(() => { if ($('#esyncr')) $('#esyncr').textContent = `Importadas ${r.creadas.length}${r.sync ? `; puestas en ${r.sync.puestas} chats que ya las llevaban en GHL` : ''}.`; }, 400);
+    };
+  };
   m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editEtq = Number(b.dataset.ed); etiquetas(); });
   m.querySelectorAll('[data-fil]').forEach((a) => a.onclick = () => { estado.vista = 'todos'; estado.crit = { etiquetas: [Number(a.dataset.fil)] }; estado.conv = null; });
   m.querySelectorAll('[data-ap]').forEach((b) => b.onclick = async () => {

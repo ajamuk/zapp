@@ -243,3 +243,10 @@ test('si el modelo contesta en texto sin llamar a responder, se le recuerda una 
   assert.match(reqs[1].messages.at(-1).content, /responder/);
   await assert.rejects(runTurn({ system: [], messages: [{ role: 'user', content: 'x' }], ejecutarHerramienta: async () => ({}), complete: async () => ({ content: [], stop_reason: 'refusal', stop_details: { category: 'cyber' } }) }), /negado.*cyber/);
 });
+
+test('webhook de cambio de etiquetas de GHL', () => {
+  const e = parseWebhook({ type: 'ContactTagUpdate', id: 'k9', tags: ['a', 'b'] });
+  assert.equal(e.evento, 'tags');
+  assert.equal(e.contactId, 'k9');
+  assert.deepEqual(e.tags, ['a', 'b']);
+});

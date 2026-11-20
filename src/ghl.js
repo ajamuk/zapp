@@ -18,10 +18,11 @@ export function parseWebhook(b = {}) {
   const tipoEvento = b.type || b.event || '';
   const direction = String(b.direction || (tipoEvento.includes('Outbound') ? 'outbound' : 'inbound')).toLowerCase();
   const msg = b.message || {};
+  const esTags = /ContactTag|TagUpdate|ContactUpdate/i.test(tipoEvento);
   return {
-    evento: direction === 'outbound' ? 'outbound' : 'inbound',
+    evento: esTags ? 'tags' : direction === 'outbound' ? 'outbound' : 'inbound',
     conversationId: b.conversationId || b.conversation_id || msg.conversationId,
-    contactId: b.contactId || b.contact_id || msg.contactId,
+    contactId: b.contactId || b.contact_id || msg.contactId || (esTags ? b.id : undefined),
     canal: canalDesdeTipo(b.messageType || msg.type || b.channel),
     texto: b.body ?? msg.body ?? b.text ?? '',
     messageId: b.messageId || b.id || msg.id || null,
@@ -78,4 +79,8 @@ export class Ghl {
   removeTags(contactId, tags) { return tags.length ? this.req('DELETE', `/contacts/${contactId}/tags`, { tags }) : null; }
   assign(contactId, userId) { return userId ? this.req('PUT', `/contacts/${contactId}`, { assignedTo: userId }) : null; }
   addNote(contactId, body) { return this.req('POST', `/contacts/${contactId}/notes`, { body }); }
+  // Etiquetas del location (el catálogo de tags de GHL)
+  listarTags() { return this.req('GET', `/locations/${config.ghl.locationId}/tags`).then((r) => r?.tags || []); }
+  crearTag(name) { return this.req('POST', `/locations/${config.ghl.locationId}/tags`, { name }).then((r) => r?.tag || r); }
+  renombrarTag(tagId, name) { return this.req('PUT', `/locations/${config.ghl.locationId}/tags/${tagId}`, { name }); }
 }

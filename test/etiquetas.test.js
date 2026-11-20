@@ -57,7 +57,7 @@ test('poner por regla: condiciones solo si / nunca si, acciones y copia a GHL', 
   const c = repo.getConv('c1');
   assert.equal(c.ai_paused, 1);
   assert.match(c.pause_reason, /Urgente/);
-  assert.deepEqual(sal.tags, ['Interesado', 'Urgente']);
+  assert.deepEqual(sal.tags, ['interesado', 'urgente']); // GHL usa minúsculas
   assert.equal(sal.avisos.length, 1);
   // «Nunca si»
   repo.upsertConv({ id: 'c2', contact_id: 'k2', channel: 'whatsapp' });
@@ -68,7 +68,7 @@ test('poner por regla: condiciones solo si / nunca si, acciones y copia a GHL', 
   assert.equal((await e.poner('c2', urgente.id, 'manual')).puesta, true);
   // Quitar
   await e.quitar('c2', urgente.id);
-  assert.deepEqual(sal.quitadas, ['Urgente']);
+  assert.deepEqual(sal.quitadas, ['urgente']);
 });
 
 test('forzar respuesta y reanudar IA', async () => {
@@ -181,4 +181,65 @@ test('filtros combinados: estado, etiquetas (alguna/todas/excluir), sede, canal,
   // Borrar la etiqueta la quita de las vistas
   etq.borrar(db, a.id);
   assert.deepEqual(vistas(db).find((x) => x.id === id).criterios, { sede: ['parla'] });
+});
+
+test('sincronización con GHL: tags que llegan, tags quitados en GHL y reintentos', async () => {
+  const { db, repo, e, sal } = montar();
+  const hyrox = etq.crear(db, { nombre: 'Interesado en Hyrox', acciones: { avisar: true } });
+  const caro = etq.crear(db, { nombre: 'Le parece caro' });
+  const parar = etq.crear(db, { nombre: 'Parar', acciones: { pausar_ia: true } });
+  repo.upsertConv({ id: 'c1b', contact_id: 'k1', channel: 'instagram' }); // mismo contacto por Instagram
+
+  // En GHL ponen «interesado en hyrox» y «parar»: llegan a los dos chats del contacto, con acciones
+  let r = await e.sincronizarContacto('k1', ['parla', 'Interesado en HYROX', 'parar']);
+  assert.equal(r.puestas, 4);
+  assert.deepEqual(etq.deChats(db, ['c1']).c1.map((x) => [x.nombre, x.origen]), [['Interesado en Hyrox', 'ghl'], ['Parar', 'ghl']]);
+  assert.equal(repo.getConv('c1b').ai_paused, 1);
+  assert.equal(sal.avisos.length, 2);
+  assert.equal(sal.tags.length, 0); // no se reenvía a GHL lo que viene de GHL
+
+  // Quitan «parar» en GHL → se quita del panel
+  r = await e.sincronizarContacto('k1', ['interesado en hyrox']);
+  assert.equal(r.quitadas, 2);
+
+  // Etiqueta puesta en el panel pero GHL falló → no se borra al sincronizar: se reintenta
+  const ghlRoto = { addTags: async () => { throw new Error('GHL caído'); }, removeTags: async () => {} };
+  const e2 = new etq.Etiquetador({ repo, ghl: ghlRoto });
+  await e2.poner('c1', caro.id, 'manual');
+  assert.equal(db.prepare('SELECT ghl_sync FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').get('c1', caro.id).ghl_sync, 0);
+  r = await e.sincronizarContacto('k1', ['interesado en hyrox']);
+  assert.equal(r.subidas, 1);
+  assert.ok(sal.tags.includes('le parece caro'));
+  assert.equal(db.prepare('SELECT ghl_sync FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').get('c1', caro.id).ghl_sync, 1);
+
+  // Quitar en el panel: en GHL solo se quita si ningún otro chat del contacto la lleva
+  sal.quitadas.length = 0;
+  await e.quitar('c1', hyrox.id);
+  assert.deepEqual(sal.quitadas, []);
+  await e.quitar('c1b', hyrox.id);
+  assert.deepEqual(sal.quitadas, ['interesado en hyrox']);
+
+  // Revisión periódica: lee los tags de cada contacto
+  const leidos = [];
+  const e3 = new etq.Etiquetador({ repo, ghl: { getContact: async (id) => { leidos.push(id); return { contact: { tags: ['le parece caro', 'interesado en hyrox'] } }; }, addTags: async () => {}, removeTags: async () => {} } });
+  const t = await e3.sincronizarDesdeGhl({ pausaMs: 0 });
+  assert.deepEqual(leidos, ['k1']);
+  assert.equal(t.puestas, 3); // hyrox vuelve a los dos chats y «le parece caro» llega también al de Instagram
+});
+
+test('catálogo en GHL: crear, renombrar e importar', async () => {
+  const { db } = montar();
+  const tags = [{ id: 't1', name: 'hyrox' }, { id: 't2', name: 'viejo nombre' }, { id: 't3', name: 'No Contesta' }];
+  const llamadas = [];
+  const ghl = {
+    listarTags: async () => tags,
+    crearTag: async (n) => { llamadas.push(['crear', n]); tags.push({ id: 'n', name: n }); },
+    renombrarTag: async (id, n) => { llamadas.push(['renombrar', id, n]); },
+  };
+  await etq.asegurarTagGhl(ghl, 'HYROX');
+  await etq.asegurarTagGhl(ghl, 'Lead caliente');
+  await etq.renombrarTagGhl(ghl, 'Viejo nombre', 'Nombre nuevo');
+  assert.deepEqual(llamadas, [['crear', 'lead caliente'], ['renombrar', 't2', 'nombre nuevo']]);
+  etq.crear(db, { nombre: 'Hyrox' });
+  assert.deepEqual(await etq.tagsGhlSinImportar(ghl, db), ['lead caliente', 'no contesta', 'viejo nombre']);
 });

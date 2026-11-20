@@ -133,13 +133,35 @@ export function crearApp({ setter, repo, complete, embudoOpciones, etiquetas = n
   // ---------- Etiquetas ----------
   const errorUsuario = (res, e) => res.status(400).json({ error: e.message });
   admin.get('/panel/etiquetas', (_req, res) => res.json({ etiquetas: etq.listar(db, { conUso: true }).map((e) => ({ ...e, reglas_texto: e.reglas.map(etq.describirRegla) })), colores: etq.COLORES }));
-  admin.post('/panel/etiquetas', (req, res) => { try { res.status(201).json(etq.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  // Catálogo sincronizado con GHL: crear o renombrar aquí crea o renombra el tag allí
+  const enGhl = async (fn) => { if (!etiquetas.ghl) return null; try { await fn(); return 'ok'; } catch (e) { console.error('[etiquetas] catálogo GHL:', e.message); return 'error'; } };
+  admin.post('/panel/etiquetas', async (req, res) => {
+    let e;
+    try { e = etq.crear(db, req.body || {}); } catch (err) { return errorUsuario(res, err); }
+    res.status(201).json({ ...e, ghl: await enGhl(() => etq.asegurarTagGhl(etiquetas.ghl, e.nombre)) });
+  });
+  admin.get('/panel/etiquetas/ghl', async (_req, res) => {
+    if (!etiquetas.ghl?.listarTags) return res.json({ tags: [] });
+    try { res.json({ tags: await etq.tagsGhlSinImportar(etiquetas.ghl, db) }); } catch { res.status(502).json({ error: 'No se han podido leer las etiquetas de GHL.' }); }
+  });
+  admin.post('/panel/etiquetas/importar', async (req, res) => {
+    const creadas = [];
+    for (const n of (req.body?.nombres || []).slice(0, 100)) {
+      try { creadas.push(etq.crear(db, { nombre: String(n).charAt(0).toUpperCase() + String(n).slice(1) }).nombre); } catch { /* ya existe o no válida */ }
+    }
+    const sync = creadas.length ? await etiquetas.sincronizarDesdeGhl({ dias: 90 }).catch(() => null) : null;
+    res.json({ creadas, sync });
+  });
+  admin.post('/panel/etiquetas/sincronizar', async (_req, res) => {
+    try { res.json(await etiquetas.sincronizarDesdeGhl({ dias: 90 })); } catch (e) { res.status(502).json({ error: 'No se ha podido sincronizar con GHL.' }); }
+  });
   admin.put('/panel/etiquetas/orden', (req, res) => { etq.reordenar(db, (req.body?.ids || []).map(Number)); res.json({ ok: true }); });
-  admin.put('/panel/etiquetas/:id', (req, res) => {
-    try {
-      const e = etq.actualizar(db, Number(req.params.id), req.body || {});
-      return e ? res.json(e) : res.status(404).json({ error: 'La etiqueta no existe.' });
-    } catch (e) { errorUsuario(res, e); }
+  admin.put('/panel/etiquetas/:id', async (req, res) => {
+    const antes = etq.obtener(db, Number(req.params.id));
+    if (!antes) return res.status(404).json({ error: 'La etiqueta no existe.' });
+    let e;
+    try { e = etq.actualizar(db, antes.id, req.body || {}); } catch (err) { return errorUsuario(res, err); }
+    res.json({ ...e, ghl: e.nombre !== antes.nombre ? await enGhl(() => etq.renombrarTagGhl(etiquetas.ghl, antes.nombre, e.nombre)) : null });
   });
   admin.delete('/panel/etiquetas/:id', (req, res) => { etq.borrar(db, Number(req.params.id)); res.json({ ok: true }); });
   // «Aplicar a chats de antes»: busca en el historial los chats que cumplen sus reglas

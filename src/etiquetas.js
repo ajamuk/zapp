@@ -14,7 +14,8 @@
 
 export const COLORES = ['#386b36', '#2f5a77', '#805003', '#a13030', '#6a4882', '#0f766e', '#be185d', '#4b5563'];
 export const MEDIA = ['imagen', 'audio', 'video', 'documento'];
-const ORIGENES = ['manual', 'regla', 'ia'];
+const ORIGENES = ['manual', 'regla', 'ia', 'ghl'];
+const clave = (t) => String(t ?? '').trim().toLowerCase().replace(/\s+/g, ' '); // GHL guarda los tags en minúsculas
 
 const json = (t, def) => { try { return t ? JSON.parse(t) : def; } catch { return def; } };
 const norm = (t) => String(t ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
@@ -23,7 +24,7 @@ function deFila(f) {
   if (!f) return null;
   return {
     ...f, activa: Boolean(f.activa), reglas: json(f.reglas, []), solo_si: json(f.solo_si, []), nunca_si: json(f.nunca_si, []),
-    acciones: { ghl: true, ...json(f.acciones, {}) },
+    acciones: { ...json(f.acciones, {}), ghl: true },
   };
 }
 
@@ -55,7 +56,7 @@ export function validar(datos = {}, db, id = null) {
   const acciones = {
     pausar_ia: Boolean(a.pausar_ia), reanudar_ia: Boolean(a.reanudar_ia) && !a.pausar_ia,
     forzar_respuesta: Boolean(a.forzar_respuesta) && !a.pausar_ia, derivar: Boolean(a.derivar),
-    avisar: Boolean(a.avisar), ghl: a.ghl !== false,
+    avisar: Boolean(a.avisar), ghl: true, // siempre sincronizada con GHL
   };
   return { nombre, color, criterio_ia: criterio, reglas, solo_si: solo, nunca_si: nunca, acciones, activa: datos.activa !== false };
 }
@@ -160,6 +161,7 @@ export class Etiquetador {
 
   /** Pone una etiqueta. Devuelve { puesta: bool, motivo? }. Las acciones solo corren si es nueva. */
   async poner(convId, etiquetaId, origen = 'manual', { porInactividad = false } = {}) {
+    // origen 'ghl': la han puesto en GHL (a mano o una automatización); cuenta como manual y ya está allí.
     if (!ORIGENES.includes(origen)) throw new Error('origen no válido');
     const etq = obtener(this.catalogo, etiquetaId);
     const conv = this.repo.getConv(convId);
@@ -167,12 +169,12 @@ export class Etiquetador {
     if (origen !== 'manual' && !etq.activa) return { puesta: false, motivo: 'etiqueta desactivada' };
     const actuales = idsDelChat(this.db, convId);
     if (actuales.includes(etq.id)) return { puesta: false, motivo: 'ya la lleva' };
-    if (origen !== 'manual') {
+    if (origen === 'regla' || origen === 'ia') {
       const b = bloqueo(etq, actuales);
       if (b) return { puesta: false, motivo: b };
     }
-    this.db.prepare('INSERT OR IGNORE INTO conv_etiquetas (conversation_id, etiqueta_id, origen, created_at) VALUES (?, ?, ?, ?)')
-      .run(convId, etq.id, origen, this.now().toISOString());
+    this.db.prepare('INSERT OR IGNORE INTO conv_etiquetas (conversation_id, etiqueta_id, origen, created_at, ghl_sync) VALUES (?, ?, ?, ?, ?)')
+      .run(convId, etq.id, origen, this.now().toISOString(), origen === 'ghl' ? 1 : 0);
     await this.acciones(conv, etq, origen, porInactividad);
     return { puesta: true, etiqueta: { id: etq.id, nombre: etq.nombre, color: etq.color } };
   }
@@ -181,7 +183,9 @@ export class Etiquetador {
     const etq = obtener(this.catalogo, etiquetaId);
     const conv = this.repo.getConv(convId);
     const r = this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etiquetaId);
-    if (r.changes && etq?.acciones.ghl && conv?.contact_id) await this.safe(() => this.ghl?.removeTags(conv.contact_id, [etq.nombre]));
+    if (r.changes && etq && conv?.contact_id && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
+      await this.safe(() => this.ghl?.removeTags(conv.contact_id, [clave(etq.nombre)]));
+    }
     return { quitada: r.changes > 0 };
   }
 
@@ -201,11 +205,75 @@ export class Etiquetador {
       patch.respond_at = this.now().toISOString();
     }
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
-    if (a.ghl && conv.contact_id) await this.safe(() => this.ghl?.addTags(conv.contact_id, [etq.nombre]));
+    if (origen !== 'ghl') await this.subirAGhl(conv, etq);
     if (a.avisar) {
       const quien = { manual: 'a mano', regla: 'por regla', ia: 'por Sofía' }[origen] || origen;
       await this.safe(() => this.avisar?.(`Etiqueta «${etq.nombre}» (${quien}) en ${conv.nombre || conv.telefono || 'un chat'}${conv.sede ? ` · ${conv.sede}` : ''}`, { sede: conv.sede }));
     }
+  }
+
+  // ---------- Sincronización con GHL ----------
+
+  /** Pone el tag en el contacto de GHL y marca la etiqueta como confirmada si sale bien. */
+  async subirAGhl(conv, etq) {
+    if (!this.ghl?.addTags || !conv.contact_id) return false;
+    try {
+      await this.ghl.addTags(conv.contact_id, [clave(etq.nombre)]);
+      this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
+      return true;
+    } catch (e) { console.error('[etiquetas] GHL:', e.message); return false; }
+  }
+
+  async otroChatDelContactoLaLleva(conv, etiquetaId) {
+    return Boolean(this.db.prepare(`SELECT 1 FROM conv_etiquetas ce JOIN conversations c ON c.id = ce.conversation_id
+      WHERE c.contact_id = ? AND c.id != ? AND ce.etiqueta_id = ?`).get(conv.contact_id, conv.id, etiquetaId));
+  }
+
+  /**
+   * Ajusta las etiquetas de los chats de un contacto a sus tags de GHL (lista completa).
+   * - Tag en GHL de una etiqueta del panel que el chat no lleva → se pone (origen ghl, con sus acciones).
+   * - Etiqueta confirmada en GHL que ya no está allí → la han quitado en GHL: se quita del panel.
+   * - Etiqueta del panel aún sin confirmar en GHL → se reintenta subir.
+   */
+  async sincronizarContacto(contactId, tags) {
+    if (!contactId || !Array.isArray(tags)) return { puestas: 0, quitadas: 0, subidas: 0 };
+    const enGhl = new Set(tags.map(clave));
+    const catalogo = listar(this.catalogo);
+    const chats = this.db.prepare("SELECT * FROM conversations WHERE contact_id = ? AND id NOT LIKE 'prueba-%'").all(contactId);
+    const out = { puestas: 0, quitadas: 0, subidas: 0 };
+    for (const conv of chats) {
+      const actuales = new Map(this.db.prepare('SELECT etiqueta_id, ghl_sync FROM conv_etiquetas WHERE conversation_id = ?').all(conv.id).map((r) => [r.etiqueta_id, r.ghl_sync]));
+      for (const etq of catalogo) {
+        const enElChat = actuales.has(etq.id);
+        const estaEnGhl = enGhl.has(clave(etq.nombre));
+        if (estaEnGhl && !enElChat) { if ((await this.poner(conv.id, etq.id, 'ghl')).puesta) out.puestas++; }
+        else if (estaEnGhl && enElChat && !actuales.get(etq.id)) this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
+        else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; }
+        else if (!estaEnGhl && enElChat) { if (await this.subirAGhl(conv, etq)) out.subidas++; }
+      }
+    }
+    return out;
+  }
+
+  /** Revisión periódica: lee de GHL los tags de los contactos con actividad reciente. */
+  async sincronizarDesdeGhl({ dias = 30, pausaMs = 150 } = {}) {
+    if (!this.ghl?.getContact) return { contactos: 0 };
+    const contactos = this.db.prepare(`SELECT DISTINCT c.contact_id FROM conversations c WHERE c.id NOT LIKE 'prueba-%' AND c.contact_id IS NOT NULL
+      AND (datetime(c.updated_at) >= datetime('now', ?) OR EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.ghl_sync = 0))`).all(`-${dias} days`).map((r) => r.contact_id);
+    const total = { contactos: 0, puestas: 0, quitadas: 0, subidas: 0, errores: 0 };
+    for (const id of contactos) {
+      try {
+        const r = await this.ghl.getContact(id);
+        const tags = r?.contact?.tags;
+        if (Array.isArray(tags)) {
+          const x = await this.sincronizarContacto(id, tags);
+          total.puestas += x.puestas; total.quitadas += x.quitadas; total.subidas += x.subidas;
+        }
+        total.contactos++;
+      } catch (e) { total.errores++; console.error('[etiquetas] leer contacto GHL:', e.message); }
+      if (pausaMs) await new Promise((res) => setTimeout(res, pausaMs)); // sin agotar el límite de GHL
+    }
+    return total;
   }
 
   /** Reglas de texto y adjunto ante un mensaje nuevo. autor: lead | ia | humano. */
@@ -340,4 +408,30 @@ export function describirRegla(r) {
     case 'sede': return `Si su sede es ${r.sede}`;
     default: return '';
   }
+}
+
+// ---------- Catálogo en GHL ----------
+
+/** Crea el tag en el catálogo de GHL si no existe (para que aparezca en sus listas y filtros). */
+export async function asegurarTagGhl(ghl, nombre) {
+  if (!ghl?.listarTags) return null;
+  const tags = await ghl.listarTags();
+  const ya = tags.find((t) => clave(t.name) === clave(nombre));
+  return ya || ghl.crearTag(clave(nombre));
+}
+
+/** Renombra el tag en GHL (cambia en todos sus contactos). Si no existía, lo crea con el nombre nuevo. */
+export async function renombrarTagGhl(ghl, viejo, nuevo) {
+  if (!ghl?.listarTags || clave(viejo) === clave(nuevo)) return null;
+  const tags = await ghl.listarTags();
+  const t = tags.find((x) => clave(x.name) === clave(viejo));
+  if (t && !tags.some((x) => clave(x.name) === clave(nuevo))) return ghl.renombrarTag(t.id, clave(nuevo));
+  return asegurarTagGhl(ghl, nuevo);
+}
+
+/** Tags de GHL que todavía no son etiquetas del panel (para importarlas). */
+export async function tagsGhlSinImportar(ghl, db) {
+  const nuestros = new Set(listar(db).map((e) => clave(e.nombre)));
+  const vistos = new Set();
+  return (await ghl.listarTags()).map((t) => clave(t.name)).filter((n) => n && !nuestros.has(n) && !vistos.has(n) && vistos.add(n)).sort((a, b) => a.localeCompare(b, 'es'));
 }

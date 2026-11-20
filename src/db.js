@@ -127,6 +127,7 @@ const COLUMNAS_NUEVAS = {
     simulacion: 'TEXT',           // JSON (solo chats de prueba): teléfono y fecha simulados
   },
   messages: { adjunto: 'TEXT' },  // imagen | audio | video | documento
+  conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
 };
 
 function migrar(db) {

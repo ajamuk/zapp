@@ -26,6 +26,8 @@ export class Setter {
   // ---------- Entrada ----------
 
   async handleWebhook(evt) {
+    // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
+    if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
     if (evt.evento === 'outbound') return this.onOutbound(evt);
     return this.onInbound(evt);
@@ -62,6 +64,8 @@ export class Setter {
     } else if (tags.includes(TAGS.control.pausar_ia)) {
       this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: 'etiqueta parar ia' });
     }
+    // Tags que trae el webhook: las etiquetas del panel se ajustan a GHL
+    if (Array.isArray(evt.tags)) await this.safe(() => this.etiquetas?.sincronizarContacto(conv.contact_id, evt.tags));
     // Etiquetas por reglas de texto/adjunto (pueden pausar, derivar o forzar la respuesta)
     await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'lead', texto: evt.texto, adjunto }));
 

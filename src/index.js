@@ -40,6 +40,10 @@ if (config.ghlWebhookEnabled) {
     try { await setter.tick(); } finally { ocupado = false; }
   }, 5000);
   setInterval(() => procesarSeguimientos(setter).catch((e) => console.error('Seguimientos:', e)), 60000);
+  // Etiquetas puestas o quitadas en GHL (también reintenta las que no llegaron a subir)
+  const syncGhl = () => etiquetas.sincronizarDesdeGhl().then((r) => r.puestas + r.quitadas + r.subidas && console.log('Etiquetas GHL:', JSON.stringify(r))).catch((e) => console.error('Etiquetas (GHL):', e));
+  setTimeout(syncGhl, 60000);
+  setInterval(syncGhl, 15 * 60000);
   // Etiquetas con regla de inactividad («si no responde en X h»)
   setInterval(() => etiquetas.revisarInactividad().catch((e) => console.error('Etiquetas (inactividad):', e)), 5 * 60000);
 }
