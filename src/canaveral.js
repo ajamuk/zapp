@@ -18,7 +18,7 @@ export function rutaRegistro() {
   return process.env.NODE_TEST_CONTEXT ? null : RUTA; // en los tests no se lee el registro real
 }
 
-/** Lee el registro: { anotados, telefonos, actualizado } o null si no existe o no tiene la forma esperada. */
+/** Lee el registro: { anotados, pagados (primer recibo cobrado), telefonos, actualizado } o null si no existe o no tiene la forma esperada. */
 export function leerRegistro(ruta = rutaRegistro()) {
   if (!ruta) return null;
   try {
@@ -26,7 +26,7 @@ export function leerRegistro(ruta = rutaRegistro()) {
     if (!d || typeof d !== 'object' || Array.isArray(d)) return null;
     const filas = Object.values(d);
     if (filas.some((f) => !f || typeof f.tab !== 'string' || !Array.isArray(f.row))) return null;
-    return { anotados: filas.length, telefonos: new Set(filas.map((f) => tel9(f.row[2])).filter((t) => t.length === 9)), actualizado: fs.statSync(ruta).mtime.toISOString() };
+    return { anotados: filas.length, pagados: filas.filter((f) => f.row[9] === 'Pagado').length, telefonos: new Set(filas.map((f) => tel9(f.row[2])).filter((t) => t.length === 9)), actualizado: fs.statSync(ruta).mtime.toISOString() };
   } catch { return null; }
 }
 
@@ -37,5 +37,5 @@ export function plazasCanaveral(repo, { sinConv = null, ruta } = {}) {
     WHERE json_extract(datos, '$.sede') = 'el_canaveral' AND estado != 'rechazada' AND conversation_id != ? GROUP BY conversation_id`).all(sinConv || '');
   const propias = altas.filter((a) => !registro?.telefonos.has(tel9(a.tel))).length;
   const base = registro ? registro.anotados : (leerAjustes(repo).canaveralPlazasOcupadas || 0);
-  return { total: base + propias, origen: registro ? 'registro' : 'manual', base, propias, actualizado: registro?.actualizado || null };
+  return { total: base + propias, pagados: registro?.pagados ?? null, origen: registro ? 'registro' : 'manual', base, propias, actualizado: registro?.actualizado || null };
 }

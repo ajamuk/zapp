@@ -70,3 +70,19 @@ test('embudo completo y aviso si falta el informe de pruebas', async () => {
   assert.equal(sin.sedes[0].reservan, null);
   assert.match(sin.avisos[0], /informe de pruebas/);
 });
+
+test('embudo de El Cañaveral: interesados del mes, plazas anotadas y pagadas del registro', async () => {
+  const { openDb, repo: crearRepo } = await import('../src/db.js');
+  const repo = crearRepo(openDb(':memory:'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'can-'));
+  const ruta = path.join(dir, 'ledger.json');
+  const fila = (id, tel, estado) => ({ tab: 'Bloque 50%', row: [id, 'x', tel, 'CrossFit', 120, 0.5, 60, 0, 0, estado, 60, 0, 60, '', 0, ''] });
+  fs.writeFileSync(ruta, JSON.stringify({ a: fila('1', '600000001', 'Pendiente'), b: fila('2', '600000002', 'Pagado') }));
+  limpiarCacheEmbudo();
+  const ghl = ghlFalso([[{ tags: ['parla'] }, { tags: ['mpo-el-canaveral-interesado'] }, { tags: [], source: 'El Cañaveral · aviso de apertura' }]]);
+  const r = await embudo('2026-11', { ghl, dir: dirPruebas(), repo, rutaCanaveral: ruta });
+  assert.deepEqual([r.canaveral.interesados, r.canaveral.plazas, r.canaveral.pagadas, r.canaveral.de], [2, 2, 1, 200]);
+  // Sin registro: plazas del número de Ajustes y pagos desconocidos
+  const sin = await embudo('2026-11', { ghl, dir: dirPruebas(), repo, rutaCanaveral: path.join(dir, 'no-existe.json') });
+  assert.deepEqual([sin.canaveral.plazas, sin.canaveral.pagadas, sin.canaveral.origen], [0, null, 'manual']);
+});

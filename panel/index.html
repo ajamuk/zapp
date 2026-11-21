@@ -505,13 +505,24 @@ async function embudo() {
           <div class="barra ${v ? '' : 'cero'}" style="width:${v ? ancho + '%' : '42px'};background:${color}" title="${et}: ${v ?? 'sin datos'}">${v ?? '–'}</div></div></div>`;
       }).join('')}</div>`;
   };
+  // El Cañaveral aún no abre: interesados del mes → plazas de apertura anotadas → primer pago (acumulado de la promoción)
+  const tarjetaCanaveral = (c) => {
+    const pasos = [['Interesados este mes', c.interesados, '#9fbf8f'], [`Plazas anotadas (de ${c.de})`, c.plazas, '#4f8344'], ['Primer pago', c.pagadas, '#2f5f2c']];
+    const base = Math.max(1, ...pasos.map(([, v]) => v || 0));
+    return `<div class="embudo"><h3>El Cañaveral <span class="chip">apertura 1 feb 2027</span></h3>
+      ${pasos.map(([et, v, color], i) => `${i === 2 ? `<div class="paso"><div class="tasa">↓ ${pct(v || 0, pasos[1][1] || 0)}</div></div>` : ''}
+        <div class="paso"><div class="et">${esc(et)}</div><div class="pista">
+          <div class="barra ${v ? '' : 'cero'}" style="width:${v ? Math.max(14, (v / base) * 100) + '%' : '42px'};background:${color}" title="${esc(et)}: ${v ?? 'sin datos'}">${v ?? '–'}</div></div></div>`).join('')}
+      <p class="nota">Plazas y pagos: total de la promoción hasta hoy${c.actualizado ? `, registro del ${new Date(c.actualizado).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : c.origen === 'manual' ? ', número puesto a mano en Ajustes' : ''}.</p></div>`;
+  };
   $('#emb').outerHTML = `
     ${r.avisos.map((a) => `<div class="aviso">${esc(a)}</div>`).join('')}
     <div class="embudos">
       ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, PASOS.map(([k]) => x[k]))).join('')}
       ${tarjetaSede('Total 3 sedes', tot)}
+      ${r.canaveral ? tarjetaCanaveral(r.canaveral) : ''}
     </div>
-    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios)${r.el_canaveral ? ` · <b>${r.el_canaveral}</b> interesados en El Cañaveral (próxima apertura), aparte del total` : ''}${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
+    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
     Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
     Primer pago = alta pagada después de la clase de prueba.</p>`;
 }

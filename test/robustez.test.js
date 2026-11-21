@@ -297,7 +297,7 @@ test('El Cañaveral: las plazas ocupadas salen del registro de AimHarder, sin co
   fs.writeFileSync(ruta, JSON.stringify({ 1: fila('600000001'), 2: fila('600000002'), 3: fila('+34 600 111 222') }));
   repo.guardarAjuste('canaveralPlazasOcupadas', 40);
   assert.equal(leerRegistro(ruta).anotados, 3);
-  assert.deepEqual(plazasCanaveral(repo, { ruta }), { total: 3, origen: 'registro', base: 3, propias: 0, actualizado: leerRegistro(ruta).actualizado });
+  assert.deepEqual(plazasCanaveral(repo, { ruta }), { total: 3, pagados: 0, origen: 'registro', base: 3, propias: 0, actualizado: leerRegistro(ruta).actualizado });
   // Un alta de Sofía que ya está en el registro (mismo teléfono) no suma; otra que aún no está, sí
   repo.addAlta('x1', { sede: 'el_canaveral', telefono: '600111222' }, 'pendiente');
   repo.addAlta('x2', { sede: 'el_canaveral', telefono: '+34600999888' }, 'pendiente');

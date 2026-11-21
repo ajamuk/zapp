@@ -11,6 +11,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { Ghl } from './ghl.js';
+import { plazasCanaveral } from './canaveral.js';
+
+export const PLAZAS_APERTURA_CANAVERAL = 200;
 
 export const SEDES_EMBUDO = ['parla', 'getafe', 'las_rosas'];
 const CACHE_MS = 15 * 60 * 1000;
@@ -100,10 +103,25 @@ export function pruebasPorSede(mes, dir = config.embudo.pruebasDir) {
 }
 
 /** Embudo completo del mes. Se guarda 15 minutos en memoria para no repetir llamadas a GHL. */
-export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = Date.now() } = {}) {
+/**
+ * El Cañaveral (abre el 1 de febrero de 2027): aún no hay clases de prueba, así que su embudo es otro.
+ * Interesados del mes (GHL) → plazas de apertura anotadas → primer pago. Las plazas y los pagos son el acumulado
+ * de la promoción hasta hoy (el registro de la hoja de 200 plazas, que se rehace cada hora, más las altas que
+ * Sofía ha pasado al equipo y aún no están ahí), no del mes.
+ */
+export function embudoCanaveral(repo, interesados, { ruta } = {}) {
+  let plazas = null;
+  try { plazas = repo ? plazasCanaveral(repo, { ruta }) : null; } catch (e) { console.error('Embudo El Cañaveral:', e.message); }
+  return {
+    interesados, plazas: plazas?.total ?? null, pagadas: plazas?.pagados ?? null, de: PLAZAS_APERTURA_CANAVERAL,
+    origen: plazas?.origen ?? null, actualizado: plazas?.actualizado ?? null,
+  };
+}
+
+export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
   const clave = `${mes}|${dir || ''}`;
   const enCache = cache.get(clave);
-  if (enCache && ahora - enCache.t < CACHE_MS) return enCache.valor;
+  if (enCache && ahora - enCache.t < CACHE_MS) return { ...enCache.valor, canaveral: embudoCanaveral(repo, enCache.valor.el_canaveral, { ruta: rutaCanaveral }) };
 
   let leads = null; let errorLeads = null;
   try { leads = await leadsPorSede(ghl, mes); } catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
@@ -124,7 +142,7 @@ export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = 
     avisos: [errorLeads, pruebas ? null : 'Todavía no hay informe de pruebas de AimHarder para este mes.'].filter(Boolean),
   };
   if (!errorLeads) cache.set(clave, { t: ahora, valor });
-  return valor;
+  return { ...valor, canaveral: embudoCanaveral(repo, valor.el_canaveral, { ruta: rutaCanaveral }) };
 }
 
 export function limpiarCacheEmbudo() { cache.clear(); }

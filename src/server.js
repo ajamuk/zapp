@@ -140,7 +140,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.get('/panel/embudo', async (req, res) => {
     const mes = String(req.query.mes || mesActual());
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mes no válido.' });
-    res.json(await embudo(mes, embudoOpciones));
+    res.json(await embudo(mes, { repo, ...embudoOpciones }));
   });
   admin.get('/panel/conversaciones', (req, res) => res.json(panel.conversaciones(db, req.query)));
   // Audio o imagen de un mensaje (el panel lo pide con su cabecera de acceso y lo muestra)
