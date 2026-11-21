@@ -25,10 +25,21 @@ export function textoFestivos(f = festivos) {
   ].join('\n');
 }
 
+/** El horario del repo, o la copia que el servicio mantiene al día desde AimHarder (junto a la base) si es más reciente. */
+function horariosIniciales() {
+  const repo = readJson('horarios.json');
+  if (process.env.NODE_TEST_CONTEXT) return repo;
+  try {
+    const copia = JSON.parse(fs.readFileSync(path.join(path.dirname(config.dbPath), 'horarios.json'), 'utf8'));
+    const fecha = (h) => h._nota?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || '';
+    return fecha(copia) >= fecha(repo) ? copia : repo;
+  } catch { return repo; }
+}
+
 export const knowledge = {
   prompt: read('prompt-sofia.md'),
   negocio: `${read('negocio.md')}\n\n${textoFestivos()}`,
-  horarios: readJson('horarios.json'),
+  horarios: horariosIniciales(),
   tarifas: readJson('tarifas.json'),
   festivos,
   followups: readJson('followups.json'),
@@ -73,12 +84,15 @@ export function consultarHorarios({ sede, modalidad, franja }) {
   if (!knowledge.horarios[s]?.[m]) return { ok: true, sede: s, modalidad: m, dias: {}, aviso: `En esta sede no hay ${m.replace('_', ' ')}.` };
   const f = franja ? (String(franja).toLowerCase().startsWith('m') ? 'manana' : 'tarde') : null;
   const tabla = knowledge.horarios[s]?.[m] || {};
+  // Días sueltos con horario especial (Nochebuena, Nochevieja…): ese día el habitual no vale.
+  const hoy = new Date().toISOString().slice(0, 10);
+  const especiales = Object.entries(knowledge.horarios._especiales?.[s] || {}).filter(([f]) => f >= hoy).map(([fecha, clases]) => ({ fecha, horas: clases[m] || [], nota: clases[m] ? 'ese día solo estas horas' : `ese día hay horario especial y no hay ${m.replace('_', ' ')} publicado` }));
   const dias = {};
   for (const d of DIAS) {
     const horas = (tabla[d] || []).filter((h) => enFranja(h, f));
     if (horas.length) dias[d] = horas;
   }
-  return { ok: true, sede: s, modalidad: m, franja: f, dias, aviso: 'Horario habitual publicado; no confirma plazas libres. Las plazas se ven en la app.' };
+  return { ok: true, sede: s, modalidad: m, franja: f, dias, ...(especiales.length ? { dias_con_horario_especial: especiales } : {}), aviso: 'Horario habitual publicado; no confirma plazas libres. Las plazas se ven en la app.' };
 }
 
 export function tarifaRecomendada(familia, dias) {

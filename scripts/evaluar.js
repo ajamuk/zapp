@@ -35,7 +35,8 @@ export function comprobar(caso, mensajes) {
   if (sede && ['getafe', 'las_rosas'].includes(sede) && /prueba/i.test(texto) && !/no (hay|ofrecemos|tenemos)/i.test(texto)) fallos.push('habla de prueba fuera de Parla');
   if (sede && sede !== 'el_canaveral') {
     const validas = horasValidas(sede);
-    const malas = (texto.match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0')).filter((h) => !validas.has(h));
+    // Las 22:00 de «las clases se abren para reservar a las 22:00» no son una hora de clase
+    const malas = (mensajes.filter((x) => !/se abren|reservar|se publica/i.test(x)).join('\n').match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0')).filter((h) => !validas.has(h));
     if (malas.length) fallos.push(`horas que no existen en ${sede}: ${[...new Set(malas)].join(', ')}`);
   }
   if (/cañaveral/i.test(todo) && /€/.test(texto)) fallos.push('da precios de El Cañaveral');

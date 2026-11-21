@@ -1,7 +1,8 @@
 import { config } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
-import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta } from './aimharder/index.js';
+import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
+import { sincronizarHorarios } from './horarios-sync.js';
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
 import { aplicarAjustes } from './ajustes.js';
@@ -69,6 +70,15 @@ if (config.ghlWebhookEnabled) {
   // Etiquetas con regla de inactividad («si no responde en X h»)
   cada('etiquetas-inactividad', 5 * 60000, () => etiquetas.revisarInactividad());
 }
+
+// Horarios de clases desde AimHarder: una vez al día (la primera a los 3 minutos de arrancar). Si cambian, Sofía
+// usa los nuevos al momento y queda apuntado; si AimHarder falla, se queda con los que tenía y sale una alerta.
+cada('horarios', 24 * 3600 * 1000, async () => {
+  const r = await sincronizarHorarios(clientesApi());
+  if (r.cambios.length) { console.log('Horarios actualizados desde AimHarder:\n' + r.cambios.join('\n')); registrarAlerta(repo.db, { clave: 'horarios-cambio', tipo: 'aimharder', titulo: `El horario de clases ha cambiado en AimHarder (${r.cambios.length} cambios); Sofía ya usa el nuevo`, detalle: r.cambios.slice(0, 30).join('\n'), nivel: 'info' }); }
+  if (r.fallos.length) registrarAlerta(repo.db, { clave: 'horarios-sync', tipo: 'aimharder', titulo: 'No se pueden comprobar los horarios en AimHarder', detalle: r.fallos.join('\n'), nivel: 'aviso' });
+  else resolverAlerta(repo.db, 'horarios-sync');
+}, 3 * 60000);
 
 // Alertas del sistema: comprobaciones cada 10 minutos (la primera al minuto de arrancar)
 cada('alertas', 10 * 60000, async () => {
