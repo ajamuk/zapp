@@ -1,0 +1,7 @@
+{
+  "_nota": "Días en que una sede cierra antes de lo habitual (lo dice el equipo; AimHarder no lo publica). Ese día solo valen las clases que terminan antes del cierre (duran 1 hora). Si AimHarder publica un horario especial para esa fecha, manda AimHarder.",
+  "parla": {
+    "2026-12-24": { "cierra": "13:30", "motivo": "Nochebuena" },
+    "2026-12-31": { "cierra": "13:30", "motivo": "Nochevieja" }
+  }
+}

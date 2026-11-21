@@ -44,6 +44,7 @@ export const knowledge = {
   festivos,
   followups: readJson('followups.json'),
   etiquetas: readJson('etiquetas.json'),
+  cierres: readJson('cierres.json'),
 };
 
 const DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
@@ -75,6 +76,19 @@ const enFranja = (hora, franja) => {
   return franja === 'manana' ? h < 14 : h >= 14;
 };
 
+/**
+ * Días en que la sede cierra antes (config/cierres.json): las clases habituales de ese día de la semana que
+ * terminan antes del cierre (duran una hora). Si AimHarder ya publica un horario especial para la fecha, no se añade.
+ */
+export function cierresAnticipados(sede, modalidad, { hoy = new Date().toISOString().slice(0, 10), cierres = knowledge.cierres } = {}) {
+  const min = (h) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5));
+  return Object.entries(cierres[sede] || {}).filter(([fecha]) => fecha >= hoy && !knowledge.horarios._especiales?.[sede]?.[fecha]).sort().map(([fecha, c]) => {
+    const dia = DIAS[(new Date(`${fecha}T12:00:00Z`).getUTCDay() + 6) % 7];
+    const horas = (knowledge.horarios[sede]?.[modalidad]?.[dia] || []).filter((h) => min(h) + 60 <= min(c.cierra));
+    return { fecha, horas, nota: `${c.motivo ? `${c.motivo}: ` : ''}ese día el centro cierra a las ${c.cierra}; ${horas.length ? 'solo estas horas' : `no hay ${modalidad.replace('_', ' ')}`}` };
+  });
+}
+
 /** Horario habitual publicado filtrado por sede, modalidad y franja (manana | tarde). */
 export function consultarHorarios({ sede, modalidad, franja }) {
   const s = normalizarSede(sede);
@@ -86,7 +100,8 @@ export function consultarHorarios({ sede, modalidad, franja }) {
   const tabla = knowledge.horarios[s]?.[m] || {};
   // Días sueltos con horario especial (Nochebuena, Nochevieja…): ese día el habitual no vale.
   const hoy = new Date().toISOString().slice(0, 10);
-  const especiales = Object.entries(knowledge.horarios._especiales?.[s] || {}).filter(([f]) => f >= hoy).map(([fecha, clases]) => ({ fecha, horas: clases[m] || [], nota: clases[m] ? 'ese día solo estas horas' : `ese día hay horario especial y no hay ${m.replace('_', ' ')} publicado` }));
+  const especialesAh = Object.entries(knowledge.horarios._especiales?.[s] || {}).filter(([f]) => f >= hoy).map(([fecha, clases]) => ({ fecha, horas: clases[m] || [], nota: clases[m] ? 'ese día solo estas horas' : `ese día hay horario especial y no hay ${m.replace('_', ' ')} publicado` }));
+  const especiales = [...especialesAh, ...cierresAnticipados(s, m, { hoy })].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const dias = {};
   for (const d of DIAS) {
     const horas = (tabla[d] || []).filter((h) => enFranja(h, f));
@@ -103,6 +118,13 @@ export function tarifaRecomendada(familia, dias) {
   if (n === 2) return 'M';
   if (n === 3) return 'L';
   return 'XL';
+}
+
+/** Cómo se paga la primera mensualidad en El Cañaveral, según esté o no habilitado el pago en la app. */
+export function pagoCanaveral() {
+  return knowledge.tarifas.apertura_el_canaveral.pago_habilitado
+    ? 'La primera mensualidad se paga al tramitar el alta, desde la app, sin esperar a febrero; el descuento queda fijado al completar ese pago.'
+    : 'El recibo de la primera mensualidad se emite el día del alta, pero el pago en la app TODAVÍA NO ESTÁ HABILITADO: no le digas que pague ya. Se le avisa por aquí en cuanto se pueda pagar y lo hace entonces desde la app, sin esperar a febrero. Su plaza queda anotada con el descuento del tramo por orden de alta y se confirma al completar ese pago.';
 }
 
 /** Tramo de apertura de El Cañaveral que toca a la siguiente plaza, según las que ya están ocupadas. */
@@ -133,9 +155,10 @@ export function ofertaCanaveral({ tarifa, fecha_inicio, plazas_ocupadas = 0 }) {
     ok: true, sede: 'el_canaveral', tarifa, fecha_inicio: inicio, cuota_mensual: cuota, descuento_pct: descuento, tramo_plazas: descuento ? tramo.plazas : null,
     cuota_con_descuento: conDescuento, descuento_hasta: descuento ? o.descuento_hasta : null,
     dias_restantes: restantes, dias_mes: diasMes, primer_recibo: r2(conDescuento * restantes / diasMes),
-    nota: descuento
-      ? `Empieza el ${inicio}. Paga ${conDescuento} €/mes en las cuotas hasta abril de 2027 (descuento de apertura del ${descuento} %) y ${cuota} €/mes desde mayo. La primera mensualidad se paga al tramitar el alta, desde la app; el descuento queda fijado al completar ese pago.`
-      : `Empieza el ${inicio}. Cuota de ${cuota} €/mes, sin descuento de apertura. La primera mensualidad se paga al tramitar el alta, desde la app.`,
+    pago_habilitado: Boolean(o.pago_habilitado),
+    nota: (descuento
+      ? `Empieza el ${inicio}. Paga ${conDescuento} €/mes en las cuotas hasta abril de 2027 (descuento de apertura del ${descuento} %) y ${cuota} €/mes desde mayo. `
+      : `Empieza el ${inicio}. Cuota de ${cuota} €/mes, sin descuento de apertura. `) + pagoCanaveral(),
   };
 }
 
@@ -155,7 +178,7 @@ function tarifasCanaveral(fam, dias, ocupadas = 0) {
   return {
     ok: true, sede: 'el_canaveral', familia: fam || 'todas', opciones, recomendada: rec ? opciones.find((x) => x.clave === rec) : null,
     tramo_actual: tramo.descuento ? { descuento_pct: tramo.descuento, plazas: tramo.plazas } : { descuento_pct: 0, nota: 'Las 200 plazas de apertura están cubiertas: cuota habitual.' },
-    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. Ya se puede tramitar el alta: empieza el 1 de febrero y la primera mensualidad se paga al tramitarla. Da el precio del tramo_actual (es el que se le aplica si se apunta ahora); el tramo va por orden de pago completado y queda fijado al pagar, así que no lo garantices a quien aún no se ha apuntado ni digas cuántas plazas quedan. Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
+    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. Ya se puede tramitar el alta: empieza el 1 de febrero. ' + pagoCanaveral() + ' Da el precio del tramo_actual (es el que se le aplica si se apunta ahora); no lo garantices a quien aún no se ha apuntado ni digas cuántas plazas quedan. Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
   };
 }
 

@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede } from './knowledge.js';
+import { pagoCanaveral } from './knowledge.js';
 import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
@@ -541,14 +542,15 @@ export class Setter {
       (oferta.descuento_pct
         ? `Descuento de apertura ${oferta.descuento_pct} % (plaza ${this.plazasCanaveral(conv.id) + 1}, tramo ${oferta.tramo_plazas}) en las cuotas de febrero, marzo y abril de 2027: ${eur(oferta.cuota_con_descuento)}/mes; desde mayo, ${eur(oferta.cuota_mensual)}/mes.\n`
         : `Sin descuento de apertura: ${eur(oferta.cuota_mensual)}/mes.\n`) +
-      `Primer recibo: ${eur(oferta.primer_recibo)}, emitido hoy (se paga en la fecha del alta, aunque empiece el ${d.fecha_inicio}). Forma de pago TPV RedSys, sin matrícula.`,
+      `Primer recibo: ${eur(oferta.primer_recibo)}, emitido hoy aunque empiece el ${d.fecha_inicio}${oferta.pago_habilitado ? ' (se paga en la fecha del alta)' : ' (queda pendiente: el pago aún no está habilitado; avisar al lead cuando lo esté)'}. Forma de pago TPV RedSys, sin matrícula.`,
       { sede: 'el_canaveral' },
     );
     return {
       ok: true, estado: 'pendiente_equipo', sede: SEDE_NOMBRE.el_canaveral, fecha_inicio: d.fecha_inicio, descuento_pct: oferta.descuento_pct,
       cuota_con_descuento: oferta.cuota_con_descuento, cuota_desde_mayo: oferta.cuota_mensual, primer_pago: oferta.primer_recibo,
-      nota: `El equipo termina de tramitar el alta. Dile que ya está apuntado para empezar el ${d.fecha_inicio}, que le llega la invitación de AimHarder al correo y que el primer pago (${eur(oferta.primer_recibo)}) lo hace desde la app en cuanto le llegue, sin esperar a febrero: ` +
-        (oferta.descuento_pct ? `al completarlo se queda con el ${oferta.descuento_pct} % en febrero, marzo y abril (${eur(oferta.cuota_con_descuento)}/mes; desde mayo, ${eur(oferta.cuota_mensual)}).` : 'no hay descuento de apertura porque las plazas ya están cubiertas.') +
+      pago_habilitado: oferta.pago_habilitado,
+      nota: `El equipo termina de tramitar el alta. Dile que ya está apuntado para empezar el ${d.fecha_inicio} y que le llega la invitación de AimHarder al correo. Primer pago: ${eur(oferta.primer_recibo)}. ${pagoCanaveral()} ` +
+        (oferta.descuento_pct ? `Su descuento: ${oferta.descuento_pct} % en febrero, marzo y abril (${eur(oferta.cuota_con_descuento)}/mes; desde mayo, ${eur(oferta.cuota_mensual)}).` : 'No hay descuento de apertura porque las plazas ya están cubiertas.') +
         ' No digas que el alta ya está hecha ni des otros importes.',
     };
   }

@@ -40,6 +40,8 @@
     "_nota": "Oferta de apertura publicada en crossfitmetropolitano.com/oferta-apertura-canaveral (leída el 21 nov 2026). Cuotas con impuestos incluidos. El descuento se aplica en febrero, marzo y abril de 2027; desde mayo, la cuota habitual.",
     "apertura": "2027-02-01",
     "descuento_hasta": "2027-04-30",
+    "pago_habilitado": false,
+    "_pago": "El banco aún no ha habilitado el TPV de AimHarder en El Cañaveral: el primer recibo se emite el día del alta y se paga cuando se habilite. Poner pago_habilitado en true ese día.",
     "tramos": [
       {
         "descuento": 50,

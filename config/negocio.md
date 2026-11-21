@@ -59,7 +59,7 @@ Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de
 - **Descuento de apertura** en febrero, marzo y abril de 2027; desde mayo se paga la cuota habitual.
 - **200 plazas de apertura en cuatro tramos**: plazas 1 a 10 → −50 % · plazas 11 a 35 → −30 % · plazas 36 a 110 → −20 % · plazas 111 a 200 → −10 %.
 - El tramo se asigna **por orden de primer pago completado**. Pedir información no reserva plaza, no garantiza tramo y no cobra nada. No se dice cuántas plazas quedan en cada tramo.
-- **Ya se puede hacer el alta**: la fecha de inicio es el 1 de febrero de 2027, el descuento del tramo se aplica a las cuotas de febrero, marzo y abril, y la primera mensualidad (febrero, ya con el descuento) se paga en la fecha del alta, desde la app.
+- **Ya se puede hacer el alta**: la fecha de inicio es el 1 de febrero de 2027, el descuento del tramo se aplica a las cuotas de febrero, marzo y abril, y el recibo de la primera mensualidad (febrero, ya con el descuento) se emite en la fecha del alta. **El pago en la app todavía no está habilitado**: se avisa a cada persona cuando se pueda pagar. Mientras tanto la plaza queda anotada por orden de alta y se confirma al completar ese pago.
 - **Regalos en cualquier tramo**: comba profesional (se entrega en la apertura) y plaza en un seminario exclusivo (fecha y hora se confirmarán).
 - Horarios: aún no publicados; los de CrossFit + HYROX están pendientes de confirmar. Se pregunta la disponibilidad del lead y se anota.
 - Academy para empezar desde cero (en El Cañaveral también hay Academy de 1 día por semana); quien ya entrena, CrossFit + HYROX.
@@ -97,6 +97,7 @@ Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consul
 - No hay turno fijo: cada día se elige la hora en la app.
 - Los entrenamientos se publican el día anterior a las 22:00. Cada jueves se manda en el grupo de WhatsApp del box un resumen de la semana siguiente.
 - No se cierra en agosto. Los festivos se cierran: la lista por sede está al final de esta base de conocimiento.
+- **Parla, 24 y 31 de diciembre de 2026:** el centro cierra a las 13:30; solo hay las clases de la mañana que terminan antes (`consultar_horarios` las da en `dias_con_horario_especial`).
 
 ## Clase de prueba
 

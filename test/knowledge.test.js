@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede, tarifaRecomendada, tramoCanaveral } from '../src/knowledge.js';
+import { consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede, tarifaRecomendada, tramoCanaveral, cierresAnticipados, pagoCanaveral } from '../src/knowledge.js';
 
 test('normaliza sedes', () => {
   assert.equal(normalizarSede('Las Rozas'), 'las_rosas');
@@ -67,4 +67,20 @@ test('prorrateo Parla Academy 2 días desde el 23 nov coincide con AimHarder (22
   const { calcularPrimerRecibo } = await import('../src/knowledge.js');
   const r = calcularPrimerRecibo({ sede: 'parla', tarifa: 'academy_2', fecha_inicio: '2026-11-23' });
   assert.equal(r.primer_recibo, 22.67);
+});
+
+test('Parla cierra a las 13:30 en Nochebuena y Nochevieja: solo las clases que terminan antes', () => {
+  const c = cierresAnticipados('parla', 'crossfit', { hoy: '2026-11-21' });
+  assert.deepEqual(c.map((x) => [x.fecha, x.horas]), [['2026-12-24', ['09:30']], ['2026-12-31', ['09:30']]]); // jueves: 09:30 sí, 16:30 en adelante no
+  assert.match(c[0].nota, /Nochebuena.*cierra a las 13:30/);
+  assert.deepEqual(cierresAnticipados('parla', 'hyrox', { hoy: '2026-12-25' }).map((x) => x.horas), [['07:00', '10:30']]);
+  assert.match(cierresAnticipados('parla', 'academy', { hoy: '2026-12-25' })[0].nota, /no hay academy/);
+  assert.deepEqual(cierresAnticipados('getafe', 'crossfit', { hoy: '2026-11-21' }), []);
+  // Un cierre a las 13:30 deja entrar la clase de las 12:30 (lunes) y fuera la de las 13:00
+  assert.deepEqual(cierresAnticipados('parla', 'crossfit', { hoy: '2026-11-21', cierres: { parla: { '2026-11-23': { cierra: '13:30' } } } })[0].horas, ['07:00', '09:30', '10:30', '12:30']);
+});
+
+test('El Cañaveral: mientras el pago no esté habilitado, no se le dice al lead que pague ya', () => {
+  assert.match(pagoCanaveral(), /TODAVÍA NO ESTÁ HABILITADO/);
+  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'M', fecha_inicio: '2027-02-01' }).pago_habilitado, false);
 });
