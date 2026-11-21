@@ -23,6 +23,14 @@ export function contienePalabra(texto, lista = []) {
 }
 const ESPERAS_REINTENTO = [2 * 60000, 5 * 60000]; // si falla la IA o GHL: reintento a los 2 y a los 5 minutos
 const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
+// Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
+// externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
+const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
+/** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
+export function textoComparable(t) {
+  return String(t || '').split('\n').filter((l) => !/^\s*(💬|☑️)|^\s*(sent from|received on|from other device)\b/i.test(l))
+    .join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
+}
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
 /**
@@ -46,8 +54,25 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
-    if (evt.evento === 'outbound') return this.onOutbound(evt);
+    const copia = !CANALES_NATIVOS.has(evt.canal);
+    if (evt.evento === 'outbound') {
+      // El mismo mensaje llega dos veces (nativo y copia del conector, en cualquier orden): solo cuenta el primero.
+      // Así la copia de un mensaje de Sofía tampoco la toma por una persona del equipo.
+      if (this.yaRegistrado(evt)) return { ignorado: 'copia de un mensaje ya registrado' };
+      // Lo escrito desde el móvil solo llega por el conector: se trata como un mensaje del equipo.
+      return this.onOutbound(evt);
+    }
+    if (copia) return { ignorado: 'copia de un conector (no es WhatsApp ni Instagram nativo)' };
     return this.onInbound(evt);
+  }
+
+  /** ¿Hay en este chat, en los últimos 10 minutos, un mensaje nuestro (de Sofía o del equipo) con el mismo texto? */
+  yaRegistrado(evt) {
+    const t = textoComparable(evt.texto);
+    if (!t) return false;
+    const desde = new Date(Date.now() - 10 * 60000).toISOString();
+    return this.repo.db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND created_at >= ? AND (external_id IS NULL OR external_id != ?)")
+      .all(evt.conversationId, desde, evt.messageId || '').some((m) => textoComparable(m.texto) === t);
   }
 
   async onOutbound(evt) {

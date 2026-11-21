@@ -268,3 +268,27 @@ test('si Sofía enumera las sedes sin El Cañaveral, se le devuelve una vez para
   const terco = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete: async () => resp('x', ['Parla, Getafe o Las Rosas?']) });
   assert.equal(terco.respuesta.mensajes[0], 'Parla, Getafe o Las Rosas?');
 });
+
+test('copias del conector de WhatsApp: no cuentan dos veces ni pausan a Sofía', async () => {
+  const { setter, repo, avanzar } = montar({ respuestas: [[{ name: 'responder', input: { mensajes: ['Hola! En qué sede te viene mejor?'] } }]] });
+  const copia = (o) => ({ ...o, canal: 'type_custom_sms' });
+  // Entrante: el nativo cuenta, la copia (antes o después) no
+  assert.match((await setter.handleWebhook(copia(entrante('hola\n\n💬Received on 34604840858', 'x1')))).ignorado, /copia/);
+  assert.equal(repo.getConv('c1'), undefined);
+  await setter.handleWebhook(entrante('hola', 'w1'));
+  await setter.handleWebhook(copia(entrante('hola', 'x2')));
+  const leads = () => repo.db.prepare("SELECT COUNT(*) n FROM messages WHERE conversation_id = 'c1' AND autor = ?");
+  assert.equal(leads().get('lead').n, 1);
+  // Sofía contesta; la copia de su propio mensaje llega como saliente con usuario y no la pausa
+  avanzar(10 * 60000); await setter.tick();
+  assert.equal(leads().get('ia').n, 1);
+  const saliente = (texto, id, canal = 'whatsapp') => ({ evento: 'outbound', conversationId: 'c1', contactId: 'k1', canal, texto, messageId: id, userId: 'u1' });
+  assert.match((await setter.handleWebhook(saliente('Hola! En qué sede te viene mejor?\n💬Sent from 34604840858', 'x3', 'type_custom_sms'))).ignorado, /copia/);
+  assert.equal(repo.getConv('c1').ai_paused, 0);
+  // El equipo escribe desde GHL: llegan la copia y el nativo; se guarda una vez y Sofía se aparta
+  assert.equal((await setter.handleWebhook(saliente('te llamo ahora', 'x4', 'type_custom_sms'))).pausada, true);
+  assert.match((await setter.handleWebhook(saliente('te llamo ahora', 'w4'))).ignorado, /copia/);
+  assert.equal(leads().get('humano').n, 1);
+  // Un reintento del mismo webhook sigue siendo un duplicado normal
+  assert.equal((await setter.handleWebhook(saliente('te llamo ahora', 'x4', 'type_custom_sms'))).ignorado, 'duplicado');
+});
