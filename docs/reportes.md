@@ -47,7 +47,7 @@ Panel → Reportes → **Batería de pruebas**. Mide una versión de las instruc
 - **Pasada** (`bateria_pasadas`, `bateria_resultados`): ejecuta cada caso N veces contra la Sofía real (mismo código, herramientas simuladas, base en memoria: no toca chats, GHL ni AimHarder). Un caso pasa si no salta ninguna comprobación automática (horas que no existen, estilo, precios donde no toca…) y un juez (modelo `OPTIMIZADOR_MODEL`) da por cumplidos todos los criterios.
 - **Grupos**: «ajuste» (para mejorar el prompt mirando sus fallos) y «reserva» (≈1 de cada 4; no se mira para ajustar, sirve para comprobar que una mejora no es casualidad).
 - **Comparación**: al abrir una pasada se compara con la última de producción con el mismo filtro: qué casos mejoran y cuáles empeoran.
-- **Coste**: una pasada completa con 2 repeticiones ronda 1,5-2 €; el coste real queda en cada pasada. Solo puede haber una en marcha; si el servicio se reinicia queda como interrumpida.
+- **Coste**: una pasada completa ronda 2-2,5 € por repetición (medido en la primera: 2,35 $ con 58 casos); el coste real queda en cada pasada. Solo puede haber una en marcha; si el servicio se reinicia queda como interrumpida.
 - Modelos: Sofía `ANTHROPIC_MODEL`, lead simulado `BATERIA_LEAD_MODEL` (por defecto Haiku), juez `OPTIMIZADOR_MODEL`.
 
 Forma de trabajar recomendada: pasada de referencia en producción → crear borrador del prompt → pasada del borrador solo «ajuste» → cuando mejore, pasada completa → si no empeora nada en «reserva», activar.
