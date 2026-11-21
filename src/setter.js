@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede } from './knowledge.js';
+import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede, normalizarModalidad } from './knowledge.js';
 import { pagoCanaveral } from './knowledge.js';
 import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
@@ -325,6 +325,9 @@ export class Setter {
     await this.aplicarRespuesta(conv, respuesta, efectos);
     let mensajes = (respuesta.mensajes || []).map((m) => m.trim()).filter(Boolean);
     if (plantilla) mensajes = mensajes.slice(0, 1);
+    if (!plantilla && mensajes.length) {
+      for (const r of this.imagenesInfo(conv, efectos.info, mensajes)) if (!(efectos.recursos ||= []).some((x) => x.id === r.id)) efectos.recursos.push(r);
+    }
     try {
       if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
       if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
@@ -406,6 +409,27 @@ export class Setter {
     }
     this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
     return ids;
+  }
+
+  /**
+   * Imágenes de tarifas/horarios que acompañan al texto: las de las consultas de este turno cuyo dato aparece de verdad
+   * en los mensajes (un precio en euros, una hora) y que no se le hayan mandado ya en esta conversación.
+   */
+  imagenesInfo(conv, consultas = [], mensajes = []) {
+    const texto = mensajes.join('\n');
+    const da = {
+      tarifas: /\d\s*(€|euros?\b)/i.test(texto),
+      horarios: /\b([01]?\d|2[0-3])(:[0-5]\d|\s*h\b)/i.test(texto),
+    };
+    const out = [];
+    for (const c of consultas) {
+      if (!da[c.tipo]) continue;
+      const r = recursos.porNombre(this.catalogo, recursos.nombreImagenInfo(c.tipo, c.sede, c.familia));
+      if (!r || out.some((x) => x.id === r.id)) continue;
+      if (this.repo.db.prepare('SELECT 1 FROM messages WHERE conversation_id = ? AND media_ruta = ? LIMIT 1').get(conv.id, r.media_ruta)) continue;
+      out.push(r);
+    }
+    return out.slice(0, 2);
   }
 
   /** Envía archivos de Recursos. En modo prueba, solo una nota en GHL y un borrador en el chat. */
@@ -497,8 +521,17 @@ export class Setter {
 
   async herramienta(conv, nombre, input, efectos) {
     switch (nombre) {
-      case 'consultar_horarios': return consultarHorarios(input);
-      case 'consultar_tarifas': return consultarTarifas({ ...input, plazas_ocupadas: this.plazasCanaveral() });
+      case 'consultar_horarios': {
+        const res = consultarHorarios(input);
+        if (res?.ok && Object.keys(res.dias || {}).length) (efectos.info ||= []).push({ tipo: 'horarios', sede: res.sede, familia: res.modalidad === 'academy' ? 'academy' : 'crossfit_hyrox' });
+        return res;
+      }
+      case 'consultar_tarifas': {
+        const res = consultarTarifas({ ...input, plazas_ocupadas: this.plazasCanaveral() });
+        const sede = normalizarSede(input.sede);
+        if (res?.ok && sede) (efectos.info ||= []).push({ tipo: 'tarifas', sede, familia: normalizarModalidad(input.familia) === 'academy' ? 'academy' : 'crossfit_hyrox' });
+        return res;
+      }
       case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasCanaveral() });
       case 'preparar_alta': return this.alta(conv, input, efectos);
       case 'reservar_prueba_parla': {

@@ -59,10 +59,25 @@ export function borrar(db, id, { base = carpetaMedios() } = {}) {
   return true;
 }
 
-/** Bloque de contexto para Sofía con los recursos que puede enviar. */
+// Imágenes de tarifas y horarios de cada sede: no las elige Sofía, salen solas junto al texto cuando da precios
+// u horarios (ver Setter.imagenesInfo). Se suben como recursos con el nombre «<sede>-<familia>-<tipo>»,
+// p. ej. «las-rosas-crossfit-hyrox-tarifas» (scripts/importar-imagenes-info.js).
+const SEDE_SLUG = { parla: 'parla', getafe: 'getafe', las_rosas: 'las-rosas', el_canaveral: 'el-canaveral' };
+const RE_INFO = /^(parla|getafe|las-rosas|el-canaveral)-(academy|crossfit-hyrox)-(tarifas|horarios)$/i;
+export const esImagenInfo = (nombre) => RE_INFO.test(String(nombre || '').trim());
+/** Nombre de la imagen de tarifas/horarios de una sede (sede: parla|getafe|las_rosas|el_canaveral; familia: academy o cualquier otra = CrossFit + HYROX). */
+export function nombreImagenInfo(tipo, sede, familia) {
+  const s = SEDE_SLUG[sede];
+  if (!s || !['tarifas', 'horarios'].includes(tipo)) return null;
+  return `${s}-${familia === 'academy' ? 'academy' : 'crossfit-hyrox'}-${tipo}`;
+}
+
+/** Bloque de contexto para Sofía con los recursos que puede enviar (las imágenes de tarifas/horarios van solas). */
 export function contextoIA(db) {
-  const rs = listar(db, { activos: true });
-  if (!rs.length) return '';
-  return ['# Archivos que puedes enviar', 'Si encaja en la conversación, llama a `enviar_recurso` con el nombre exacto (como mucho uno por turno; no lo repitas si ya lo enviaste). El archivo sale junto a tus mensajes: no pegues enlaces ni digas «te adjunto» si no lo envías.',
+  const todos = listar(db, { activos: true });
+  const rs = todos.filter((r) => !esImagenInfo(r.nombre));
+  const nota = todos.length > rs.length ? 'Cuando das precios u horarios de una sede, el sistema envía solo, justo después de tus mensajes, la imagen de tarifas u horarios de esa sede (una vez por conversación). No la pidas, no pegues enlaces y no hace falta anunciarla; escribe igualmente los datos en el texto.' : '';
+  if (!rs.length) return nota ? `# Imágenes de tarifas y horarios\n${nota}` : '';
+  return ['# Archivos que puedes enviar', ...(nota ? [nota] : []), 'Si encaja en la conversación, llama a `enviar_recurso` con el nombre exacto (como mucho uno por turno; no lo repitas si ya lo enviaste). El archivo sale junto a tus mensajes: no pegues enlaces ni digas «te adjunto» si no lo envías.',
     ...rs.map((r) => `- «${r.nombre}» (${r.tipo}): ${r.descripcion}`)].join('\n');
 }

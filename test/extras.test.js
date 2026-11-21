@@ -73,6 +73,33 @@ test('recursos: Sofía los ve, los envía por URL pública en real y solo como b
   } finally { srv.close(); }
 });
 
+test('Imágenes de tarifas y horarios: salen solas con el texto, una vez por conversación y no si no da el dato', async () => {
+  const db = openDb(':memory:'); const repo = crearRepo(db);
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'info-'));
+  const r = recursos.crear(db, { nombre: 'getafe-crossfit-hyrox-tarifas', descripcion: 'auto', datos: PNG.toString('base64'), mime: 'image/png', archivo: 'a.png' }, { base });
+  const h = recursos.crear(db, { nombre: 'las-rosas-academy-horarios', descripcion: 'auto', datos: PNG.toString('base64'), mime: 'image/png', archivo: 'b.png' }, { base });
+  assert.match(recursos.contextoIA(db), /envía solo.*imagen de tarifas/);
+  assert.doesNotMatch(recursos.contextoIA(db), /getafe-crossfit/);
+  assert.equal(recursos.nombreImagenInfo('tarifas', 'el_canaveral', 'crossfit_hyrox'), 'el-canaveral-crossfit-hyrox-tarifas');
+  const enviados = [];
+  const ghl = { sendMessage: async () => ({ messageId: 'm' }), enviarAdjunto: async (x) => { enviados.push(x.url); return { messageId: 'a' }; }, addTags: async () => {}, removeTags: async () => {}, assign: async () => {}, addNote: async () => {} };
+  repo.upsertConv({ id: 'c1', contact_id: 'k1', channel: 'whatsapp' }); repo.updateConv('c1', { tipo: 'captacion' });
+  const turno = async (consultas, texto) => {
+    const q = [consultas, [{ name: 'responder', input: { mensajes: [texto], fase: 'f3 presentación' } }]];
+    const s = new Setter({ repo, ghl, live: true, sleep: async () => {}, now: () => T0, random: () => 0, aimharder: {}, complete: async () => ({ content: q.shift().map((b, i) => ({ type: 'tool_use', id: `t${i}`, ...b })) }) });
+    await s.responder('c1');
+  };
+  // Consulta precios pero no los da: no hay imagen
+  await turno([{ name: 'consultar_tarifas', input: { sede: 'getafe', familia: 'crossfit_hyrox' } }], '¿Cuántos días a la semana te gustaría venir?');
+  assert.equal(enviados.length, 0);
+  // Da precios y horarios: las dos imágenes
+  await turno([{ name: 'consultar_tarifas', input: { sede: 'getafe', familia: 'crossfit_hyrox', dias_por_semana: 2 } }, { name: 'consultar_horarios', input: { sede: 'las_rosas', modalidad: 'academy' } }], 'La M son 89 €/mes y hay clase a las 18:00');
+  assert.deepEqual(enviados, [recursos.urlPublica(r), recursos.urlPublica(h)]);
+  // Vuelve a darlos: no se repiten
+  await turno([{ name: 'consultar_tarifas', input: { sede: 'getafe', familia: 'crossfit' } }], 'Te recuerdo: 89 euros al mes');
+  assert.equal(enviados.length, 2);
+});
+
 test('Meta: simulado en prueba, sin configurar avisa, y en real manda el teléfono cifrado una sola vez', async () => {
   const db = openDb(':memory:'); const repo = crearRepo(db);
   repo.upsertConv({ id: 'c1', contact_id: 'k1', channel: 'whatsapp', telefono: '+34 611 222 333' });
