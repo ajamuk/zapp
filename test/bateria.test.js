@@ -118,3 +118,15 @@ test('la sede para comprobar horas sale de la ficha o del lead, no de lo que enu
   assert.equal(sedeDe('las_rosas', conv), 'las_rosas');
   assert.equal(sedeDe(null, [{ autor: 'ia', texto: 'Parla o Getafe?' }, { autor: 'lead', texto: 'no sé' }]), null);
 });
+
+test('si la IA se queda sin saldo, la pasada se para y no apunta fallos', async () => {
+  const { openDb } = await import('../src/db.js');
+  const b = await import('../src/bateria.js');
+  const db = openDb(':memory:'); b.sembrarCasos(db);
+  const sinSaldo = async () => { throw new Error('400 {"type":"error","error":{"message":"Your credit balance is too low to access the Anthropic API."}}'); };
+  const p = b.lanzarPasada(db, { repeticiones: 1, complete: sinSaldo, completeLead: sinSaldo, completeJSON: sinSaldo });
+  await p.fin;
+  const fila = db.prepare('SELECT * FROM bateria_pasadas WHERE id = ?').get(p.id);
+  assert.equal(fila.estado, 'error'); assert.match(fila.error, /saldo/);
+  assert.equal(db.prepare('SELECT count(*) n FROM bateria_resultados').get().n, 0);
+});
