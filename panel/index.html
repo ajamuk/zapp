@@ -1680,6 +1680,7 @@ async function actividadPagina() {
 }
 
 // ---------- Estadísticas y consumo ----------
+const usd = (n) => (n > 0 && n < 0.01 ? '< 0,01 US$' : `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} US$`);
 async function estadisticas() {
   const f = estado.est ||= { dias: 30, sede: '', canal: '' };
   $('#main').innerHTML = `<h2>Estadísticas</h2><div class="filtros">${[[7, '7 días'], [30, '30 días'], [90, '90 días']].map(([d, t]) => `<button data-ed="${d}" class="${f.dias === d ? 'activo' : ''}">${t}</button>`).join('')}
@@ -1710,9 +1711,34 @@ async function estadisticas() {
     ${tablaGrupo('Por canal', e.porCanal, (g) => CANAL[g] || g)}
     ${tablaGrupo('Por sede', e.porSede, (g) => SEDES[g] || (g === 'sin_sede' ? 'Sin sede' : g))}
     <h3>Etiquetas más puestas</h3><div class="chips-f">${e.etiquetas.map((x) => `${pill(x)} <span class="ayuda">${x.n}</span>`).join(' ') || '<span class="ayuda">Ninguna en este periodo</span>'}</div>
-    <h3>Consumo de la IA <span class="ayuda">aproximado, a ${c.eurPorUsd} € por dólar (la API cobra en dólares)</span></h3>
-    ${c.meses.length ? `<div class="tabla"><table><tr><th>Mes</th><th>Total</th><th>Por chat nuevo</th><th>En qué</th></tr>${c.meses.map((m) => `<tr><td>${new Date(m.mes + '-15').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</td><td><b>${eur(m.eur)}</b><div class="ayuda">${m.llamadas} llamadas · $${m.usd.toFixed(2)}</div></td><td>${m.eurPorChat != null ? eur(m.eurPorChat) : '–'}<div class="ayuda">${m.chats} chats</div></td><td>${m.motivos.map((x) => `${esc(x.motivo)}: ${eur(x.eur)}`).join('<br>')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Sin consumo todavía</div>'}
-    <p class="ayuda">Las notas de voz se transcriben en el propio servidor: no cuestan nada aparte.</p>`;
+    <h3>Consumo de la IA <span class="ayuda">en euros a ${c.eurPorUsd} € por dólar (la API cobra en dólares)</span></h3>
+    ${c.meses.length ? `<div class="tabla"><table><tr><th>Mes</th><th>Total</th><th>Por chat nuevo</th><th>En qué</th><th>Por modelo</th></tr>${c.meses.map((m) => `<tr><td>${new Date(m.mes + '-15').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</td><td><b>${eur(m.eur)}</b><div class="ayuda">${m.llamadas} llamadas · ${usd(m.usd)}</div></td><td>${m.eurPorChat != null ? eur(m.eurPorChat) : '–'}<div class="ayuda">${m.chats} chats</div></td><td>${m.motivos.map((x) => `${esc(x.motivo)}: <b>${eur(x.eur)}</b> <span class="ayuda">${x.llamadas} llamadas · ${x.modelos.map((y) => `${esc(y.nombre)} ${usd(y.usd)}`).join(' · ')}</span>`).join('<br>')}</td><td>${m.modelos.map((x) => `${esc(x.nombre)}: ${usd(x.usd)}`).join('<br>')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Sin consumo todavía</div>'}
+    <h3>Día a día <span class="ayuda">en dólares y por día UTC, como la factura de Anthropic</span></h3>
+    ${c.dias.length ? `<div class="tabla"><table><tr><th>Día</th><th>Zapp</th><th>Por modelo</th><th>En qué</th><th>Anthropic</th><th>Diferencia</th></tr>${c.dias.map((d) => `<tr data-cdia="${d.dia}"><td>${new Date(d.dia + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}</td><td><b>${usd(d.usd)}</b></td><td>${d.modelos.map((x) => `${esc(x.nombre)} ${usd(x.usd)}`).join('<br>')}</td><td class="ayuda">${d.motivos.map((x) => `${esc(x.nombre)} ${usd(x.usd)}`).join('<br>')}</td><td class="c-ant ayuda">…</td><td class="c-dif"></td></tr>`).join('')}</table></div>
+      <p class="ayuda" id="c-ant-nota">Consultando la factura de Anthropic…</p>` : '<div class="vacio">Sin consumo en los últimos días</div>'}
+    <p class="ayuda">Cada llamada guarda su coste en el momento, con el modelo que respondió de verdad (si el principal se niega, Anthropic cobra también el intento del modelo de respaldo${c.respaldos ? `: ha pasado ${c.respaldos} ${c.respaldos === 1 ? 'vez' : 'veces'}` : ''}). Cuenta también Probar IA, la batería de pruebas y los reportes. Las notas de voz se transcriben en el propio servidor: no cuestan nada aparte.</p>`;
+  if (c.dias.length) conciliarConsumo(c.dias);
+}
+
+/** Pone al lado de cada día lo que factura Anthropic (si el VPS tiene la clave de administrador). */
+async function conciliarConsumo(dias) {
+  let f;
+  try { f = await api('/panel/consumo/anthropic?dias=31'); } catch (e) { f = { disponible: false, motivo: e.message }; }
+  const nota = $('#c-ant-nota');
+  if (!nota) return;
+  if (!f.disponible) { nota.textContent = `Sin comparar con la factura de Anthropic. ${f.motivo || ''}`; $('#main').querySelectorAll('.c-ant').forEach((td) => { td.textContent = '–'; }); return; }
+  const deAnt = Object.fromEntries(f.dias.map((d) => [d.dia, d]));
+  for (const d of dias) {
+    const tr = $('#main').querySelector(`[data-cdia="${d.dia}"]`); if (!tr) continue;
+    const a = deAnt[d.dia];
+    tr.querySelector('.c-ant').innerHTML = a ? `<b>${usd(a.usd)}</b><br>${Object.entries(a.modelos).sort((x, y) => y[1] - x[1]).map(([m, v]) => `${esc(m.replace(/^claude-/, ''))} ${usd(v)}`).join('<br>')}` : 'sin datos aún';
+    if (a) {
+      const dif = d.usd - a.usd; const td = tr.querySelector('.c-dif');
+      td.textContent = `${dif >= 0 ? '+' : '−'}${usd(Math.abs(dif))}`;
+      if (Math.abs(dif) > Math.max(0.02, a.usd * 0.05)) td.style.color = 'var(--red, #c0392b)';
+    }
+  }
+  nota.textContent = 'Factura de Anthropic para la API key de zapp. Llega con unas horas de retraso: el día de hoy puede salir incompleto. Una diferencia grande indica llamadas que zapp no apunta o que otro programa usa la misma clave.';
 }
 
 // ---------- Recursos ----------

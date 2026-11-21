@@ -3,6 +3,7 @@
 // prompt (y de la base de conocimiento) a la que corresponde.
 import { pedirJSON } from './llm.js';
 import * as docs from './documentos.js';
+import { apuntarUso } from './db.js';
 
 export const APARTADOS = ['Quién es y cómo habla', 'Qué tiene que conseguir', 'Cómo lleva la conversación', 'Precios y condiciones', 'Clase de prueba', 'Altas', 'Cuándo pasa el chat al equipo', 'Lo que nunca hace', 'Casos especiales', 'Seguimientos y leads que lo dejan para más adelante'];
 
@@ -19,8 +20,7 @@ export async function resumenInstrucciones(db, { completeJSON, rehacer = false }
     system: 'Explicas, en español claro y para alguien del equipo de un box de CrossFit que no es técnico, qué hace Sofía (su setter por WhatsApp e Instagram) según sus instrucciones. Para cada apartado, de 2 a 6 puntos cortos y concretos, fieles a lo que dicen las instrucciones (con cifras y ejemplos si los hay). No inventes nada: si un apartado no está definido, un único punto «No queda definido en las instrucciones». No copies el prompt: resúmelo.',
     contenido: `Apartados, en este orden: ${APARTADOS.join(' · ')}\n\n<prompt>\n${p.texto}\n</prompt>\n\n<base_de_conocimiento>\n${n.texto}\n</base_de_conocimiento>`,
     schema: ESQUEMA,
-    onUsage: (u, modelo) => db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms) VALUES (NULL, 'resumen-instrucciones', ?, ?, ?, ?, ?, 0)`)
-      .run(modelo, u.input_tokens || 0, u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0, u.output_tokens || 0),
+    onUsage: (uso) => apuntarUso(db, { motivo: 'resumen-instrucciones', ...uso }),
   });
   const orden = (t) => APARTADOS.indexOf(t);
   const out = { apartados: r.apartados.sort((a, b) => orden(a.titulo) - orden(b.titulo)), generado: new Date().toISOString() };

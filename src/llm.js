@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config.js';
+import { usosDe } from './precios.js';
 
 /** Definición de las herramientas que puede usar Sofía. La implementación está en setter.js. */
 export const TOOLS = [
@@ -153,7 +154,8 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
       tool_choice: { type: 'auto' },
       messages: conv,
     });
-    onUsage?.(res.usage || {}, Date.now() - t0);
+    // Una fila por intento facturable (modelo real, caché por duración, coste ya calculado)
+    for (const f of usosDe(res, config.ai.model)) onUsage?.(f, Date.now() - t0);
     if (res.stop_reason === 'refusal') throw new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`);
     if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
@@ -206,7 +208,7 @@ export async function pedirJSON({ system, contenido, schema, modelo = config.ai.
     messages: [{ role: 'user', content: contenido }],
     output_config: { format: { type: 'json_schema', schema } },
   });
-  onUsage?.(res.usage || {}, modelo);
+  for (const f of usosDe(res, modelo)) onUsage?.(f);
   if (res.stop_reason === 'refusal') throw new Error('El modelo se ha negado a analizarlo');
   if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó');
   const texto = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
@@ -217,7 +219,7 @@ export async function pedirJSON({ system, contenido, schema, modelo = config.ai.
 export async function pedirTexto({ system, messages, modelo = config.ai.modeloLead, complete, onUsage }) {
   const llamar = complete || ((req) => getClient().messages.create(req, { timeout: 60000, maxRetries: 2 }));
   const res = await llamar({ model: modelo, max_tokens: 2000, system, messages });
-  onUsage?.(res.usage || {}, modelo);
+  for (const f of usosDe(res, modelo)) onUsage?.(f);
   return (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
 }
 

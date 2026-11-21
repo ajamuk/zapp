@@ -284,34 +284,46 @@ export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
 }
 
 // ---------- Consumo de la IA ----------
-// Precios por millón de tokens en dólares (la API cobra en USD): entrada, salida, lectura de caché, escritura de caché
-export const PRECIOS = {
-  'claude-sonnet-5-5': [2, 10, 0.10, 2.5], 'claude-opus-5-5': [4, 20, 0.20, 5], 'claude-haiku-5-5': [0.10, 0.50, 0.01, 0.125],
-  'claude-sonnet-5': [2, 10, 0.20, 2.5], 'claude-opus-5': [5, 25, 0.50, 6.25], 'claude-fable-5-2': [8, 40, 0.20, 10],
-};
+import { costeRun } from './precios.js';
+export { PRECIOS, costeRun } from './precios.js';
 const MOTIVOS = { bateria: 'Batería de pruebas', 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
 
-export function costeRun(r) {
-  const p = PRECIOS[r.modelo] || PRECIOS['claude-sonnet-5-5'];
-  return ((r.tokens_in || 0) * p[0] + (r.tokens_out || 0) * p[1] + (r.tokens_cache_read || 0) * p[2] + (r.tokens_cache_write || 0) * p[3]) / 1e6;
-}
+const motivoDe = (r) => (String(r.conversation_id || '').startsWith('prueba-') ? 'Probar IA' : MOTIVOS[r.motivo] || r.motivo || 'Otros');
+const nombreModelo = (m) => String(m || 'desconocido').replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1').replace(/^./, (c) => c.toUpperCase());
 
-/** Consumo por mes y por para qué se usó (respuestas, seguimientos, reportes…), en dólares y euros aproximados. */
-export function consumo(db, { meses = 6, eurPorUsd = Number(process.env.EUR_POR_USD) || 0.92 } = {}) {
-  const runs = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, motivo, modelo, conversation_id, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write
-    FROM ai_runs WHERE datetime(created_at) >= datetime('now', 'start of month', ?)`).all(`-${Math.max(0, Math.min(24, Number(meses) || 6) - 1)} months`);
-  const out = {};
+/**
+ * Consumo por mes, por para qué se usó (respuestas, seguimientos, reportes, Probar IA, batería…) y por modelo, y
+ * día a día (UTC, como la factura de Anthropic) de los últimos `dias`. En dólares, que es lo que cobra la API,
+ * y en euros aproximados. Cada llamada guarda su coste al hacerse, con el modelo que respondió de verdad.
+ */
+export function consumo(db, { meses = 6, dias = 31, eurPorUsd = Number(process.env.EUR_POR_USD) || 0.92 } = {}) {
+  const runs = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, date(created_at) dia, * FROM ai_runs
+    WHERE datetime(created_at) >= datetime('now', 'start of month', ?) AND (tokens_in > 0 OR tokens_out > 0 OR tokens_cache_read > 0 OR tokens_cache_write > 0 OR IFNULL(coste_usd, 0) > 0)`)
+    .all(`-${Math.max(0, Math.min(24, Number(meses) || 6) - 1)} months`);
+  const desde = new Date(Date.now() - (Math.max(1, Math.min(92, Number(dias) || 31)) - 1) * 864e5).toISOString().slice(0, 10);
+  const suma = (o, k, c) => { const x = (o[k] ??= { usd: 0, llamadas: 0 }); x.usd += c; x.llamadas++; return x; };
+  const out = {}; const porDia = {};
+  let respaldos = 0;
   for (const r of runs) {
-    const pruebas = String(r.conversation_id || '').startsWith('prueba-');
-    const motivo = pruebas ? 'Probar IA' : MOTIVOS[r.motivo] || r.motivo || 'Otros';
-    const m = (out[r.mes] ??= { mes: r.mes, usd: 0, llamadas: 0, motivos: {} });
-    const c = costeRun(r);
+    const c = costeRun(r); const motivo = motivoDe(r); const modelo = nombreModelo(r.modelo);
+    const m = (out[r.mes] ??= { mes: r.mes, usd: 0, llamadas: 0, motivos: {}, modelos: {} });
     m.usd += c; m.llamadas++;
-    (m.motivos[motivo] ??= { usd: 0, llamadas: 0 }); m.motivos[motivo].usd += c; m.motivos[motivo].llamadas++;
+    const mm = suma(m.motivos, motivo, c); suma((mm.modelos ??= {}), modelo, c);
+    suma(m.modelos, modelo, c);
+    if (r.respaldo) respaldos++;
+    if (r.dia >= desde) { const d = (porDia[r.dia] ??= { dia: r.dia, usd: 0, modelos: {}, motivos: {} }); d.usd += c; suma(d.modelos, modelo, c); suma(d.motivos, motivo, c); }
   }
-  const lista = Object.values(out).sort((a, b) => b.mes.localeCompare(a.mes)).map((m) => ({ ...m, eur: m.usd * eurPorUsd, motivos: Object.entries(m.motivos).map(([k, v]) => ({ motivo: k, ...v, eur: v.usd * eurPorUsd })).sort((a, b) => b.usd - a.usd) }));
+  const lista = (o) => Object.entries(o).map(([k, v]) => ({ nombre: k, ...v, eur: v.usd * eurPorUsd, ...(v.modelos ? { modelos: lista(v.modelos) } : {}) })).sort((a, b) => b.usd - a.usd);
   const chatsMes = Object.fromEntries(db.prepare(`SELECT strftime('%Y-%m', created_at) mes, count(*) n FROM conversations WHERE id NOT LIKE 'prueba-%' GROUP BY mes`).all().map((x) => [x.mes, x.n]));
-  return { eurPorUsd, meses: lista.map((m) => ({ ...m, chats: chatsMes[m.mes] || 0, eurPorChat: chatsMes[m.mes] ? (m.usd * eurPorUsd) / chatsMes[m.mes] : null })) };
+  return {
+    eurPorUsd, respaldos,
+    meses: Object.values(out).sort((a, b) => b.mes.localeCompare(a.mes)).map((m) => ({
+      mes: m.mes, usd: m.usd, eur: m.usd * eurPorUsd, llamadas: m.llamadas,
+      motivos: lista(m.motivos).map((x) => ({ ...x, motivo: x.nombre })), modelos: lista(m.modelos),
+      chats: chatsMes[m.mes] || 0, eurPorChat: chatsMes[m.mes] ? (m.usd * eurPorUsd) / chatsMes[m.mes] : null,
+    })),
+    dias: Object.values(porDia).sort((a, b) => b.dia.localeCompare(a.dia)).map((d) => ({ dia: d.dia, usd: d.usd, modelos: lista(d.modelos), motivos: lista(d.motivos) })),
+  };
 }
 
 // ---------- Exportar ----------

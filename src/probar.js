@@ -45,7 +45,8 @@ export const rutaPruebas = () => process.env.PRUEBAS_DB_PATH || (config.dbPath =
 export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opciones }) {
   const r = express.Router();
   let pruebasRepo = pruebasInicial;
-  const pruebas = () => (pruebasRepo ??= crearRepo(openDb(rutaPruebas())));
+  // Lo que gasta Sofía en las pruebas también se apunta en la base real, para que Consumo cuadre con la factura
+  const pruebas = () => (pruebasRepo ??= crearRepo(openDb(rutaPruebas()), { espejo: { db: repo.db, campos: {} } }));
   const enCurso = new Set();
 
   const ahoraDe = (conv) => {

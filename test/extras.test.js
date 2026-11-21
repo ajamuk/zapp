@@ -189,7 +189,7 @@ test('registro de actividad: quién cambió qué', async () => {
 
 test('resumen legible de las instrucciones: se guarda con la versión', async () => {
   const db = openDb(':memory:'); let n = 0;
-  const completeJSON = async () => { n++; return { content: [{ type: 'text', text: JSON.stringify({ apartados: [{ titulo: 'Lo que nunca hace', puntos: ['inventar precios'] }, { titulo: 'Quién es y cómo habla', puntos: ['Sofía, cercana'] }] }) }] }; };
+  const completeJSON = async () => { n++; return { model: 'claude-opus-5-5', usage: { input_tokens: 5000, output_tokens: 800 }, content: [{ type: 'text', text: JSON.stringify({ apartados: [{ titulo: 'Lo que nunca hace', puntos: ['inventar precios'] }, { titulo: 'Quién es y cómo habla', puntos: ['Sofía, cercana'] }] }) }] }; };
   const r = await resumenInstrucciones(db, { completeJSON });
   assert.deepEqual(r.apartados.map((a) => a.titulo), ['Quién es y cómo habla', 'Lo que nunca hace']);
   await resumenInstrucciones(db, { completeJSON });

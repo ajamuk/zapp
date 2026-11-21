@@ -309,11 +309,7 @@ export class Setter {
         system, messages, complete: this.complete,
         ejecutarHerramienta: (n, i) => this.herramienta(conv, n, i, efectos),
         onHerramienta: (h) => efectos.herramientas.push(h),
-        onUsage: (u, ms) => this.repo.logRun({
-          conversation_id: convId, motivo, modelo: config.ai.model, ms, ...this.versiones(),
-          tokens_in: u.input_tokens || 0, tokens_out: u.output_tokens || 0,
-          tokens_cache_read: u.cache_read_input_tokens || 0, tokens_cache_write: u.cache_creation_input_tokens || 0,
-        }),
+        onUsage: (uso, ms) => this.repo.logRun({ conversation_id: convId, motivo, ms, ...this.versiones(), ...uso }),
       }));
     } catch (e) {
       this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: e.message });
@@ -492,11 +488,7 @@ export class Setter {
     const { respuesta } = await runTurn({
       system, messages, complete: this.complete,
       ejecutarHerramienta: async (n, i) => (consulta[n] ? consulta[n](i) : { ok: false, error: 'Ahora solo estás redactando un mensaje: no uses esta herramienta.' }),
-      onUsage: (u, ms) => this.repo.logRun({
-        conversation_id: convId, motivo: 'redactar-seguimiento', modelo: config.ai.model, ms,
-        tokens_in: u.input_tokens || 0, tokens_out: u.output_tokens || 0,
-        tokens_cache_read: u.cache_read_input_tokens || 0, tokens_cache_write: u.cache_creation_input_tokens || 0,
-      }),
+      onUsage: (uso, ms) => this.repo.logRun({ conversation_id: convId, motivo: 'redactar-seguimiento', ms, ...uso }),
     });
     return (respuesta.mensajes || []).map((m) => m.trim()).filter(Boolean).join('\n');
   }

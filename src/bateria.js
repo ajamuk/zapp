@@ -13,12 +13,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { openDb, repo as crearRepo } from './db.js';
+import { openDb, repo as crearRepo, apuntarUso } from './db.js';
 import { Setter } from './setter.js';
 import { Etiquetador } from './etiquetas.js';
 import { pedirJSON, pedirTexto } from './llm.js';
 import * as docs from './documentos.js';
-import { costeRun } from './panel.js';
+import { costeRun } from './precios.js';
 import { comprobar, horasValidas } from '../scripts/evaluar.js';
 import { normalizarSede } from './knowledge.js';
 
@@ -141,11 +141,13 @@ const QUIEN = { lead: 'LEAD', ia: 'SOFÍA', humano: 'EQUIPO' };
  * Pasa un caso una vez. Devuelve { pasa, fallosAuto, criterios, conversacion, estado, usd }.
  * `borradores`: { prompt: id, negocio: id } para probar versiones que no están en producción.
  */
-export async function ejecutarCaso(db, caso, { complete, completeLead, completeJSON, borradores = null } = {}) {
-  const tmp = crearRepo(openDb(':memory:'));
+export async function ejecutarCaso(db, caso, { complete, completeLead, completeJSON, borradores = null, pasada = null } = {}) {
+  // Todo lo que se gasta (Sofía, lead simulado y juez) se apunta también en la base real como «Batería de pruebas»
+  const campos = { conversation_id: pasada ? `bateria-${pasada}` : 'bateria', motivo: 'bateria' };
+  const tmp = crearRepo(openDb(':memory:'), { espejo: { db, campos } });
   const id = 'prueba-bateria';
   let usd = 0;
-  const sumar = (u, modelo) => { usd += costeRun({ modelo, tokens_in: u.input_tokens, tokens_out: u.output_tokens, tokens_cache_read: u.cache_read_input_tokens, tokens_cache_write: u.cache_creation_input_tokens }); };
+  const sumar = (uso) => { usd += costeRun(uso); apuntarUso(db, { ...uso, ...campos }); };
   const avisos = [];
   const ghl = { sendMessage: async () => ({ messageId: null }), enviarAdjunto: async () => ({}), enviarPorPlantilla: async () => ({}), addTags: async () => {}, removeTags: async () => {}, assign: async () => {}, addNote: async () => {}, getContact: async () => ({ contact: {} }) };
   const etiquetas = new Etiquetador({ repo: tmp, catalogo: db, enviarMeta: async () => null }); // sin GHL ni Meta
@@ -269,7 +271,7 @@ export function lanzarPasada(db, { borradores = null, repeticiones = 2, filtro =
   const obrero = async () => {
     for (let t; !ctl.cancelada && (t = cola.shift());) {
       const [caso, rep] = t; let r = null; let error = null;
-      try { r = await ejecutarCaso(db, caso, { complete, completeLead, completeJSON, borradores: Object.keys(bor).length ? bor : null }); } catch (e) { error = e.message; }
+      try { r = await ejecutarCaso(db, caso, { complete, completeLead, completeJSON, borradores: Object.keys(bor).length ? bor : null, pasada: id }); } catch (e) { error = e.message; }
       // Sin saldo o sin permiso en la API no hay nada que medir: se para la pasada en vez de apuntar fallos que no son de Sofía.
       if (error && SIN_SERVICIO.test(error)) { ctl.cancelada = true; ctl.error = 'La IA no está disponible (saldo agotado, límite mensual de gasto alcanzado o clave sin permiso). La pasada se ha parado: los casos que faltan no cuentan.'; return; }
       ins.run(id, caso.id, rep, r?.pasa ? 1 : 0, JSON.stringify(r?.fallosAuto || []), JSON.stringify(r?.criterios || []), JSON.stringify(r?.conversacion || []), JSON.stringify(r?.estado || {}), error);

@@ -19,6 +19,7 @@ import * as meta from './meta.js';
 import * as actividad from './actividad.js';
 import * as bateria from './bateria.js';
 import { resumenInstrucciones } from './resumen.js';
+import { facturaAnthropic } from './conciliacion.js';
 import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
@@ -40,7 +41,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
   app.use((req, res, next) => (req.path.endsWith('/adjunto') ? jsonGrande : jsonNormal)(req, res, next));
-  const pruebas = crearRepo(openDb(':memory:'));
+  const pruebas = crearRepo(openDb(':memory:'), { espejo: { db: repo.db, campos: {} } }); // su gasto cuenta en Consumo
   const enCurso = new Set();
 
   app.get('/panel', (_req, res) => res.sendFile(panelPath));
@@ -272,7 +273,9 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   // ---------- Instrucciones de Sofía (prompt y base de conocimiento, con versiones) ----------
   admin.get('/panel/estadisticas', (req, res) => res.json(panel.estadisticas(db, { dias: req.query.dias, sede: req.query.sede || '', canal: req.query.canal || '' })));
-  admin.get('/panel/consumo', (req, res) => res.json(panel.consumo(db, { meses: req.query.meses })));
+  admin.get('/panel/consumo', (req, res) => res.json(panel.consumo(db, { meses: req.query.meses, dias: req.query.dias })));
+  // Lo que factura Anthropic a la API key de zapp (si hay ANTHROPIC_ADMIN_KEY), para compararlo con Consumo
+  admin.get('/panel/consumo/anthropic', async (req, res) => res.json(await facturaAnthropic({ dias: req.query.dias })));
   admin.get('/panel/exportar', (req, res) => {
     const formato = req.query.formato === 'mensajes' ? 'mensajes' : 'chats';
     res.type('text/csv; charset=utf-8').set('Content-Disposition', `attachment; filename="sofia_${formato}_${new Date().toISOString().slice(0, 10)}.csv"`)

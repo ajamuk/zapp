@@ -6,15 +6,14 @@
 //   2. Comprobación: repite la conversación hasta ese punto con las instrucciones cambiadas y otro análisis juzga
 //      si la nueva respuesta arregla lo reportado sin estropear nada. Si no, un segundo intento con lo aprendido.
 //   3. Aplicar (un clic en el panel): nueva versión del prompt o de la base de conocimiento en producción.
-import { openDb, repo as crearRepo } from './db.js';
+import { openDb, repo as crearRepo, apuntarUso } from './db.js';
 import { Setter } from './setter.js';
 import { pedirJSON } from './llm.js';
 import * as docs from './documentos.js';
 import { casoDesdeReporte } from './bateria.js';
 
 /** Apunta en ai_runs lo que gasta el optimizador (para Consumo). */
-const registrar = (db, id, motivo) => (u, modelo) => db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms)
-  VALUES (?, ?, ?, ?, ?, ?, ?, 0)`).run(`reporte-${id}`, motivo, modelo, u.input_tokens || 0, u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0, u.output_tokens || 0);
+const registrar = (db, id, motivo) => (uso) => apuntarUso(db, { conversation_id: `reporte-${id}`, motivo, ...uso });
 const json = (t, d = null) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 export const ESTADOS = {
   recibido: 'Recibido', analizando: 'Analizando…', duda: 'Necesita un dato', propuesto: 'Cambio listo para aplicar', aplicado: 'Aplicado',
@@ -119,7 +118,8 @@ function contenidoDiagnostico(r, textos, intentoPrevio) {
  * Sofía contestaría ahora. Corre en una base temporal en memoria: no toca ningún chat.
  */
 export async function repetir(r, textos, { complete, catalogo }) {
-  const tmp = crearRepo(openDb(':memory:'));
+  // Lo que gasta Sofía al repetir la conversación se apunta también en la base real (Consumo), aunque falle
+  const tmp = crearRepo(openDb(':memory:'), { espejo: { db: catalogo, campos: { conversation_id: `reporte-${r.id}`, motivo: 'reporte-comprobacion' } } });
   const meta = r.contexto.meta || {};
   tmp.upsertConv({ id: 'reporte', contact_id: 'reporte', channel: meta.channel || 'whatsapp', nombre: meta.nombre || null });
   tmp.updateConv('reporte', { sede: meta.sede || null, tipo: meta.tipo || 'captacion', fase: meta.fase || null });
@@ -130,11 +130,6 @@ export async function repetir(r, textos, { complete, catalogo }) {
   for (const m of previos) tmp.addMessage({ conversation_id: 'reporte', autor: m.autor, texto: m.texto, adjunto: m.adjunto || null, transcripcion: m.transcripcion || null });
   const setter = new Setter({ repo: tmp, catalogo, complete, live: true, sleep: async () => {}, ghl: {}, aimharder: {} });
   const texto = await setter.redactar('reporte', '', { docs: textos });
-  // Lo que gastó Sofía al repetir la conversación se apunta en la base real (Consumo)
-  for (const x of tmp.db.prepare('SELECT * FROM ai_runs').all()) {
-    catalogo.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error)
-      VALUES (?, 'reporte-comprobacion', ?, ?, ?, ?, ?, ?, ?)`).run(`reporte-${r.id}`, x.modelo, x.tokens_in, x.tokens_cache_read, x.tokens_cache_write, x.tokens_out, x.ms, x.error);
-  }
   return texto;
 }
 

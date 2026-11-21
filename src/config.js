@@ -28,6 +28,10 @@ export const config = {
   adminToken: env('ADMIN_TOKEN'),
   ai: {
     apiKey: env('ANTHROPIC_API_KEY'),
+    // Opcional: clave de administrador (sk-ant-admin…) para comparar Consumo con lo que factura Anthropic. Solo lee costes.
+    adminKey: env('ANTHROPIC_ADMIN_KEY'),
+    // Opcional: id de la API key de zapp (apikey_…). Si falta, se busca entre las claves de la organización por su pista.
+    apiKeyId: env('ANTHROPIC_API_KEY_ID'),
     model: env('AI_MODEL', 'claude-sonnet-5-5'),
     // Modelo que analiza los reportes y propone cambios en las instrucciones (no habla con leads)
     modeloOptimizador: env('OPTIMIZADOR_MODEL', 'claude-opus-5-5'),

@@ -335,7 +335,12 @@ const COLUMNAS_NUEVAS = {
   conv_etiquetas: { ghl_sync: 'INTEGER NOT NULL DEFAULT 0' }, // 1 = confirmada en GHL
   reglas_seguimiento: { recurso_id: 'INTEGER' },
   documentos: { resumen: 'TEXT', resumen_negocio_v: 'INTEGER' }, // resumen legible del prompt (Mi Setter IA)
-  ai_runs: { prompt_v: 'INTEGER', negocio_v: 'INTEGER' },  // archivo que se adjunta al enviarlo
+  ai_runs: {
+    prompt_v: 'INTEGER', negocio_v: 'INTEGER',
+    tokens_cache_write_1h: 'INTEGER NOT NULL DEFAULT 0', // escritura de caché de 1 hora (se cobra al doble que la entrada)
+    coste_usd: 'REAL',            // coste calculado al hacer la llamada, con el modelo que respondió (NULL en filas antiguas)
+    respaldo: 'INTEGER NOT NULL DEFAULT 0', // 1 = respondió el modelo de respaldo porque el principal se negó
+  },  // archivo que se adjunta al enviarlo
   scheduled: {
     tipo: 'TEXT',                  // silencio | etiqueta | cita | largo-plazo | manual | lanzamiento
     texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
@@ -353,7 +358,18 @@ function migrar(db) {
   db.exec(`UPDATE scheduled SET tipo = CASE WHEN regla_id LIKE 'largo-plazo%' THEN 'largo-plazo' ELSE 'silencio' END WHERE tipo IS NULL`);
 }
 
-export function repo(db) {
+/** Apunta una llamada a la IA (o un fallo) en ai_runs. */
+export function apuntarUso(db, r) {
+  return db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_cache_write_1h, tokens_out, coste_usd, respaldo, ms, error, prompt_v, negocio_v)
+    VALUES (@conversation_id, @motivo, @modelo, @tokens_in, @tokens_cache_read, @tokens_cache_write, @tokens_cache_write_1h, @tokens_out, @coste_usd, @respaldo, @ms, @error, @prompt_v, @negocio_v)`)
+    .run({ conversation_id: null, motivo: null, modelo: null, tokens_in: 0, tokens_cache_read: 0, tokens_cache_write: 0, tokens_cache_write_1h: 0, tokens_out: 0, coste_usd: null, respaldo: 0, ms: 0, error: null, prompt_v: null, negocio_v: null, ...r });
+}
+
+/**
+ * Repositorio sobre una base. `espejo`: { db, campos } para bases de pruebas: cada llamada a la IA se copia
+ * también en la base real (con `campos` sobrescritos, p. ej. otro motivo), para que Consumo cuadre con la factura.
+ */
+export function repo(db, { espejo = null } = {}) {
   const now = () => new Date().toISOString();
   return {
     db,
@@ -415,10 +431,11 @@ export function repo(db) {
     dueScheduled: (at) => db.prepare(`SELECT * FROM scheduled WHERE estado = 'pendiente' AND due_at <= ? ORDER BY due_at`).all(at),
     finishScheduled: (id, estado, detalle = null) =>
       db.prepare('UPDATE scheduled SET estado = ?, detalle = ? WHERE id = ?').run(estado, detalle, id),
-    logRun: (r) =>
-      db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms, error, prompt_v, negocio_v)
-        VALUES (@conversation_id, @motivo, @modelo, @tokens_in, @tokens_cache_read, @tokens_cache_write, @tokens_out, @ms, @error, @prompt_v, @negocio_v)`)
-        .run({ conversation_id: null, tokens_in: 0, tokens_cache_read: 0, tokens_cache_write: 0, tokens_out: 0, ms: 0, error: null, prompt_v: null, negocio_v: null, ...r }),
+    logRun: (r) => {
+      apuntarUso(db, r);
+      // Bases de pruebas (Probar IA, batería, comprobación de reportes): lo que se gasta también cuenta en Consumo
+      if (espejo && (r.coste_usd || r.tokens_in || r.tokens_out)) apuntarUso(espejo.db, { ...r, ...espejo.campos, error: null });
+    },
     reemplazarSocios: db.transaction((sede, filas) => {
       db.prepare('DELETE FROM socios WHERE sede = ?').run(sede);
       const ins = db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)');
