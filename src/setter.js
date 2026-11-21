@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede } from './knowledge.js';
 import { validarDatos } from './aimharder/alta-navegador.js';
+import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
@@ -509,12 +510,9 @@ export class Setter {
     }
   }
 
-  /** Plazas de apertura de El Cañaveral ya ocupadas: las que apunta el equipo en Ajustes más las altas que ha tramitado Sofía. */
+  /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */
   plazasCanaveral(sinConv = null) {
-    const base = leerAjustes(this.repo).canaveralPlazasOcupadas || 0;
-    const propias = this.repo.db.prepare(`SELECT count(DISTINCT conversation_id) AS n FROM altas
-      WHERE json_extract(datos, '$.sede') = 'el_canaveral' AND estado != 'rechazada' AND conversation_id != ?`).get(sinConv || '').n;
-    return base + propias;
+    return plazasCanaveral(this.repo, { sinConv }).total;
   }
 
   /**

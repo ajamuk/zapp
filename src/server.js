@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { parseWebhook } from './ghl.js';
 import { Setter } from './setter.js';
 import path from 'node:path';
+import { plazasCanaveral } from './canaveral.js';
 import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
@@ -395,7 +396,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     estados: Object.keys(panel.ESTADOS),
   }));
 
-  admin.get('/panel/ajustes', (_req, res) => res.json(leerAjustes(repo)));
+  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), canaveral: plazasCanaveral(repo) }));
   admin.put('/panel/ajustes', (req, res) => {
     try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
   });
