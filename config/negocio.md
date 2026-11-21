@@ -51,6 +51,29 @@ Solo si el lead pregunta por un bono. Validez: 4 meses para usar las 10 clases.
 | Getafe | 119 € | 119 € |
 | Las Rosas | 130 € | 130 € |
 
+## El Cañaveral: oferta de apertura
+
+Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de febrero de 2027**. Web: https://crossfitmetropolitano.com/oferta-apertura-canaveral/
+
+- Sin matrícula ni permanencia. Cuotas con impuestos incluidos.
+- **Descuento de apertura** en febrero, marzo y abril de 2027; desde mayo se paga la cuota habitual.
+- **200 plazas de apertura en cuatro tramos**: plazas 1 a 10 → −50 % · plazas 11 a 35 → −30 % · plazas 36 a 110 → −20 % · plazas 111 a 200 → −10 %.
+- El tramo se asigna **por orden de primer pago completado**. Pedir información no reserva plaza, no garantiza tramo y no cobra nada. El pago de la primera mensualidad **todavía no está habilitado**; las plazas que quedan en cada tramo están por confirmar (no dar cifras).
+- **Regalos en cualquier tramo**: comba profesional (se entrega en la apertura) y plaza en un seminario exclusivo (fecha y hora se confirmarán).
+- Horarios: aún no publicados; los de CrossFit + HYROX están pendientes de confirmar. Se pregunta la disponibilidad del lead y se anota.
+- Academy para empezar desde cero (en El Cañaveral también hay Academy de 1 día por semana); quien ya entrena, CrossFit + HYROX.
+- Todavía no tiene fotos ni reseñas propias: las que se enseñan son de Getafe y Parla.
+
+| Tarifa de El Cañaveral | Clases/mes | Cuota habitual (desde mayo) | −50 % | −30 % | −20 % | −10 % |
+| --- | --- | --- | --- | --- | --- | --- |
+| Academy 1 día | 5 | 60 € | 30 € | 42 € | 48 € | 54 € |
+| Academy 2 días | 9 | 95 € | 47,50 € | 66,50 € | 76 € | 85,50 € |
+| Academy 3 días | 13 | 105 € | 52,50 € | 73,50 € | 84 € | 94,50 € |
+| CrossFit + HYROX S | 5 | 60 € | 30 € | 42 € | 48 € | 54 € |
+| CrossFit + HYROX M | 9 | 95 € | 47,50 € | 66,50 € | 76 € | 85,50 € |
+| CrossFit + HYROX L | 13 | 105 € | 52,50 € | 73,50 € | 84 € | 94,50 € |
+| CrossFit + HYROX XL | 26 | 120 € | 60 € | 84 € | 96 € | 108 € |
+
 ## Sedes
 
 | Sede | Dirección | Mapa | Notas |
@@ -58,7 +81,7 @@ Solo si el lead pregunta por un bono. Validez: 4 meses para usar las 10 clases.
 | Parla | Calle Roma 18, 28983 Parla, Madrid | https://maps.app.goo.gl/XK2Rhy9pxpAgD9WB6 | Única sede con clase de prueba (ver abajo). Tiene Wellhub. |
 | Getafe | Avenida de la Paz 35, El Bercial, Getafe, Madrid | https://maps.app.goo.gl/yoHMipFhVvr27gJd6 | Sin Open Box ni Halterofilia. Sin Wellhub. |
 | Las Rosas | Calle de Sofía 30, San Blas, Madrid | https://maps.app.goo.gl/VjRp2yUoz47hb9TF6 | Sin Wellhub. |
-| El Cañaveral | C. Tolerancia, 46, Vicálvaro, 28052 Madrid | — | Abre el 1 de febrero de 2027. Ofertas de preapertura en preparación: no dar precios ni condiciones. |
+| El Cañaveral | Calle Tolerancia, 46, 28052 Madrid | https://maps.app.goo.gl/GxATh659gSkUXxDD9 | Abre el 1 de febrero de 2027. Tiene oferta de apertura (ver «El Cañaveral: oferta de apertura»). |
 
 - En todas hay duchas y vestuarios. Se aparca bien en la zona.
 

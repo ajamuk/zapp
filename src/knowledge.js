@@ -79,7 +79,7 @@ const enFranja = (hora, franja) => {
 export function consultarHorarios({ sede, modalidad, franja }) {
   const s = normalizarSede(sede);
   const m = normalizarModalidad(modalidad);
-  if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral abre el 1 de febrero de 2027; aún no hay horario publicado.' };
+  if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral abre el 1 de febrero de 2027 y sus horarios aún no están publicados (los de CrossFit + HYROX, pendientes de confirmar). Pregunta su disponibilidad (mañana o tarde) y anótala; no inventes horas.' };
   if (!s || !m) return { ok: false, error: 'Falta la sede (parla, getafe, las_rosas) o la modalidad (academy, crossfit, hyrox, open_box, halterofilia, crossfit_partner).' };
   if (!knowledge.horarios[s]?.[m]) return { ok: true, sede: s, modalidad: m, dias: {}, aviso: `En esta sede no hay ${m.replace('_', ' ')}.` };
   const f = franja ? (String(franja).toLowerCase().startsWith('m') ? 'manana' : 'tarde') : null;
@@ -105,12 +105,30 @@ export function tarifaRecomendada(familia, dias) {
   return 'XL';
 }
 
+/** El Cañaveral (abre el 1 feb 2027): cuota habitual y precio de apertura de febrero a abril según el tramo. */
+function tarifasCanaveral(fam, dias) {
+  const o = knowledge.tarifas.apertura_el_canaveral;
+  const euros = (n) => Math.round(n * 100) / 100;
+  const n = Number(dias);
+  const claves = fam === 'academy' ? ['academy_1', 'academy_2', 'academy_3'] : fam === 'crossfit_hyrox' ? ['S', 'M', 'L', 'XL'] : ['academy_1', 'academy_2', 'academy_3', 'S', 'M', 'L', 'XL'];
+  const opciones = claves.map((k) => ({
+    clave: k, descripcion: k.startsWith('academy') ? `Academy ${k.at(-1)} día${k.at(-1) === '1' ? '' : 's'} por semana` : `CrossFit + HYROX ${k}`, clases_mes: o.clases_mes[k],
+    euros_mes_habitual_desde_mayo: o.habitual[k],
+    euros_mes_apertura_feb_a_abr: Object.fromEntries(o.tramos.map((t) => [`-${t.descuento}% (plazas ${t.plazas})`, euros(o.habitual[k] * (1 - t.descuento / 100))])),
+  }));
+  const rec = !n ? null : fam === 'academy' ? `academy_${Math.max(1, Math.min(3, n))}` : fam === 'crossfit_hyrox' ? (n <= 1 ? 'S' : n === 2 ? 'M' : n === 3 ? 'L' : 'XL') : null;
+  return {
+    ok: true, sede: 'el_canaveral', familia: fam || 'todas', opciones, recomendada: rec ? opciones.find((x) => x.clave === rec) : null,
+    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. El tramo se asigna por orden de primer pago completado y el pago aún no está habilitado: no garantices tramo ni plaza, ni digas cuántas quedan (está por confirmar). Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
+  };
+}
+
 /** Tarifas oficiales de una sede y familia; con días devuelve la recomendada. */
 export function consultarTarifas({ sede, familia, dias_por_semana }) {
   const s = normalizarSede(sede);
-  if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral: ofertas de preapertura en preparación; no dar precios.' };
   const mod = normalizarModalidad(familia);
   const fam = mod === 'academy' ? 'academy' : ['crossfit', 'hyrox'].includes(mod) || String(familia).includes('crossfit') ? 'crossfit_hyrox' : null;
+  if (s === 'el_canaveral') return tarifasCanaveral(fam, dias_por_semana);
   if (!s || !fam) return { ok: false, error: 'Falta la sede o la familia (academy o crossfit/hyrox).' };
   const t = knowledge.tarifas[s];
   const desc = knowledge.tarifas.descripciones;

@@ -188,10 +188,11 @@
   "apertura": "hola, es verdad que abrís en el cañaveral? cuánto va a costar?",
   "criterios": [
    "Dice que El Cañaveral abre el 1 de febrero de 2027",
-   "No da precios ni condiciones de El Cañaveral, aunque el lead insista",
-   "No inventa ofertas de preapertura"
+   "Da precios correctos de El Cañaveral: cuota habitual (Academy 60/95/105 €, CrossFit + HYROX S 60, M 95, L 105, XL 120 €) y/o los de apertura con descuento de febrero a abril",
+   "No garantiza un tramo de descuento ni una plaza, ni dice cuántas plazas quedan",
+   "No inventa horarios de El Cañaveral ni da precios de otra sede como si fueran de allí"
   ],
-  "turnos": 3,
+  "turnos": 4,
   "canal": "whatsapp"
  },
  {
@@ -379,5 +380,21 @@
   "turnos": 2,
   "canal": "whatsapp",
   "grupo": "reserva"
+ },
+ {
+  "id": "canaveral-apuntarse",
+  "nombre": "Quiere apuntarse ya a El Cañaveral",
+  "tema": "canaveral",
+  "grupo": "reserva",
+  "perfil": "Te llamas Lucía, vives en El Cañaveral, nunca has hecho CrossFit. Has visto la oferta del 50 % y quieres apuntarte ya para asegurarte el descuento. Quieres ir 2 días por semana. Si te dicen que aún no se puede pagar, preguntas cómo te aseguras la plaza.",
+  "apertura": "hola! he visto lo del 50% en el cañaveral, quiero apuntarme ya, qué tengo que hacer?",
+  "criterios": [
+   "Explica que el descuento se asigna por orden de primer pago completado y que el pago todavía no está habilitado",
+   "No dice que el alta o la plaza quedan hechas o reservadas, ni garantiza el 50 %",
+   "Da el precio de Academy 2 días en El Cañaveral (95 € habitual; 47,50 € con el 50 %, o los otros tramos)",
+   "Deja al lead apuntado como interesado (lo dice y/o pone la etiqueta o avisa al equipo) y le explica que le escribirán cuando se abra"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp"
  }
 ]

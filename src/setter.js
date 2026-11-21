@@ -512,6 +512,7 @@ export class Setter {
     // Un alta ya hecha no se repite (duplicaría la tarifa y el recibo en AimHarder)
     if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
     const sede = normalizarSede(datos.sede);
+    if (sede === 'el_canaveral') return { ok: false, error: 'En El Cañaveral todavía no se pueden tramitar altas: el pago de la primera mensualidad aún no está habilitado. Dile que le dejas apuntado como interesado y que el equipo le escribe en cuanto se abra; no prometas tramo ni plaza.' };
     const telefono = datos.telefono || conv.telefono || '';
     const d = { ...datos, sede, telefono, canal: conv.channel };
     delete d.avisar_lead;

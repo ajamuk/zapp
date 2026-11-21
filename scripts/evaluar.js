@@ -39,7 +39,6 @@ export function comprobar(caso, mensajes) {
     const malas = (mensajes.filter((x) => !/se abren|reservar|se publica/i.test(x)).join('\n').match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0')).filter((h) => !validas.has(h));
     if (malas.length) fallos.push(`horas que no existen en ${sede}: ${[...new Set(malas)].join(', ')}`);
   }
-  if (/cañaveral/i.test(todo) && /€/.test(texto)) fallos.push('da precios de El Cañaveral');
   return fallos;
 }
 

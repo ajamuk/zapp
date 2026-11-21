@@ -28,7 +28,13 @@ test('tarifas: recomienda una y no mezcla sedes', () => {
   assert.equal(r.opciones.length, 4);
   const a = consultarTarifas({ sede: 'las_rosas', familia: 'academy', dias_por_semana: 3 });
   assert.equal(a.recomendada.euros_mes, 105);
-  assert.equal(consultarTarifas({ sede: 'el_canaveral', familia: 'academy' }).ok, false);
+  // El Cañaveral: cuota habitual y precio de apertura por tramo; sin alta ni primer recibo todavía
+  const c = consultarTarifas({ sede: 'el cañaveral', familia: 'academy', dias_por_semana: 2 });
+  assert.equal(c.recomendada.euros_mes_habitual_desde_mayo, 95);
+  assert.equal(c.recomendada.euros_mes_apertura_feb_a_abr['-50% (plazas 1 a 10)'], 47.5);
+  assert.equal(c.opciones.length, 3);
+  assert.equal(consultarTarifas({ sede: 'el_canaveral', familia: 'crossfit' }).opciones.at(-1).euros_mes_apertura_feb_a_abr['-10% (plazas 111 a 200)'], 108);
+  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'academy_2', fecha_inicio: '2027-02-01' }).ok, false);
   assert.equal(tarifaRecomendada('crossfit', 1), 'S');
   assert.equal(tarifaRecomendada('crossfit', 2), 'M');
 });

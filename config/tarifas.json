@@ -1,18 +1,30 @@
 {
   "_nota": "Importes en euros al mes. Usados por la herramienta de tarifas y por el cálculo del primer recibo prorrateado.",
   "parla": {
-    "academy_2": 85, "academy_3": 95,
-    "S": 55, "M": 85, "L": 95, "XL": 105,
+    "academy_2": 85,
+    "academy_3": 95,
+    "S": 55,
+    "M": 85,
+    "L": 95,
+    "XL": 105,
     "bono10": 120
   },
   "getafe": {
-    "academy_2": 89, "academy_3": 99,
-    "S": 57, "M": 89, "L": 99, "XL": 119,
+    "academy_2": 89,
+    "academy_3": 99,
+    "S": 57,
+    "M": 89,
+    "L": 99,
+    "XL": 119,
     "bono10": 119
   },
   "las_rosas": {
-    "academy_2": 95, "academy_3": 105,
-    "S": 60, "M": 95, "L": 105, "XL": 120,
+    "academy_2": 95,
+    "academy_3": 105,
+    "S": 60,
+    "M": 95,
+    "L": 105,
+    "XL": 120,
     "bono10": 130
   },
   "descripciones": {
@@ -23,5 +35,46 @@
     "L": "CrossFit/HYROX · Tarifa L · 13 clases al mes",
     "XL": "CrossFit/HYROX · Tarifa XL",
     "bono10": "Bono de 10 clases (validez 4 meses)"
+  },
+  "apertura_el_canaveral": {
+    "_nota": "Oferta de apertura publicada en crossfitmetropolitano.com/oferta-apertura-canaveral (leída el 21 nov 2026). Cuotas con impuestos incluidos. El descuento se aplica en febrero, marzo y abril de 2027; desde mayo, la cuota habitual.",
+    "apertura": "2027-02-01",
+    "descuento_hasta": "2027-04-30",
+    "tramos": [
+      {
+        "descuento": 50,
+        "plazas": "1 a 10"
+      },
+      {
+        "descuento": 30,
+        "plazas": "11 a 35"
+      },
+      {
+        "descuento": 20,
+        "plazas": "36 a 110"
+      },
+      {
+        "descuento": 10,
+        "plazas": "111 a 200"
+      }
+    ],
+    "habitual": {
+      "academy_1": 60,
+      "academy_2": 95,
+      "academy_3": 105,
+      "S": 60,
+      "M": 95,
+      "L": 105,
+      "XL": 120
+    },
+    "clases_mes": {
+      "academy_1": 5,
+      "academy_2": 9,
+      "academy_3": 13,
+      "S": 5,
+      "M": 9,
+      "L": 13,
+      "XL": 26
+    }
   }
 }
