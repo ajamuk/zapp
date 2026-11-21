@@ -24,7 +24,8 @@ export function leerAjustes(repo) {
     palabrasParar: g.palabrasParar ?? [],                       // si aparecen (lead o equipo), Sofía se pausa en ese chat
     palabrasReanudar: g.palabrasReanudar ?? [],                 // si el equipo las escribe, Sofía vuelve a contestar
     canalesPausa: { whatsapp: g.canalesPausa?.whatsapp ?? false, instagram: g.canalesPausa?.instagram ?? false }, // chats nuevos empiezan pausados
-    horarioDias: g.horarioDias ?? {},                           // { lunes: { desde, hasta } | null } (null = ese día no contesta)
+    horarioDias: g.horarioDias ?? {},
+    canaveralPlazasOcupadas: g.canaveralPlazasOcupadas ?? 0,    // plazas de apertura de El Cañaveral ya ocupadas por otras vías (web, en persona)                           // { lunes: { desde, hasta } | null } (null = ese día no contesta)
   };
 }
 
@@ -56,12 +57,14 @@ export function guardarAjustes(repo, cambio = {}) {
     dias[d] = { desde: v.desde, hasta: v.hasta };
   }
   n.horarioDias = dias;
+  n.canaveralPlazasOcupadas = Number(n.canaveralPlazasOcupadas);
+  if (!Number.isInteger(n.canaveralPlazasOcupadas) || n.canaveralPlazasOcupadas < 0 || n.canaveralPlazasOcupadas > 5000) throw new Error('Plazas ocupadas en El Cañaveral: un número entero, 0 o más');
   if (typeof n.ia_activa !== 'boolean') throw new Error('ia_activa debe ser sí o no');
   if (!hora(n.horaInicio) || !hora(n.horaFin)) throw new Error('Las horas van de 0 a 23');
   if (!(n.minDelay >= 0 && n.maxDelay >= n.minDelay && n.maxDelay <= 600)) throw new Error('Retraso: mínimo ≥ 0, máximo ≥ mínimo y como mucho 600 s');
   if (!(n.typingSpeed >= 1 && n.typingSpeed <= 20)) throw new Error('Velocidad de escritura: de 1 a 20 letras por segundo');
   for (const [id, on] of Object.entries(cambio.seguimientos || {})) repo.db.prepare('UPDATE reglas_seguimiento SET activo = ? WHERE id = ?').run(on ? 1 : 0, id);
-  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias']) {
+  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias', 'canaveralPlazasOcupadas']) {
     if (JSON.stringify(n[k]) !== JSON.stringify(actual[k])) repo.guardarAjuste(k, n[k]);
   }
   return aplicarAjustes(repo);

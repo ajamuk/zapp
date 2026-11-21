@@ -58,7 +58,8 @@ Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de
 - Sin matrícula ni permanencia. Cuotas con impuestos incluidos.
 - **Descuento de apertura** en febrero, marzo y abril de 2027; desde mayo se paga la cuota habitual.
 - **200 plazas de apertura en cuatro tramos**: plazas 1 a 10 → −50 % · plazas 11 a 35 → −30 % · plazas 36 a 110 → −20 % · plazas 111 a 200 → −10 %.
-- El tramo se asigna **por orden de primer pago completado**. Pedir información no reserva plaza, no garantiza tramo y no cobra nada. El pago de la primera mensualidad **todavía no está habilitado**; las plazas que quedan en cada tramo están por confirmar (no dar cifras).
+- El tramo se asigna **por orden de primer pago completado**. Pedir información no reserva plaza, no garantiza tramo y no cobra nada. No se dice cuántas plazas quedan en cada tramo.
+- **Ya se puede hacer el alta**: la fecha de inicio es el 1 de febrero de 2027, el descuento del tramo se aplica a las cuotas de febrero, marzo y abril, y la primera mensualidad (febrero, ya con el descuento) se paga en la fecha del alta, desde la app.
 - **Regalos en cualquier tramo**: comba profesional (se entrega en la apertura) y plaza en un seminario exclusivo (fecha y hora se confirmarán).
 - Horarios: aún no publicados; los de CrossFit + HYROX están pendientes de confirmar. Se pregunta la disponibilidad del lead y se anota.
 - Academy para empezar desde cero (en El Cañaveral también hay Academy de 1 día por semana); quien ya entrena, CrossFit + HYROX.

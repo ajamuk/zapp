@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede, tarifaRecomendada } from '../src/knowledge.js';
+import { consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede, tarifaRecomendada, tramoCanaveral } from '../src/knowledge.js';
 
 test('normaliza sedes', () => {
   assert.equal(normalizarSede('Las Rozas'), 'las_rosas');
@@ -34,7 +34,14 @@ test('tarifas: recomienda una y no mezcla sedes', () => {
   assert.equal(c.recomendada.euros_mes_apertura_feb_a_abr['-50% (plazas 1 a 10)'], 47.5);
   assert.equal(c.opciones.length, 3);
   assert.equal(consultarTarifas({ sede: 'el_canaveral', familia: 'crossfit' }).opciones.at(-1).euros_mes_apertura_feb_a_abr['-10% (plazas 111 a 200)'], 108);
-  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'academy_2', fecha_inicio: '2027-02-01' }).ok, false);
+  // Alta en El Cañaveral: empieza el 1 de febrero aunque se pida antes, con el descuento del tramo que toca
+  const o = calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'academy_2', fecha_inicio: '2026-12-01' });
+  assert.deepEqual([o.fecha_inicio, o.descuento_pct, o.cuota_con_descuento, o.primer_recibo, o.cuota_mensual], ['2027-02-01', 50, 47.5, 47.5, 95]);
+  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'XL', fecha_inicio: '2027-02-01', plazas_ocupadas: 10 }).primer_recibo, 84); // plaza 11: 30 %
+  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'XL', fecha_inicio: '2027-02-01', plazas_ocupadas: 200 }).descuento_pct, 0);
+  assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'M', fecha_inicio: '2027-05-10', plazas_ocupadas: 0 }).descuento_pct, 0); // el descuento acaba en abril
+  assert.deepEqual([0, 9, 10, 34, 35, 109, 110, 199, 200].map((n) => tramoCanaveral(n).descuento), [50, 50, 30, 30, 20, 20, 10, 10, 0]);
+  assert.equal(consultarTarifas({ sede: 'el_canaveral', familia: 'academy', plazas_ocupadas: 40 }).tramo_actual.descuento_pct, 20);
   assert.equal(tarifaRecomendada('crossfit', 1), 'S');
   assert.equal(tarifaRecomendada('crossfit', 2), 'M');
 });

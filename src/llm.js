@@ -44,7 +44,7 @@ export const TOOLS = [
   },
   {
     name: 'preparar_alta',
-    description: 'Tramita el alta en AimHarder. Solo con el sí del lead, todos sus datos (nombre y apellidos, fecha de nacimiento, teléfono, email) y la sede, tarifa y fecha de inicio confirmadas por el lead. No hay matrícula ni promociones.',
+    description: 'Tramita el alta en AimHarder. Solo con el sí del lead, todos sus datos (nombre y apellidos, fecha de nacimiento, teléfono, email) y la sede, tarifa y fecha de inicio confirmadas por el lead. No hay matrícula ni promociones, salvo en El Cañaveral: allí el sistema aplica solo el descuento de apertura del tramo que toque y el alta empieza el 2027-02-01.',
     input_schema: {
       type: 'object',
       properties: {
@@ -52,9 +52,9 @@ export const TOOLS = [
         email: { type: 'string' },
         fecha_nacimiento: { type: 'string', description: 'AAAA-MM-DD' },
         telefono: { type: 'string', description: 'Solo si no es el de esta conversación (por ejemplo, en Instagram)' },
-        sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas'] },
-        tarifa: { type: 'string', enum: ['academy_2', 'academy_3', 'S', 'M', 'L', 'XL'] },
-        fecha_inicio: { type: 'string', description: 'AAAA-MM-DD, confirmada por el lead' },
+        sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas', 'el_canaveral'] },
+        tarifa: { type: 'string', enum: ['academy_1', 'academy_2', 'academy_3', 'S', 'M', 'L', 'XL'], description: 'academy_1 solo existe en El Cañaveral' },
+        fecha_inicio: { type: 'string', description: 'AAAA-MM-DD, confirmada por el lead. En El Cañaveral, 2027-02-01' },
         avisar_lead: { type: 'boolean', description: 'false solo si el equipo pide prepararla sin avisarle. Por defecto true' },
       },
       required: ['nombre_completo', 'email', 'fecha_nacimiento', 'sede', 'tarifa', 'fecha_inicio'],

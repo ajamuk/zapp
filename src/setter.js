@@ -1,5 +1,6 @@
 import { config } from './config.js';
-import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, normalizarSede } from './knowledge.js';
+import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede } from './knowledge.js';
+import { validarDatos } from './aimharder/alta-navegador.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
@@ -478,8 +479,8 @@ export class Setter {
   async herramienta(conv, nombre, input, efectos) {
     switch (nombre) {
       case 'consultar_horarios': return consultarHorarios(input);
-      case 'consultar_tarifas': return consultarTarifas(input);
-      case 'calcular_primer_recibo': return calcularPrimerRecibo(input);
+      case 'consultar_tarifas': return consultarTarifas({ ...input, plazas_ocupadas: this.plazasCanaveral() });
+      case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasCanaveral() });
       case 'preparar_alta': return this.alta(conv, input, efectos);
       case 'reservar_prueba_parla': {
         efectos.tags.add(TAGS.tareas.prueba_parla);
@@ -508,11 +509,58 @@ export class Setter {
     }
   }
 
+  /** Plazas de apertura de El Cañaveral ya ocupadas: las que apunta el equipo en Ajustes más las altas que ha tramitado Sofía. */
+  plazasCanaveral(sinConv = null) {
+    const base = leerAjustes(this.repo).canaveralPlazasOcupadas || 0;
+    const propias = this.repo.db.prepare(`SELECT count(DISTINCT conversation_id) AS n FROM altas
+      WHERE json_extract(datos, '$.sede') = 'el_canaveral' AND estado != 'rechazada' AND conversation_id != ?`).get(sinConv || '').n;
+    return base + propias;
+  }
+
+  /**
+   * Alta en El Cañaveral (abre el 1 feb 2027): empieza el día de la apertura, con el descuento del tramo en las cuotas
+   * de febrero a abril y la primera mensualidad emitida el día del alta. Su AimHarder aún no está mapeado para el
+   * alta automática (tarifas y descuento por meses), así que la termina el equipo con todos los datos en el aviso.
+   */
+  async altaCanaveral(conv, datos, efectos) {
+    if (this.repo.getConv(conv.id)?.alta_estado === 'pendiente') return { ok: true, estado: 'ya_en_tramite', nota: 'El alta de este lead ya está pasada al equipo: no la repitas ni vuelvas a pedir los datos.' };
+    const telefono = datos.telefono || conv.telefono || '';
+    const oferta = ofertaCanaveral({ tarifa: datos.tarifa, fecha_inicio: datos.fecha_inicio, plazas_ocupadas: this.plazasCanaveral(conv.id) });
+    if (!oferta.ok) return { ok: false, error: oferta.error };
+    const d = { ...datos, sede: 'el_canaveral', telefono, canal: conv.channel, fecha_inicio: oferta.fecha_inicio, descuento_pct: oferta.descuento_pct, descuento_hasta: oferta.descuento_hasta, primer_recibo: oferta.primer_recibo };
+    delete d.avisar_lead;
+    const falta = validarDatos(d, this.now());
+    if (falta) {
+      this.repo.addAlta(conv.id, d, 'rechazada', falta);
+      return { ok: false, error: falta, nota: 'Pide solo el dato que falta o corrige el que está mal. Si es menor de 16 años, explícale con cariño que la edad mínima para entrenar es 16.' };
+    }
+    this.repo.addAlta(conv.id, d, 'pendiente', 'El Cañaveral: alta para terminar a mano con el descuento de apertura');
+    this.repo.updateConv(conv.id, { alta_estado: 'pendiente' });
+    efectos.tags.add(TAGS.tareas.responder);
+    const eur = (n) => `${String(n).replace('.', ',')} €`;
+    await this.avisar?.(
+      `Alta de El Cañaveral para terminar a mano: ${d.nombre_completo} · ${d.email} · tel. ${telefono} · nac. ${d.fecha_nacimiento} · ${d.tarifa} · inicio ${d.fecha_inicio}\n` +
+      (oferta.descuento_pct
+        ? `Descuento de apertura ${oferta.descuento_pct} % (plaza ${this.plazasCanaveral(conv.id) + 1}, tramo ${oferta.tramo_plazas}) en las cuotas de febrero, marzo y abril de 2027: ${eur(oferta.cuota_con_descuento)}/mes; desde mayo, ${eur(oferta.cuota_mensual)}/mes.\n`
+        : `Sin descuento de apertura: ${eur(oferta.cuota_mensual)}/mes.\n`) +
+      `Primer recibo: ${eur(oferta.primer_recibo)}, emitido hoy (se paga en la fecha del alta, aunque empiece el ${d.fecha_inicio}). Forma de pago TPV RedSys, sin matrícula.`,
+      { sede: 'el_canaveral' },
+    );
+    return {
+      ok: true, estado: 'pendiente_equipo', sede: SEDE_NOMBRE.el_canaveral, fecha_inicio: d.fecha_inicio, descuento_pct: oferta.descuento_pct,
+      cuota_con_descuento: oferta.cuota_con_descuento, cuota_desde_mayo: oferta.cuota_mensual, primer_pago: oferta.primer_recibo,
+      nota: `El equipo termina de tramitar el alta. Dile que ya está apuntado para empezar el ${d.fecha_inicio}, que le llega la invitación de AimHarder al correo y que el primer pago (${eur(oferta.primer_recibo)}) lo hace desde la app en cuanto le llegue, sin esperar a febrero: ` +
+        (oferta.descuento_pct ? `al completarlo se queda con el ${oferta.descuento_pct} % en febrero, marzo y abril (${eur(oferta.cuota_con_descuento)}/mes; desde mayo, ${eur(oferta.cuota_mensual)}).` : 'no hay descuento de apertura porque las plazas ya están cubiertas.') +
+        ' No digas que el alta ya está hecha ni des otros importes.',
+    };
+  }
+
   async alta(conv, datos, efectos) {
     // Un alta ya hecha no se repite (duplicaría la tarifa y el recibo en AimHarder)
     if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
     const sede = normalizarSede(datos.sede);
-    if (sede === 'el_canaveral') return { ok: false, error: 'En El Cañaveral todavía no se pueden tramitar altas: el pago de la primera mensualidad aún no está habilitado. Dile que le dejas apuntado como interesado y que el equipo le escribe en cuanto se abra; no prometas tramo ni plaza.' };
+    if (sede === 'el_canaveral') return this.altaCanaveral(conv, datos, efectos);
+    if (!knowledge.tarifas[sede]?.[datos.tarifa]) return { ok: false, error: `La tarifa ${datos.tarifa} no existe en ${SEDE_NOMBRE[sede] || 'esa sede'}.` };
     const telefono = datos.telefono || conv.telefono || '';
     const d = { ...datos, sede, telefono, canal: conv.channel };
     delete d.avisar_lead;

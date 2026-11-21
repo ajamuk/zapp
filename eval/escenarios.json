@@ -386,15 +386,15 @@
   "nombre": "Quiere apuntarse ya a El Cañaveral",
   "tema": "canaveral",
   "grupo": "reserva",
-  "perfil": "Te llamas Lucía, vives en El Cañaveral, nunca has hecho CrossFit. Has visto la oferta del 50 % y quieres apuntarte ya para asegurarte el descuento. Quieres ir 2 días por semana. Si te dicen que aún no se puede pagar, preguntas cómo te aseguras la plaza.",
+  "perfil": "Te llamas Lucía Martín Ruiz, vives en El Cañaveral, nunca has hecho CrossFit. Has visto la oferta del 50 % y quieres apuntarte ya para asegurarte el descuento. Quieres ir 2 días por semana. Si te piden datos los das: lucia.martin@ejemplo.es, nacida el 14 de marzo de 1992. Aceptas pagar ahora la primera mensualidad.",
   "apertura": "hola! he visto lo del 50% en el cañaveral, quiero apuntarme ya, qué tengo que hacer?",
   "criterios": [
-   "Explica que el descuento se asigna por orden de primer pago completado y que el pago todavía no está habilitado",
-   "No dice que el alta o la plaza quedan hechas o reservadas, ni garantiza el 50 %",
-   "Da el precio de Academy 2 días en El Cañaveral (95 € habitual; 47,50 € con el 50 %, o los otros tramos)",
-   "Deja al lead apuntado como interesado (lo dice y/o pone la etiqueta o avisa al equipo) y le explica que le escribirán cuando se abra"
+   "Da el precio de Academy 2 días en El Cañaveral con el descuento vigente (47,50 € al mes en febrero, marzo y abril) y la cuota habitual desde mayo (95 €)",
+   "Deja claro que empieza el 1 de febrero de 2027 y que la primera mensualidad se paga ahora, al hacer el alta, no en febrero",
+   "Pide los datos del alta (nombre y apellidos, fecha de nacimiento, email) y la tramita cuando los tiene",
+   "No dice cuántas plazas quedan ni pregunta qué día quiere empezar"
   ],
-  "turnos": 5,
+  "turnos": 6,
   "canal": "whatsapp"
  }
 ]

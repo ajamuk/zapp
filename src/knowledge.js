@@ -105,8 +105,42 @@ export function tarifaRecomendada(familia, dias) {
   return 'XL';
 }
 
+/** Tramo de apertura de El Cañaveral que toca a la siguiente plaza, según las que ya están ocupadas. */
+export function tramoCanaveral(ocupadas = 0) {
+  const plaza = Math.max(0, Math.floor(Number(ocupadas) || 0)) + 1;
+  const t = knowledge.tarifas.apertura_el_canaveral.tramos.find((x) => plaza <= Number(x.plazas.split(' a ')[1]));
+  return { plaza, descuento: t ? t.descuento : 0, plazas: t ? t.plazas : null };
+}
+
+/**
+ * Alta en El Cañaveral: empieza como pronto el día de la apertura (1 feb 2027), con el descuento del tramo en las
+ * cuotas hasta abril de 2027 y la primera mensualidad pagada el día del alta.
+ */
+export function ofertaCanaveral({ tarifa, fecha_inicio, plazas_ocupadas = 0 }) {
+  const o = knowledge.tarifas.apertura_el_canaveral;
+  const cuota = o.habitual[tarifa];
+  if (!cuota) return { ok: false, error: 'Tarifa no válida en El Cañaveral (academy_1, academy_2, academy_3, S, M, L o XL).' };
+  const inicio = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha_inicio)) && fecha_inicio > o.apertura ? fecha_inicio : o.apertura;
+  const [y, mo, d] = inicio.split('-').map(Number);
+  const diasMes = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  if (d > diasMes) return { ok: false, error: 'Fecha no válida.' };
+  const tramo = tramoCanaveral(plazas_ocupadas);
+  const descuento = inicio <= o.descuento_hasta ? tramo.descuento : 0;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const conDescuento = r2(cuota * (1 - descuento / 100));
+  const restantes = diasMes - d + 1;
+  return {
+    ok: true, sede: 'el_canaveral', tarifa, fecha_inicio: inicio, cuota_mensual: cuota, descuento_pct: descuento, tramo_plazas: descuento ? tramo.plazas : null,
+    cuota_con_descuento: conDescuento, descuento_hasta: descuento ? o.descuento_hasta : null,
+    dias_restantes: restantes, dias_mes: diasMes, primer_recibo: r2(conDescuento * restantes / diasMes),
+    nota: descuento
+      ? `Empieza el ${inicio}. Paga ${conDescuento} €/mes en las cuotas hasta abril de 2027 (descuento de apertura del ${descuento} %) y ${cuota} €/mes desde mayo. La primera mensualidad se paga al tramitar el alta, desde la app; el descuento queda fijado al completar ese pago.`
+      : `Empieza el ${inicio}. Cuota de ${cuota} €/mes, sin descuento de apertura. La primera mensualidad se paga al tramitar el alta, desde la app.`,
+  };
+}
+
 /** El Cañaveral (abre el 1 feb 2027): cuota habitual y precio de apertura de febrero a abril según el tramo. */
-function tarifasCanaveral(fam, dias) {
+function tarifasCanaveral(fam, dias, ocupadas = 0) {
   const o = knowledge.tarifas.apertura_el_canaveral;
   const euros = (n) => Math.round(n * 100) / 100;
   const n = Number(dias);
@@ -116,19 +150,21 @@ function tarifasCanaveral(fam, dias) {
     euros_mes_habitual_desde_mayo: o.habitual[k],
     euros_mes_apertura_feb_a_abr: Object.fromEntries(o.tramos.map((t) => [`-${t.descuento}% (plazas ${t.plazas})`, euros(o.habitual[k] * (1 - t.descuento / 100))])),
   }));
+  const tramo = tramoCanaveral(ocupadas);
   const rec = !n ? null : fam === 'academy' ? `academy_${Math.max(1, Math.min(3, n))}` : fam === 'crossfit_hyrox' ? (n <= 1 ? 'S' : n === 2 ? 'M' : n === 3 ? 'L' : 'XL') : null;
   return {
     ok: true, sede: 'el_canaveral', familia: fam || 'todas', opciones, recomendada: rec ? opciones.find((x) => x.clave === rec) : null,
-    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. El tramo se asigna por orden de primer pago completado y el pago aún no está habilitado: no garantices tramo ni plaza, ni digas cuántas quedan (está por confirmar). Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
+    tramo_actual: tramo.descuento ? { descuento_pct: tramo.descuento, plazas: tramo.plazas } : { descuento_pct: 0, nota: 'Las 200 plazas de apertura están cubiertas: cuota habitual.' },
+    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. Ya se puede tramitar el alta: empieza el 1 de febrero y la primera mensualidad se paga al tramitarla. Da el precio del tramo_actual (es el que se le aplica si se apunta ahora); el tramo va por orden de pago completado y queda fijado al pagar, así que no lo garantices a quien aún no se ha apuntado ni digas cuántas plazas quedan. Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
   };
 }
 
 /** Tarifas oficiales de una sede y familia; con días devuelve la recomendada. */
-export function consultarTarifas({ sede, familia, dias_por_semana }) {
+export function consultarTarifas({ sede, familia, dias_por_semana, plazas_ocupadas }) {
   const s = normalizarSede(sede);
   const mod = normalizarModalidad(familia);
   const fam = mod === 'academy' ? 'academy' : ['crossfit', 'hyrox'].includes(mod) || String(familia).includes('crossfit') ? 'crossfit_hyrox' : null;
-  if (s === 'el_canaveral') return tarifasCanaveral(fam, dias_por_semana);
+  if (s === 'el_canaveral') return tarifasCanaveral(fam, dias_por_semana, plazas_ocupadas);
   if (!s || !fam) return { ok: false, error: 'Falta la sede o la familia (academy o crossfit/hyrox).' };
   const t = knowledge.tarifas[s];
   const desc = knowledge.tarifas.descripciones;
@@ -143,8 +179,9 @@ export function consultarTarifas({ sede, familia, dias_por_semana }) {
 }
 
 /** Primer recibo prorrateado: días que quedan del mes (incluido el de inicio) sobre los días del mes. */
-export function calcularPrimerRecibo({ sede, tarifa, fecha_inicio }) {
+export function calcularPrimerRecibo({ sede, tarifa, fecha_inicio, plazas_ocupadas }) {
   const s = normalizarSede(sede);
+  if (s === 'el_canaveral') return ofertaCanaveral({ tarifa, fecha_inicio, plazas_ocupadas });
   const cuota = knowledge.tarifas[s]?.[tarifa];
   if (!cuota) return { ok: false, error: 'Sede o tarifa no válidas.' };
   const m = String(fecha_inicio).match(/^(\d{4})-(\d{2})-(\d{2})$/);

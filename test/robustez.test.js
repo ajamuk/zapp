@@ -263,3 +263,28 @@ test('una lista de socios vacía o recortada de AimHarder no borra el índice', 
   await sincronizarSocios(repo, { parla: { clientes: async () => cli(38) } });
   assert.equal(repo.db.prepare('SELECT count(*) n FROM socios').get().n, 38);
 });
+
+test('alta en El Cañaveral: inicio el 1 de febrero, descuento del tramo y primer pago en la fecha del alta', async () => {
+  const { repo, setter, sal, chat } = montar({ complete: async () => responder(['ok']) });
+  let navegador = 0; setter.aimharder.prepararAlta = async () => { navegador++; return { estado: 'preparada', pendiente: 1 }; };
+  const datos = { sede: 'el_canaveral', tarifa: 'academy_2', nombre_completo: 'Lucía Pérez', email: 'lucia@ejemplo.es', telefono: '600111222', fecha_nacimiento: '1990-01-01', fecha_inicio: '2026-12-01' };
+  chat('c1');
+  const r = await setter.herramienta(repo.getConv('c1'), 'preparar_alta', datos, { tags: new Set() });
+  assert.deepEqual([r.ok, r.estado, r.fecha_inicio, r.descuento_pct, r.primer_pago], [true, 'pendiente_equipo', '2027-02-01', 50, 47.5]);
+  assert.equal(navegador, 0); // el alta automática de AimHarder no se usa en El Cañaveral
+  assert.match(sal.avisos.at(-1), /Descuento de apertura 50 % \(plaza 1, tramo 1 a 10\).*47,5 €\/mes; desde mayo, 95 €\/mes/s);
+  assert.match(sal.avisos.at(-1), /Primer recibo: 47,5 €, emitido hoy/);
+  assert.equal(repo.getConv('c1').alta_estado, 'pendiente');
+  // No se repite, y la siguiente persona cuenta las plazas ya ocupadas (9 apuntadas por el equipo + la de Sofía = plaza 11, 30 %)
+  assert.equal((await setter.herramienta(repo.getConv('c1'), 'preparar_alta', datos, { tags: new Set() })).estado, 'ya_en_tramite');
+  repo.guardarAjuste('canaveralPlazasOcupadas', 9);
+  chat('c2');
+  const r2 = await setter.herramienta(repo.getConv('c2'), 'preparar_alta', { ...datos, tarifa: 'XL', email: 'otra@ejemplo.es' }, { tags: new Set() });
+  assert.deepEqual([r2.descuento_pct, r2.primer_pago, r2.cuota_desde_mayo], [30, 84, 120]);
+  // Datos incompletos: se pide lo que falta y no ocupa plaza; academy_1 solo existe en El Cañaveral
+  chat('c3');
+  const r3 = await setter.herramienta(repo.getConv('c3'), 'preparar_alta', { ...datos, nombre_completo: 'Ana' }, { tags: new Set() });
+  assert.equal(r3.ok, false);
+  assert.equal(setter.plazasCanaveral(), 11);
+  assert.equal((await setter.herramienta(repo.getConv('c3'), 'preparar_alta', { ...datos, sede: 'getafe', tarifa: 'academy_1' }, { tags: new Set() })).ok, false);
+});
