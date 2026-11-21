@@ -17,6 +17,7 @@ import * as recursosMod from './recursos.js';
 import * as alertas from './alertas.js';
 import * as meta from './meta.js';
 import * as actividad from './actividad.js';
+import * as preguntas from './preguntas.js';
 import * as bateria from './bateria.js';
 import { resumenInstrucciones } from './resumen.js';
 import { facturaAnthropic } from './conciliacion.js';
@@ -270,6 +271,40 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     try { res.json(reportes.aplicar(db, Number(req.params.id), { aunqueFallido: req.body?.aunque === true })); } catch (e) { errorUsuario(res, e); }
   });
   admin.post('/panel/reportes/:id/descartar', (req, res) => { reportes.descartar(db, Number(req.params.id)); res.json({ ok: true }); });
+
+  // ---------- Preguntas que Sofía no sabe responder ----------
+  admin.get('/panel/preguntas', (req, res) => res.json({ preguntas: preguntas.listar(db, { estado: req.query.estado || null }), contadores: preguntas.contadores(db), estados: preguntas.ESTADOS }));
+  // Body: { respuesta, pregunta?, usar?: bool (Sofía la aprende, por defecto sí), contestar?: bool (se le escribe al lead, por defecto sí) }.
+  // Se responden también las pendientes con la misma pregunta de otros chats.
+  admin.post('/panel/preguntas/:id/responder', (req, res) => {
+    const b = req.body || {};
+    const p0 = preguntas.obtener(db, Number(req.params.id));
+    if (!p0) return res.status(404).json({ error: 'Esa pregunta no existe.' });
+    let hechas;
+    try {
+      const iguales = db.prepare("SELECT id, pregunta FROM preguntas WHERE estado = 'pendiente' AND id != ?").all(p0.id).filter((r) => preguntas.normalizar(r.pregunta) === preguntas.normalizar(p0.pregunta));
+      hechas = [preguntas.responder(db, p0.id, { respuesta: b.respuesta, pregunta: b.pregunta, usar: b.usar !== false }),
+        // Las iguales no se duplican en la base de conocimiento: solo la principal lleva «usar»
+        ...iguales.map((r) => preguntas.responder(db, r.id, { respuesta: b.respuesta, usar: false }))];
+    } catch (e) { return errorUsuario(res, e); }
+    const contestar = b.contestar !== false && setter?.contestarPregunta && (config.ai.apiKey || complete);
+    if (contestar) {
+      (async () => {
+        for (const p of hechas.filter((x) => x.conversation_id)) {
+          preguntas.marcarEnviada(db, p.id, 'enviando…');
+          const r = await setter.contestarPregunta(p).catch((e) => `error: ${e.message}`);
+          preguntas.marcarEnviada(db, p.id, r);
+        }
+      })().catch((e) => console.error('Contestar pregunta:', e.message));
+    }
+    res.json({ ok: true, respondidas: hechas.length, contestando: Boolean(contestar) });
+  });
+  admin.post('/panel/preguntas/:id/usar', (req, res) => {
+    db.prepare("UPDATE preguntas SET usar = ?, updated_at = datetime('now') WHERE id = ? AND estado = 'respondida'").run(req.body?.usar ? 1 : 0, Number(req.params.id));
+    res.json({ ok: true });
+  });
+  admin.post('/panel/preguntas/:id/descartar', (req, res) => { preguntas.descartar(db, Number(req.params.id)); res.json({ ok: true }); });
+  admin.delete('/panel/preguntas/:id', (req, res) => { preguntas.borrar(db, Number(req.params.id)); res.json({ ok: true }); });
 
   // ---------- Instrucciones de Sofía (prompt y base de conocimiento, con versiones) ----------
   admin.get('/panel/estadisticas', (req, res) => res.json(panel.estadisticas(db, { dias: req.query.dias, sede: req.query.sede || '', canal: req.query.canal || '' })));

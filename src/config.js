@@ -67,7 +67,11 @@ export const config = {
     adminUser: env('AIMHARDER_ADMIN_USER'),
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
+    // Clase de prueba de Parla reservada directamente en AimHarder (además hace falta MODE=live)
+    reservaPrueba: env('AIMHARDER_RESERVA_PRUEBA', 'false') === 'true',
   },
+  // metro-trial-ops (pruebas de los calendarios de GHL, con asistencia y alta verificadas): su base, solo lectura
+  trialOps: { db: env('TRIAL_OPS_DB', '/var/lib/metro-trial-ops/trial_ops.sqlite3') },
   // Dirección pública del servicio (para que GHL descargue los recursos que envía Sofía)
   publicUrl: env('PUBLIC_URL', 'https://setter.82.223.108.143.nip.io'),
   // API de Conversiones de Meta (eventos al ponerse ciertas etiquetas)

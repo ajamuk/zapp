@@ -133,6 +133,7 @@ export class Ghl {
   removeTags(contactId, tags) { return tags.length ? this.req('DELETE', `/contacts/${contactId}/tags`, { tags }) : null; }
   assign(contactId, userId) { return userId ? this.req('PUT', `/contacts/${contactId}`, { assignedTo: userId }) : null; }
   addNote(contactId, body) { return this.req('POST', `/contacts/${contactId}/notes`, { body }); }
+  updateNote(contactId, noteId, body) { return this.req('PUT', `/contacts/${contactId}/notes/${noteId}`, { body }); }
   // Etiquetas del location (el catálogo de tags de GHL)
   listarTags() { return this.req('GET', `/locations/${config.ghl.locationId}/tags`).then((r) => r?.tags || []); }
   crearTag(name) { return this.req('POST', `/locations/${config.ghl.locationId}/tags`, { name }).then((r) => r?.tag || r); }

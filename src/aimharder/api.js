@@ -60,4 +60,9 @@ export class AimHarderApi {
   cliente(id) { return this.req('GET', `/clients/${id}?with-current-memberships=true`).then((r) => r.data); }
   crearCliente(datos) { return this.req('POST', '/clients', datos).then((r) => r.data); }
   crearLead(datos) { return this.req('POST', '/leads', datos).then((r) => r.data); }
+  /** Reserva de clase para un invitado (clase de prueba): { schedule_id, booking_date, name, first_surname?, email?, phone?, booking_notes? }. */
+  reservarInvitado(datos) { return this.req('POST', '/classes/booking/guest', datos).then((r) => r.data ?? r); }
+  cancelarReserva(datos) { return this.req('POST', '/classes/booking/cancel', datos).then((r) => r.data ?? r); }
+  /** Invitado/reserva por id: booking_day, booking_time, no_show, cancellation_date… */
+  invitado(id) { return this.req('GET', `/guests/${id}`).then((r) => r.data ?? r); }
 }

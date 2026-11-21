@@ -63,14 +63,27 @@ export const TOOLS = [
   },
   {
     name: 'reservar_prueba_parla',
-    description: 'Pide al equipo la clase de prueba gratuita en Parla, cuando el lead la pide o acepta la que le ofreces, con día y hora elegidos.',
+    description: 'Reserva la clase de prueba gratuita en Parla directamente en AimHarder, cuando el lead la pide o acepta la que le ofreces, con día y hora elegidos. Necesita su nombre y apellido. Si esa hora no existe ese día, devuelve las horas que sí hay para que le propongas otra. Si ya tenía una prueba, la cambia a la nueva.',
     input_schema: {
       type: 'object',
       properties: {
         modalidad: { type: 'string', enum: ['academy', 'crossfit', 'hyrox'] },
         fecha_hora: { type: 'string', description: 'AAAA-MM-DD HH:MM de una clase de esa modalidad en Parla' },
+        nombre_completo: { type: 'string', description: 'Nombre y al menos un apellido del lead (el que te haya dicho; si no lo sabes, pídeselo antes)' },
+        email: { type: 'string', description: 'Solo si te lo ha dado' },
       },
-      required: ['modalidad', 'fecha_hora'],
+      required: ['modalidad', 'fecha_hora', 'nombre_completo'],
+    },
+  },
+  {
+    name: 'pregunta_sin_respuesta',
+    description: 'Apunta una pregunta concreta del lead sobre el centro que NO está en tu información (ni en «Respuestas del equipo») para que la responda el equipo. Cuando respondan, se le escribe por aquí y la sabrás para siguientes veces. No pausa la conversación: sigue con lo demás. No la uses para temas de salud, gestiones de socios o cobros (eso es derivar_a_equipo).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        pregunta: { type: 'string', description: 'La pregunta, redactada de forma general y corta (p. ej. «¿Hay parking en Parla?»), sin datos personales' },
+      },
+      required: ['pregunta'],
     },
   },
   {
@@ -102,6 +115,16 @@ export const TOOLS = [
         etiquetas: { type: 'array', items: { type: 'string' } },
         analisis: { type: 'string', description: 'Nota interna (no se envía): qué sabes del lead y en qué punto está, en una o dos frases.' },
         siguiente_paso: { type: 'string', description: 'Nota interna (no se envía): qué buscas conseguir con el próximo mensaje.' },
+        valoracion: {
+          type: 'object',
+          description: 'Nota interna (no se envía), en cada turno: lo probable que es que se apunte, de 1 (nada) a 10 (ya decidido o con el alta hecha), según su interés, su encaje y lo que falta para cerrar.',
+          properties: {
+            nota: { type: 'integer', minimum: 1, maximum: 10 },
+            motivo: { type: 'string', description: 'Por qué, en una frase corta' },
+          },
+          required: ['nota'],
+        },
+        resumen: { type: 'string', description: 'Nota interna (no se envía), en cada turno: resumen de TODA la conversación para la ficha del lead en el CRM, en 2 a 4 frases: qué busca, sede y modalidad, qué se le ha dado (precio, prueba, alta) y en qué punto está.' },
         retomar: {
           type: 'object',
           description: 'Solo si el lead dice que lo decidirá o se apuntará más adelante (después de vacaciones, cuando cobre, en enero, cuando se recupere...). Programa volver a escribirle entonces.',

@@ -9,7 +9,9 @@ import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } 
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
-import { programarCita } from './followups.js';
+import { programarCita, horaMadrid, fueraDeVentana } from './followups.js';
+import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps } from './clase-prueba.js';
+import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
@@ -237,7 +239,8 @@ export class Setter {
    */
   sistema(conv, extraContexto = '', docs = null) {
     const t = docs || textosActivos(this.catalogo, this.borradores || {});
-    return systemBlocks(t.prompt ?? knowledge.prompt, `${t.negocio ?? knowledge.negocio.split('\n\n## Festivos')[0]}\n\n${textoFestivos()}`, this.contexto(conv, extraContexto));
+    const faq = preguntas.bloqueConocimiento(this.catalogo); // respuestas del equipo a preguntas que Sofía no sabía
+    return systemBlocks(t.prompt ?? knowledge.prompt, `${t.negocio ?? knowledge.negocio.split('\n\n## Festivos')[0]}\n\n${textoFestivos()}${faq ? `\n\n${faq}` : ''}`, this.contexto(conv, extraContexto));
   }
 
   versiones() { const v = versionesActivas(this.catalogo, this.borradores || {}); return { prompt_v: v.prompt, negocio_v: v.negocio }; }
@@ -250,13 +253,26 @@ export class Setter {
       `- Canal: ${conv.channel}.`,
       `- Nombre del perfil: ${conv.nombre || 'desconocido'}.`,
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
-      `- Alta: ${conv.alta_estado || 'no iniciada'}. Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`,
+      `- Alta: ${conv.alta_estado || 'no iniciada'}. ${this.textoPrueba(conv)}`,
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,
     ].filter(Boolean).join('\n');
+  }
+
+  /** Línea de la clase de prueba para el contexto: la reservada aquí, o la del calendario de GHL (metro-trial-ops). */
+  textoPrueba(conv) {
+    const p = ultimaPrueba(this.repo.db, conv.id);
+    if (p) return describirPrueba(p, this.now());
+    const t = String(conv.id).startsWith('prueba-') ? null : pruebaTrialOps(conv.contact_id);
+    if (t) {
+      const r = resultadoTrialOps(t);
+      const cuando = new Date(t.start_time).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+      return `Tiene una clase de prueba en el calendario (${t.center}, ${t.class_type}) el ${cuando}${r ? `; resultado: ${{ asistio: 'vino', no_vino: 'no vino', cancelada: 'anulada', alta: 'ya se dio de alta' }[r]}` : ''}. No le reserves otra salvo que la quiera cambiar.`;
+    }
+    return `Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`;
   }
 
   /**
@@ -336,7 +352,7 @@ export class Setter {
       // ya se hizo algo que no se debe repetir (alta, derivación), no se reintenta el turno: se avisa al equipo.
       this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: `envío: ${e.message}`, ...this.versiones() });
       if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
-      e.noReintentar = Boolean(efectos.avisoAlta || efectos.derivado || efectos.herramientas.some((h) => ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo'].includes(h.nombre)));
+      e.noReintentar = Boolean(efectos.avisoAlta || efectos.derivado || efectos.herramientas.some((h) => ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'].includes(h.nombre)));
       if (e.noReintentar) await this.safe(() => this.avisar?.(`Sofía no ha podido enviar su respuesta por un fallo de GHL (${e.message}). Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
       throw e;
     }
@@ -364,7 +380,11 @@ export class Setter {
     if (r.fase && r.fase !== 'cerrada') efectos.tags.add(r.fase);
     if (r.analisis) patch.analisis = String(r.analisis).slice(0, 800);
     if (r.siguiente_paso) patch.siguiente_paso = String(r.siguiente_paso).slice(0, 400);
+    const nota = Number(r.valoracion?.nota);
+    if (Number.isFinite(nota) && nota >= 1) { patch.valoracion = Math.min(10, Math.round(nota)); patch.valoracion_motivo = r.valoracion.motivo ? String(r.valoracion.motivo).slice(0, 300) : null; }
+    if (r.resumen) patch.resumen = String(r.resumen).trim().slice(0, 1500);
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
+    if (patch.valoracion != null || patch.resumen) await this.safe(() => this.notaFicha(conv.id));
     // Etiquetas del catálogo con criterio IA: las pone el etiquetador (con sus condiciones y acciones).
     // El resto siguen yendo a GHL como tags, como siempre.
     let libres = r.etiquetas || [];
@@ -380,6 +400,29 @@ export class Setter {
     const viejas = TAGS.embudo.filter((f) => f !== r.fase && conv.fase === f);
     if (viejas.length) await this.safe(() => this.ghl.removeTags(conv.contact_id, viejas));
     if (efectos.tags.size) await this.safe(() => this.ghl.addTags(conv.contact_id, [...efectos.tags]));
+  }
+
+  /**
+   * Nota de la ficha del lead en GHL con la valoración y el resumen de Sofía. Es una sola nota por contacto que se
+   * va actualizando (si la borran en GHL, se crea otra). No se llama a GHL si el texto no ha cambiado.
+   */
+  async notaFicha(convId) {
+    const c = this.repo.getConv(convId);
+    if (!c || (c.valoracion == null && !c.resumen)) return null;
+    const cuerpo = `⭐ Valoración de Sofía: ${c.valoracion != null ? `${c.valoracion}/10` : 'sin nota'}${c.valoracion_motivo ? ` · ${c.valoracion_motivo}` : ''}\n\n📝 Resumen de la conversación: ${c.resumen || '—'}`;
+    if (cuerpo === c.nota_ghl_texto) return c.nota_ghl_id;
+    const cuando = this.now().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const body = `${cuerpo}\n\n(Nota de Sofía: se actualiza sola con cada respuesta. Última: ${cuando})`;
+    let id = c.nota_ghl_id;
+    if (id) {
+      try { await this.ghl.updateNote(c.contact_id, id, body); } catch (e) { if (!/404|not found/i.test(e.message)) throw e; id = null; }
+    }
+    if (!id) {
+      const r = await this.ghl.addNote(c.contact_id, body);
+      id = r?.note?.id || r?.id || null;
+    }
+    this.repo.updateConv(convId, { nota_ghl_id: id, nota_ghl_texto: cuerpo });
+    return id;
   }
 
   async enviar(conv, mensajes, plantilla = null) {
@@ -534,12 +577,13 @@ export class Setter {
       }
       case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasCanaveral() });
       case 'preparar_alta': return this.alta(conv, input, efectos);
-      case 'reservar_prueba_parla': {
-        efectos.tags.add(TAGS.tareas.prueba_parla);
-        this.repo.updateConv(conv.id, { prueba_reservada: 1 });
-        programarCita(this.repo, this.catalogo, conv.id, input.fecha_hora, this.now()); // recordatorios antes de la clase
-        await this.avisar?.(`Prueba en Parla pedida: ${input.modalidad} · ${input.fecha_hora}. Confirmar en el calendario y avisar al lead.`, { sede: 'parla' });
-        return { ok: true, estado: 'solicitada', nota: 'Dile que se la dejas apuntada y que el equipo se la confirma por aquí. Es sin coste.' };
+      case 'reservar_prueba_parla': return this.reservarPrueba(conv, input, efectos);
+      case 'pregunta_sin_respuesta': {
+        const ultimo = this.repo.history(conv.id).filter((m) => m.autor === 'lead').pop();
+        let r;
+        try { r = preguntas.apuntar(this.repo.db, { conversation_id: conv.id, sede: conv.sede, pregunta: input.pregunta, mensaje_lead: ultimo?.texto }); } catch (e) { return { ok: false, error: e.message }; }
+        if (r.nueva) await this.avisar?.(`Pregunta que Sofía no sabe responder${conv.sede ? ` (${SEDE_NOMBRE[conv.sede]})` : ''}: «${String(input.pregunta).trim()}». Respóndela en el panel, sección Preguntas (#${r.id}): se le contesta al lead y Sofía la sabrá para siguientes veces.`, { sede: conv.sede });
+        return { ok: true, nota: 'Dile con naturalidad que eso lo consultas con el equipo y le escribes en cuanto lo sepas. No inventes la respuesta y sigue con el resto de la conversación.' };
       }
       case 'enviar_recurso': {
         const r = recursos.porNombre(this.catalogo, input.nombre);
@@ -559,6 +603,98 @@ export class Setter {
       }
       default: return { ok: false, error: `Herramienta desconocida: ${nombre}` };
     }
+  }
+
+  /**
+   * Clase de prueba en Parla. Con la reserva directa activada (AIMHARDER_RESERVA_PRUEBA=true y live) se apunta en
+   * AimHarder como invitado; si no, o si AimHarder no la acepta, se avisa al equipo para que la reserve (como antes).
+   * Siempre se comprueba antes que esa clase existe ese día en el calendario de AimHarder.
+   */
+  async reservarPrueba(conv, input, efectos) {
+    const modalidad = normalizarModalidad(input.modalidad);
+    const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(String(input.fecha_hora || '').trim());
+    if (!['academy', 'crossfit', 'hyrox'].includes(modalidad)) return { ok: false, error: 'La prueba es de Academy, CrossFit o HYROX.' };
+    if (!m) return { ok: false, error: 'fecha_hora tiene que ser AAAA-MM-DD HH:MM.' };
+    const fechaHora = `${m[1]} ${m[2]}`;
+    const clase = horaMadrid(fechaHora);
+    if (!clase || clase.getTime() - this.now().getTime() < 3600e3) return { ok: false, error: 'Esa clase ya ha pasado o empieza en menos de una hora: propón otra.' };
+    const nombre = String(input.nombre_completo || '').trim();
+    if (nombre.split(/\s+/).filter(Boolean).length < 2) return { ok: false, error: 'Para apuntarle en AimHarder hace falta su nombre y un apellido: pídeselo antes de reservar.' };
+    const db = this.repo.db;
+    const anterior = ultimaPrueba(db, conv.id);
+    if (anterior && anterior.fecha_hora === fechaHora && anterior.modalidad === modalidad) return { ok: true, estado: 'ya_reservada', nota: 'Ya la tiene a esa hora: no la repitas, confírmasela si hace falta.' };
+    const escribir = Boolean(this.live && config.aimharder.reservaPrueba && !String(conv.id).startsWith('prueba-'));
+    const res = (await this.safe(() => this.aimharder.reservarPrueba?.({ sede: 'parla', modalidad, fecha: m[1], hora: m[2], nombre_completo: nombre, telefono: conv.telefono, email: input.email || null }, { escribir })))
+      || { estado: 'simulada', detalle: 'Sin conexión con AimHarder: no se ha comprobado la clase.' };
+    if (res.estado === 'no_hay_clase') {
+      return { ok: false, error: res.detalle, horas_ese_dia: res.horas || [], nota: res.horas?.length ? 'Propónle una de esas horas (o otro día) y reserva cuando la elija.' : 'Ese día no hay clase de esa modalidad: propón otro día con consultar_horarios.' };
+    }
+    const estado = res.estado === 'reservada' ? 'reservada' : res.estado === 'fallida' ? 'fallida' : 'simulada';
+    guardarPrueba(db, { conversation_id: conv.id, sede: 'parla', modalidad, fecha_hora: fechaHora, estado, schedule_id: res.schedule_id || null, booking_id: res.booking_id || null, nombre, detalle: res.detalle || null });
+    if (anterior) {
+      actualizarPrueba(db, anterior.id, { estado: 'anulada', detalle: `cambiada a ${fechaHora}` });
+      // La anterior estaba en AimHarder: se anula allí después de tener la nueva
+      if (anterior.estado === 'reservada' && anterior.booking_id && escribir) {
+        const ok = await this.safe(() => this.aimharder.cancelarPrueba?.(anterior));
+        if (!ok) await this.avisar?.(`No se ha podido anular en AimHarder la prueba anterior de ${anterior.nombre} (${anterior.modalidad} · ${fechaLegible(anterior.fecha_hora)}): anularla a mano.`, { sede: 'parla' });
+      }
+    }
+    this.repo.updateConv(conv.id, { prueba_reservada: 1 });
+    programarCita(this.repo, this.catalogo, conv.id, fechaHora, this.now()); // recordatorios antes y seguimiento después
+    const cuando = fechaLegible(fechaHora);
+    const cambio = anterior ? ` (cambia la del ${fechaLegible(anterior.fecha_hora)})` : '';
+    if (estado === 'reservada') {
+      efectos.tags.add(TAGS.tareas.prueba_reservada || 'prueba reservada');
+      await this.avisar?.(`Prueba reservada en AimHarder (Parla): ${nombre} · ${modalidad} · ${cuando}${cambio}. Ya está en el calendario: no hace falta hacer nada.`, { sede: 'parla' });
+      return { ok: true, estado: 'reservada', nota: 'Ya está reservada en AimHarder. Confírmale el día y la hora en un mensaje; es sin coste. No inventes otros detalles.' };
+    }
+    efectos.tags.add(TAGS.tareas.prueba_parla);
+    await this.avisar?.(`Prueba en Parla pedida: ${nombre} · ${modalidad} · ${cuando}${cambio}. ${estado === 'fallida' ? `AimHarder no la aceptó (${res.detalle}). ` : ''}Reservarla en AimHarder y confirmar al lead.`, { sede: 'parla' });
+    return { ok: true, estado: 'solicitada', nota: 'Dile que se la dejas apuntada y que el equipo se la confirma por aquí. Es sin coste.' };
+  }
+
+  /**
+   * Resultado de la última clase de prueba: alta (ya es socio o Sofía le hizo el alta) · asistio / no_vino / cancelada
+   * (metro-trial-ops o AimHarder) · sin_ausencia (pasó y AimHarder no marca ausencia) · sin_dato. Se guarda en la prueba.
+   */
+  async resultadoPrueba(conv) {
+    const db = this.repo.db;
+    const p = ultimaPrueba(db, conv.id);
+    let resultado = null; let fuente = null;
+    if (conv.alta_estado === 'preparada' || conv.tipo === 'socio') { resultado = 'alta'; fuente = 'sofia'; }
+    if (!resultado && conv.telefono && this.aimharder?.buscarSocioPorTelefono) {
+      const socio = await this.safe(() => this.aimharder.buscarSocioPorTelefono(conv.telefono));
+      if (socio?.esSocio) { resultado = 'alta'; fuente = 'socios-aimharder'; }
+    }
+    if (!resultado) {
+      const t = String(conv.id).startsWith('prueba-') ? null : pruebaTrialOps(conv.contact_id);
+      const mismaClase = t && (!p || String(new Date(t.start_time).toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' })) === p.fecha_hora.slice(0, 10));
+      const rt = mismaClase ? resultadoTrialOps(t) : null;
+      const ra = p?.estado === 'reservada' && p.booking_id ? await this.safe(() => this.aimharder?.resultadoPrueba?.(p)) : null;
+      // Lo verificado por metro-trial-ops manda sobre «sin ausencia» de AimHarder (que solo dice que nadie marcó la falta)
+      if (rt && (!ra || ra === 'sin_ausencia')) { resultado = rt; fuente = 'metro-trial-ops'; } else if (ra) { resultado = ra; fuente = 'aimharder'; }
+    }
+    resultado ||= 'sin_dato';
+    if (p) actualizarPrueba(db, p.id, { resultado, resultado_fuente: fuente, resultado_at: this.now().toISOString() });
+    const tag = { asistio: 'prueba asistida', no_vino: 'prueba no show', cancelada: 'prueba anulada' }[resultado];
+    if (tag && !String(conv.id).startsWith('prueba-')) await this.safe(() => this.ghl.addTags(conv.contact_id, [tag]));
+    return { resultado, fuente, prueba: p };
+  }
+
+  /**
+   * El equipo ha respondido una pregunta pendiente desde el panel: Sofía se lo cuenta al lead en su chat.
+   * Devuelve el resultado en palabras (para el panel).
+   */
+  async contestarPregunta(p) {
+    const conv = p.conversation_id ? this.repo.getConv(p.conversation_id) : null;
+    if (!conv) return 'sin chat';
+    if (conv.ai_paused || conv.derivado) return 'chat pausado o derivado: contéstale tú';
+    if (this.enCurso?.has(conv.id)) return 'Sofía estaba contestando en ese chat: no se ha enviado';
+    if (!String(conv.id).startsWith('prueba-') && fueraDeVentana(conv, this.now())) return 'han pasado más de 24 h desde su último mensaje: no se puede escribir sin plantilla';
+    const r = await this.responder(conv.id, { extraContexto: preguntas.contextoRespuesta(p), motivo: 'pregunta-respondida', avisarFallo: false });
+    if (!r) return 'no se ha enviado (chat pausado)';
+    if (!r.mensajes.length) return 'Sofía vio que ya estaba contestada';
+    return this.live ? 'enviada al lead' : 'borrador (modo prueba)';
   }
 
   /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */

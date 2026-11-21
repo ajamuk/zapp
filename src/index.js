@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
+import { reservarEnAimHarder, resultadoAimHarder } from './clase-prueba.js';
 import { sincronizarHorarios } from './horarios-sync.js';
 import { subirCopias } from './copia-drive.js';
 import { avisarEquipo } from './notify.js';
@@ -25,8 +26,14 @@ const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
 if (recuperado.chats || recuperado.seguimientos || recuperado.reportes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
+let apisAimHarder;
+const apiSede = (sede) => (apisAimHarder ??= clientesApi())[sede];
 const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador,
-  fichaEnSede: async (tel, sede) => fichaEnSede(repo, tel, sede) };
+  fichaEnSede: async (tel, sede) => fichaEnSede(repo, tel, sede),
+  // Clase de prueba de Parla: reserva como invitado, anulación al cambiarla y resultado después de la clase
+  reservarPrueba: (datos, opciones) => reservarEnAimHarder(apiSede(datos.sede), datos, opciones),
+  cancelarPrueba: async (p) => { await apiSede(p.sede).cancelarReserva({ booking_id: Number(p.booking_id), booking_date: p.fecha_hora.slice(0, 10), reason: 'El lead la cambió a otra hora' }); return true; },
+  resultadoPrueba: (p) => resultadoAimHarder(apiSede(p.sede), p.booking_id) };
 
 const ghl = new Ghl();
 const etiquetas = new Etiquetador({

@@ -141,3 +141,33 @@ test('panel: embudo por sede pide la clave y valida el mes', async () => {
     assert.match(p, /Embudo por sede/);
   } finally { srv.close(); }
 });
+
+test('panel: preguntas sin respuesta — listar, responder (con las iguales de otros chats), contestar al lead y descartar', async () => {
+  const repo = crearRepo(openDb(':memory:'));
+  repo.upsertConv({ id: 'c1', contact_id: 'k1', channel: 'whatsapp', nombre: 'Ana' });
+  repo.upsertConv({ id: 'c2', contact_id: 'k2', channel: 'whatsapp', nombre: 'Luis' });
+  const { apuntar } = await import('../src/preguntas.js');
+  const a = apuntar(repo.db, { conversation_id: 'c1', sede: 'parla', pregunta: '¿Hay fisio?' }).id;
+  apuntar(repo.db, { conversation_id: 'c2', pregunta: 'hay fisio' });
+  const otra = apuntar(repo.db, { conversation_id: 'c2', pregunta: '¿Se puede ir con carrito?' }).id;
+  const contestadas = [];
+  const setter = { contestarPregunta: async (p) => { contestadas.push(p.conversation_id); return 'enviada al lead'; } };
+  const srv = crearApp({ setter, repo, complete: async () => ({}) }).listen(0);
+  await new Promise((r) => srv.once('listening', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const api = (ruta, o = {}) => fetch(base + '/admin' + ruta, { ...o, headers: { authorization: 'Bearer clave-test', 'content-type': 'application/json' } });
+  try {
+    const l = await (await api('/panel/preguntas')).json();
+    assert.equal(l.preguntas.length, 3);
+    assert.equal(l.preguntas.find((p) => p.id === a).chat.nombre, 'Ana');
+    assert.equal((await api(`/panel/preguntas/${a}/responder`, { method: 'POST', body: '{}' })).status, 400);
+    const r = await (await api(`/panel/preguntas/${a}/responder`, { method: 'POST', body: JSON.stringify({ respuesta: 'Sí, los martes' }) })).json();
+    assert.deepEqual([r.respondidas, r.contestando], [2, true]);
+    await new Promise((x) => setTimeout(x, 50));
+    assert.deepEqual(contestadas.sort(), ['c1', 'c2']);
+    const filas = repo.db.prepare("SELECT conversation_id, usar, enviada FROM preguntas WHERE estado = 'respondida' ORDER BY id").all();
+    assert.deepEqual(filas, [{ conversation_id: 'c1', usar: 1, enviada: 'enviada al lead' }, { conversation_id: 'c2', usar: 0, enviada: 'enviada al lead' }]);
+    await api(`/panel/preguntas/${otra}/descartar`, { method: 'POST', body: '{}' });
+    assert.equal((await (await api('/panel/preguntas?estado=pendiente')).json()).preguntas.length, 0);
+  } finally { srv.close(); }
+});

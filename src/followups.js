@@ -5,6 +5,7 @@ import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
+import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
@@ -48,7 +49,8 @@ export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() 
   const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
     futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
-    contextoSeguimiento(regla),
+    contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla),
+    regla.tipo === 'tras-cita' && s?.resultado ? `Resultado de la prueba (comprobado ahora): ${RESULTADOS[s.resultado] || s.resultado}.` : '',
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
     reglas.TIPOS_CITA.includes(regla.tipo) && c?.prueba ? `Su clase de prueba: ${c.prueba}.` : '',
     plantilla ? 'El texto irá dentro de una plantilla aprobada de WhatsApp: una sola frase, sin saltos de línea.' : '',
@@ -168,8 +170,16 @@ export async function procesarSeguimientos(setter) {
     }
 
     try {
+      // Después de la prueba: se mira ahora si vino y si ya tiene el alta (AimHarder y metro-trial-ops). Con el alta
+      // hecha no sale; si no vino, se le propone otro día; si vino, qué tal y el alta. El texto se redacta de nuevo.
+      let resultado = null;
+      if (regla.tipo === 'tras-cita' && setter.resultadoPrueba) {
+        resultado = (await setter.safe(() => setter.resultadoPrueba(conv)))?.resultado || null;
+        if (resultado === 'alta') { repo.finishScheduled(s.id, 'omitido', 'ya se ha dado de alta'); continue; }
+      }
       // El texto preparado solo vale si era para el mismo tipo de envío (normal o plantilla)
-      const previsto = s.texto_previsto != null && (s.tipo === 'manual' || s.tipo === 'lanzamiento' || fueraDeVentana(conv, s.due_at) === plantilla) ? s : { ...s, texto_previsto: null };
+      const previsto = resultado ? { ...s, texto_previsto: null, resultado }
+        : s.texto_previsto != null && (s.tipo === 'manual' || s.tipo === 'lanzamiento' || fueraDeVentana(conv, s.due_at) === plantilla) ? s : { ...s, texto_previsto: null };
       const { texto } = await textoPrevisto(setter, previsto);
       if (!texto) { repo.finishScheduled(s.id, 'omitido', 'la IA decidió no enviar'); continue; }
       // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale

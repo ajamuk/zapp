@@ -389,7 +389,7 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 async function iniciar() {
   estado.seccion = location.hash.slice(1).split('/')[0] || 'resumen';
@@ -433,7 +433,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -985,6 +985,50 @@ async function altas() {
       <td>${esc(SEDES[a.datos.sede] || a.datos.sede)} · ${esc(a.datos.tarifa)}</td><td>${esc(a.datos.fecha_inicio)}</td>
       <td><span class="chip ${COLOR[a.estado] || 'ambar'}">${esc(a.estado)}</span></td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay altas</div>'}`;
   $('#main').querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
+}
+
+// ---------- Preguntas que Sofía no sabe responder ----------
+async function preguntas() {
+  $('#main').innerHTML = '<h2>Preguntas</h2><div class="vacio">Cargando…</div>';
+  const datos = await api('/panel/preguntas');
+  if (estado.seccion !== 'preguntas') return;
+  const pend = datos.preguntas.filter((p) => p.estado === 'pendiente');
+  const resp = datos.preguntas.filter((p) => p.estado === 'respondida');
+  const quien = (p) => p.chat ? `<a href="#chats" data-c="${esc(p.conversation_id)}" style="color:var(--blue)">${esc(p.chat.nombre || p.chat.telefono || 'chat')}</a>` : 'sin chat';
+  const caja = 'border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0';
+  $('#main').innerHTML = `<h2>Preguntas</h2>
+    <p class="intro">Preguntas de leads que Sofía no ha sabido responder porque no están en su información. Al responder una, Sofía se lo cuenta al lead en su chat (si han pasado menos de 24 h desde su último mensaje) y, si dejas marcado «Que Sofía la use», la sabrá en todos los chats a partir de ahora. Las preguntas iguales de otros chats se responden a la vez.</p>
+    <h3>Pendientes (${pend.length})</h3>
+    ${pend.length ? pend.map((p) => `<form class="fpreg" data-id="${p.id}" style="${caja}">
+      <div><b>${esc(p.pregunta)}</b>${p.veces > 1 ? ` <span class="chip ambar">×${p.veces}</span>` : ''}</div>
+      <div class="ayuda">${quien(p)}${p.sede ? ` · ${esc(SEDES[p.sede] || p.sede)}` : ''} · ${hora(p.created_at)}${p.mensaje_lead ? ` · el lead escribió: «${esc(p.mensaje_lead.slice(0, 200))}»` : ''}</div>
+      <label style="display:block;margin-top:8px">Pregunta (puedes reescribirla para que sirva en general)<input name="p" value="${esc(p.pregunta)}" style="width:100%"></label>
+      <label style="display:block;margin-top:6px">Respuesta<textarea name="r" rows="3" style="width:100%" required placeholder="La respuesta tal cual se la darías al lead"></textarea></label>
+      <div class="fila-f" style="margin-top:6px;gap:14px;flex-wrap:wrap">
+        <label><input type="checkbox" name="usar" checked> Que Sofía la use en todos los chats</label>
+        <label><input type="checkbox" name="contestar" checked> Contestar al lead ahora</label>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px"><button class="primario">Responder</button><button type="button" data-desc="${p.id}">Descartar</button></div>
+      <div class="error" role="alert"></div></form>`).join('') : '<div class="vacio">No hay preguntas pendientes</div>'}
+    <h3>Respondidas (${resp.length})</h3>
+    ${resp.length ? `<div style="overflow:auto"><table><tr><th>Pregunta</th><th>Respuesta</th><th>Chat</th><th>Al lead</th><th>Sofía la usa</th><th></th></tr>${resp.map((p) => `<tr>
+      <td>${esc(p.pregunta)}</td><td>${esc(p.respuesta)}</td><td>${quien(p)}<br><span class="ayuda">${hora(p.respondida_at || p.updated_at)}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${esc(p.enviada || '—')}</td>
+      <td><input type="checkbox" data-usar="${p.id}" ${p.usar ? 'checked' : ''} aria-label="Sofía usa esta respuesta"></td>
+      <td><button data-borrar="${p.id}" title="Borrar">Borrar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no se ha respondido ninguna</div>'}`;
+  const m = $('#main');
+  m.querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
+  m.querySelectorAll('.fpreg').forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await api(`/panel/preguntas/${f.dataset.id}/responder`, { method: 'POST', body: JSON.stringify({ pregunta: f.p.value, respuesta: f.r.value, usar: f.usar.checked, contestar: f.contestar.checked }) });
+      f.outerHTML = `<div class="aviso-mini" role="status" style="${caja}">✅ Respondida${r.respondidas > 1 ? ` (y ${r.respondidas - 1} igual${r.respondidas > 2 ? 'es' : ''} de otros chats)` : ''}.${r.contestando ? ' Sofía se lo está contando al lead.' : ''}</div>`;
+      setTimeout(() => { if (estado.seccion === 'preguntas') preguntas(); }, 2500);
+    } catch (err) { f.querySelector('.error').textContent = err.message; }
+  });
+  m.querySelectorAll('[data-desc]').forEach((b) => b.onclick = async () => { await api(`/panel/preguntas/${b.dataset.desc}/descartar`, { method: 'POST', body: '{}' }); preguntas(); });
+  m.querySelectorAll('[data-usar]').forEach((c) => c.onchange = async () => { await api(`/panel/preguntas/${c.dataset.usar}/usar`, { method: 'POST', body: JSON.stringify({ usar: c.checked }) }); });
+  m.querySelectorAll('[data-borrar]').forEach((b) => b.onclick = async () => { if (!confirm('¿Borrar esta pregunta y su respuesta? Sofía dejará de saberla.')) return; await api(`/panel/preguntas/${b.dataset.borrar}`, { method: 'DELETE' }); preguntas(); });
 }
 
 // ---------- Seguimientos: reglas, próximos y lanzamientos ----------

@@ -3,6 +3,8 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { sembrarReglas } from './reglas.js';
 import { sembrarDocumentos } from './documentos.js';
+import { crearTabla as tablaPruebasClase } from './clase-prueba.js';
+import { crearTabla as tablaPreguntas } from './preguntas.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -307,6 +309,8 @@ export function openDb(dbPath) {
   db.exec(SCHEMA);
   migrar(db);
   db.exec(INDICES);
+  tablaPruebasClase(db);
+  tablaPreguntas(db);
   sembrarReglas(db);
   sembrarDocumentos(db);
   return db;
@@ -324,6 +328,11 @@ const COLUMNAS_NUEVAS = {
     prompt_v: 'INTEGER',          // versión del prompt con la que Sofía empezó este chat (rendimiento por versión)
     respondiendo_desde: 'TEXT',   // Sofía está contestando (si hay un reinicio a mitad, se vuelve a poner en cola)
     reintentos: 'INTEGER NOT NULL DEFAULT 0', // respuestas fallidas seguidas (IA o GHL caídos)
+    valoracion: 'INTEGER',        // nota del lead (1-10) que pone Sofía: probabilidad de que se apunte
+    valoracion_motivo: 'TEXT',
+    resumen: 'TEXT',              // resumen de toda la conversación (lo escribe Sofía en cada turno)
+    nota_ghl_id: 'TEXT',          // nota de la ficha de GHL con la valoración y el resumen (se actualiza)
+    nota_ghl_texto: 'TEXT',       // último texto enviado a esa nota (para no repetir la llamada si no cambia)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento

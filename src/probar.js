@@ -9,7 +9,8 @@ import { knowledge } from './knowledge.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { Setter } from './setter.js';
 import { Etiquetador } from './etiquetas.js';
-import { buscarSocioPorTelefono } from './aimharder/index.js';
+import { buscarSocioPorTelefono, clientesApi } from './aimharder/index.js';
+import { reservarEnAimHarder } from './clase-prueba.js';
 import { reglaDe, textoPrevisto } from './followups.js';
 import * as reglasSeg from './reglas.js';
 import * as reportes from './reportes.js';
@@ -30,7 +31,8 @@ export class GhlCaptura {
   async addTags(_, t) { this.salida.push(`[GHL] etiquetas: ${t.join(', ')}`); }
   async removeTags(_, t) { this.salida.push(`[GHL] quita etiquetas: ${t.join(', ')}`); }
   async assign() {}
-  async addNote() {}
+  async addNote(_, body) { if (/^⭐/.test(body || '')) this.salida.push(`[GHL] nota de la ficha: ${body.split('\n')[0]}`); return { note: { id: 'nota-prueba' } }; }
+  async updateNote(_, __, body) { this.salida.push(`[GHL] nota de la ficha: ${String(body || '').split('\n')[0]}`); return {}; }
   async getContact() { return { contact: {} }; }
 }
 
@@ -66,6 +68,9 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
         buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), // índice real, solo lectura
         prepararAlta: async () => ({ estado: 'simulada', detalle: 'chat de pruebas: no se guarda en AimHarder' }),
         fichaEnSede: async () => null,
+        // Comprueba la clase en el calendario real de AimHarder (solo lectura) y nunca reserva
+        reservarPrueba: async (datos) => { const r = await reservarEnAimHarder(clientesApi()[datos.sede], datos, { escribir: false }); return r.estado === 'simulada' ? { ...r, detalle: 'chat de pruebas: no se reserva en AimHarder' } : r; },
+        resultadoPrueba: async () => null,
       },
     });
     return { setter, ghl, etiquetas };
