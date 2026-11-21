@@ -110,3 +110,11 @@ test('un reporte aplicado se convierte en caso de la batería', async () => {
   assert.deepEqual(c.contexto, [['lead', 'precio en parla? mi mail es [email]']]);
   assert.match(c.criterios[0], /que pregunte la experiencia/);
 });
+
+test('la sede para comprobar horas sale de la ficha o del lead, no de lo que enumera Sofía', async () => {
+  const { sedeDe } = await import('../src/bateria.js');
+  const conv = [{ autor: 'ia', texto: 'te pilla mejor Parla, Getafe o Las Rosas?' }, { autor: 'lead', texto: 'getafe' }];
+  assert.equal(sedeDe(null, conv), 'getafe');
+  assert.equal(sedeDe('las_rosas', conv), 'las_rosas');
+  assert.equal(sedeDe(null, [{ autor: 'ia', texto: 'Parla o Getafe?' }, { autor: 'lead', texto: 'no sé' }]), null);
+});

@@ -14,7 +14,7 @@ const opt = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 
 const casos = fs.readFileSync(path.join(config.root, 'eval', 'casos-zapp.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   .filter((c) => !opt('solo') || c.tema === opt('solo')).slice(0, Number(opt('max')) || Infinity);
 
-const horasValidas = (sede) => {
+export const horasValidas = (sede) => {
   const s = new Set();
   for (const mod of Object.values(knowledge.horarios[sede] || {})) for (const hs of Object.values(mod)) hs.forEach((h) => s.add(h.slice(0, 5)));
   return s;
@@ -25,7 +25,7 @@ export function comprobar(caso, mensajes) {
   const fallos = [];
   const todo = caso.contexto.map(([, t]) => t).join('\n');
   const ultimoLead = [...caso.contexto].reverse().find(([r]) => r === 'lead')?.[1] || '';
-  const sede = normalizarSede(todo);
+  const sede = caso.sede !== undefined ? caso.sede : normalizarSede(todo);
   const texto = mensajes.join('\n');
   if (mensajes.length > 4) fallos.push('más de 4 mensajes');
   if (/[¿¡]/.test(texto)) fallos.push('usa ¿ o ¡');

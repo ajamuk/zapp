@@ -19,7 +19,8 @@ import { Etiquetador } from './etiquetas.js';
 import { pedirJSON, pedirTexto } from './llm.js';
 import * as docs from './documentos.js';
 import { costeRun } from './panel.js';
-import { comprobar } from '../scripts/evaluar.js';
+import { comprobar, horasValidas } from '../scripts/evaluar.js';
+import { normalizarSede } from './knowledge.js';
 
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 const fila = (c) => c && ({ ...c, contexto: json(c.contexto, []), criterios: json(c.criterios, []), activo: Boolean(c.activo), socio: Boolean(c.socio) });
@@ -199,10 +200,12 @@ export async function ejecutarCaso(db, caso, { complete, completeLead, completeJ
   for (const x of tmp.db.prepare('SELECT * FROM ai_runs').all()) usd += costeRun(x);
 
   // Comprobaciones automáticas, turno a turno de Sofía
+  // La sede es la que quedó en la ficha del chat o, si no, la que nombró el lead: nunca la que Sofía enumera al preguntar.
+  const sedeCaso = sedeDe(c.sede, conversacion);
   const fallosAuto = new Set();
   let visto = 0; const ctx = [];
   for (const m of conversacion) {
-    if (m.autor === 'ia' && turnosSofia[visto]?.[0] === m.texto) { for (const f of comprobar({ contexto: ctx.length ? ctx : [['lead', '']] }, turnosSofia[visto])) if (!NO_AUTOMATICOS.test(f)) fallosAuto.add(f); visto++; }
+    if (m.autor === 'ia' && turnosSofia[visto]?.[0] === m.texto) { for (const f of comprobar({ contexto: ctx.length ? ctx : [['lead', '']], sede: sedeCaso }, turnosSofia[visto])) if (!NO_AUTOMATICOS.test(f)) fallosAuto.add(f); visto++; }
     ctx.push([m.autor, m.texto]);
   }
   if (caso.tipo === 'momento' && !turnosSofia[0]?.length) fallosAuto.add('Sofía no contestó nada');
@@ -214,6 +217,31 @@ export async function ejecutarCaso(db, caso, { complete, completeLead, completeJ
   });
   const criterios = caso.criterios.map((t, i) => { const r = (j.criterios || []).find((x) => x.n === i + 1); return { criterio: t, cumple: Boolean(r?.cumple), motivo: r?.motivo || 'el juez no lo valoró' }; });
   return { pasa: fallosAuto.size === 0 && criterios.every((x) => x.cumple), fallosAuto: [...fallosAuto], criterios, conversacion, estado, usd };
+}
+
+export const sedeDe = (sedeFicha, conversacion) => sedeFicha || normalizarSede(conversacion.filter((m) => m.autor === 'lead').map((m) => m.texto).join('\n')) || null;
+
+/**
+ * Repasa los resultados guardados con la sede bien calculada: quita los avisos de «horas que no existen» que
+ * salieron por mirar la sede equivocada y recuenta las pasadas. Se puede ejecutar las veces que haga falta.
+ */
+export function recalcularHoras(db) {
+  let cambiados = 0;
+  for (const r of db.prepare("SELECT * FROM bateria_resultados WHERE fallos_auto LIKE '%horas que no existen%'").all()) {
+    const sede = sedeDe(json(r.estado, {}).sede, json(r.conversacion, []));
+    const validas = sede && sede !== 'el_canaveral' ? horasValidas(sede) : null;
+    const malas = new Set();
+    const resto = json(r.fallos_auto, []).filter((f) => {
+      const m = f.match(/^horas que no existen en \S+: (.+)$/); if (!m) return true;
+      if (validas) for (const h of m[1].split(', ')) if (!validas.has(h)) malas.add(h);
+      return false;
+    });
+    if (malas.size) resto.push(`horas que no existen en ${sede}: ${[...malas].join(', ')}`);
+    const pasa = resto.length === 0 && json(r.criterios, []).every((x) => x.cumple) && !r.error ? 1 : 0;
+    if (JSON.stringify(resto) !== r.fallos_auto || pasa !== r.pasa) { db.prepare('UPDATE bateria_resultados SET fallos_auto = ?, pasa = ? WHERE id = ?').run(JSON.stringify(resto), pasa, r.id); cambiados++; }
+  }
+  db.prepare('UPDATE bateria_pasadas SET pasan = (SELECT IFNULL(sum(pasa), 0) FROM bateria_resultados WHERE pasada_id = bateria_pasadas.id)').run();
+  return cambiados;
 }
 
 // ---------- Pasadas ----------
