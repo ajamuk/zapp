@@ -1,7 +1,8 @@
 // Embudo mensual por sede: leads nuevos → reservan prueba → asisten → primer pago.
 //
 // - Leads nuevos: contactos creados en GHL en el mes con la etiqueta de su sede (parla / getafe / las rosas,
-//   o "mpo <sede>"). Se descartan los que ya son socios (etiqueta "activo…" o "socio").
+//   o "mpo <sede>"; si no hay, la del origen del contacto). Se descartan los que ya son socios (etiqueta
+//   "activo…" o "socio"). Los interesados en El Cañaveral se cuentan aparte.
 // - Reservan, asisten y primer pago: el informe mensual de pruebas que saca metro-trial-crm del panel de
 //   AimHarder (/opt/metro-trial-crm/data/aimharder-AAAA-MM.json). Reservan = pruebas no canceladas; asisten =
 //   marcadas como asistidas en AimHarder; primer pago = alta con primer pago posterior a la prueba.
@@ -15,13 +16,28 @@ export const SEDES_EMBUDO = ['parla', 'getafe', 'las_rosas'];
 const CACHE_MS = 15 * 60 * 1000;
 const cache = new Map();
 
-/** Sede de un contacto de GHL según sus etiquetas, o null. */
+const NOMBRES_SEDE = [['parla', ['parla', 'mpo parla']], ['getafe', ['getafe', 'mpo getafe']], ['las_rosas', ['las rosas', 'mpo las rosas']]];
+const CANAVERAL = /ca[ñn]averal/i;
+
+/**
+ * Sede de un contacto de GHL según sus etiquetas, o null. El Cañaveral (próxima apertura) se reconoce por
+ * cualquier etiqueta que lo nombre («el cañaveral», «mpo-el-canaveral-interesado»…), pero solo si no tiene
+ * otra sede: quien ya tiene Parla, Getafe o Las Rosas cuenta allí.
+ */
 export function sedeDeEtiquetas(tags = []) {
   const t = tags.map((x) => String(x).toLowerCase().trim());
-  for (const [sede, nombres] of [['parla', ['parla', 'mpo parla']], ['getafe', ['getafe', 'mpo getafe']], ['las_rosas', ['las rosas', 'mpo las rosas']]]) {
-    if (t.some((x) => nombres.includes(x))) return sede;
-  }
+  for (const [sede, nombres] of NOMBRES_SEDE) if (t.some((x) => nombres.includes(x))) return sede;
+  if (t.some((x) => CANAVERAL.test(x))) return 'el_canaveral';
   return null;
+}
+
+/** Si no hay etiqueta de sede, la del origen del contacto («Web nueva · Getafe», «El Cañaveral · aviso…»). */
+export function sedeDeContacto(c = {}) {
+  const porTags = sedeDeEtiquetas(c.tags || []);
+  if (porTags) return porTags;
+  const o = String(c.source || '').toLowerCase();
+  if (CANAVERAL.test(o)) return 'el_canaveral';
+  return NOMBRES_SEDE.find(([, n]) => o.includes(n[0]))?.[0] || null;
 }
 
 const esSocio = (tags = []) => tags.some((x) => /^(activo|socio)\b/i.test(String(x).trim()));
@@ -47,7 +63,7 @@ export function mesActual(ahora = new Date()) {
 /** Cuenta los leads nuevos del mes por sede, paginando la búsqueda de contactos de GHL. */
 export async function leadsPorSede(ghl, mes) {
   const { desde, hasta } = rangoMes(mes);
-  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, sin_sede: 0 };
+  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0 };
   let searchAfter;
   for (let pagina = 0; pagina < 50; pagina++) {
     const r = await ghl.req('POST', '/contacts/search', {
@@ -59,7 +75,7 @@ export async function leadsPorSede(ghl, mes) {
     const contactos = r?.contacts || [];
     for (const c of contactos) {
       if (esSocio(c.tags)) continue;
-      cuenta[sedeDeEtiquetas(c.tags) || 'sin_sede']++;
+      cuenta[sedeDeContacto(c) || 'sin_sede']++;
     }
     searchAfter = contactos.at(-1)?.searchAfter;
     if (contactos.length < 100 || !searchAfter) break;
@@ -102,6 +118,8 @@ export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = 
   const valor = {
     mes, sedes,
     sin_sede: leads?.sin_sede ?? null,
+    // El Cañaveral aún no abre: sus interesados se cuentan aparte y no entran en el total ni en la conversión
+    el_canaveral: leads?.el_canaveral ?? null,
     pruebas_actualizadas: pruebas?.actualizado ?? null,
     avisos: [errorLeads, pruebas ? null : 'Todavía no hay informe de pruebas de AimHarder para este mes.'].filter(Boolean),
   };

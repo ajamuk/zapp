@@ -3,13 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { sedeDeEtiquetas, rangoMes, pruebasPorSede, leadsPorSede, embudo, limpiarCacheEmbudo } from '../src/embudo.js';
+import { sedeDeEtiquetas, sedeDeContacto, rangoMes, pruebasPorSede, leadsPorSede, embudo, limpiarCacheEmbudo } from '../src/embudo.js';
 
 test('sede según etiquetas de GHL', () => {
   assert.equal(sedeDeEtiquetas(['no contesta', 'Parla']), 'parla');
   assert.equal(sedeDeEtiquetas(['mpo getafe']), 'getafe');
   assert.equal(sedeDeEtiquetas(['las rosas']), 'las_rosas');
-  assert.equal(sedeDeEtiquetas(['el cañaveral']), null);
+  assert.equal(sedeDeEtiquetas(['el cañaveral']), 'el_canaveral');
+  assert.equal(sedeDeEtiquetas(['mpo-el-canaveral-interesado']), 'el_canaveral');
+  assert.equal(sedeDeEtiquetas(['el cañaveral', 'getafe']), 'getafe');
+  assert.equal(sedeDeEtiquetas(['no contesta']), null);
+  assert.equal(sedeDeContacto({ tags: [], source: 'Web nueva · Getafe' }), 'getafe');
+  assert.equal(sedeDeContacto({ tags: [], source: 'El Cañaveral · aviso de apertura' }), 'el_canaveral');
+  assert.equal(sedeDeContacto({ tags: ['parla'], source: 'Web nueva · Getafe' }), 'parla');
+  assert.equal(sedeDeContacto({ tags: [], source: 'Zapp whatsapp' }), null);
 });
 
 test('rango del mes en hora de Madrid, con horario de verano', () => {
@@ -45,10 +52,10 @@ const ghlFalso = (paginas) => {
 
 test('leads de GHL: pagina, reparte por sede y descarta socios', async () => {
   const pag1 = Array.from({ length: 100 }, (_, i) => ({ tags: [i % 2 ? 'parla' : 'getafe'], searchAfter: [i] }));
-  const pag2 = [{ tags: ['las rosas'] }, { tags: ['activo parla', 'parla'] }, { tags: [] }];
+  const pag2 = [{ tags: ['las rosas'] }, { tags: ['activo parla', 'parla'] }, { tags: [] }, { tags: ['el cañaveral'] }];
   const ghl = ghlFalso([pag1, pag2]);
   const r = await leadsPorSede(ghl, '2026-11');
-  assert.deepEqual(r, { parla: 50, getafe: 50, las_rosas: 1, sin_sede: 1 });
+  assert.deepEqual(r, { parla: 50, getafe: 50, las_rosas: 1, el_canaveral: 1, sin_sede: 1 });
   assert.equal(ghl.llamadas.length, 2);
   assert.deepEqual(ghl.llamadas[1].searchAfter, [99]);
 });

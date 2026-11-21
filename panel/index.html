@@ -511,7 +511,7 @@ async function embudo() {
       ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, PASOS.map(([k]) => x[k]))).join('')}
       ${tarjetaSede('Total 3 sedes', tot)}
     </div>
-    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
+    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios)${r.el_canaveral ? ` · <b>${r.el_canaveral}</b> interesados en El Cañaveral (próxima apertura), aparte del total` : ''}${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
     Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
     Primer pago = alta pagada después de la clase de prueba.</p>`;
 }
