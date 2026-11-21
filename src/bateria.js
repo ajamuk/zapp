@@ -246,7 +246,7 @@ export function recalcularHoras(db) {
 
 // ---------- Pasadas ----------
 
-const SIN_SERVICIO = /credit balance|authentication_error|permission_error|invalid x-api-key|\b40[13]\b/i;
+export const SIN_SERVICIO = /credit balance|usage limits?|authentication_error|permission_error|invalid x-api-key|\b40[13]\b/i;
 const enMarcha = new Map(); // pasada → { cancelar }
 
 /** Casos que entran en una pasada según el filtro { grupo, tema, ids }. */
@@ -271,7 +271,7 @@ export function lanzarPasada(db, { borradores = null, repeticiones = 2, filtro =
       const [caso, rep] = t; let r = null; let error = null;
       try { r = await ejecutarCaso(db, caso, { complete, completeLead, completeJSON, borradores: Object.keys(bor).length ? bor : null }); } catch (e) { error = e.message; }
       // Sin saldo o sin permiso en la API no hay nada que medir: se para la pasada en vez de apuntar fallos que no son de Sofía.
-      if (error && SIN_SERVICIO.test(error)) { ctl.cancelada = true; ctl.error = 'La IA no está disponible (saldo agotado o clave sin permiso). La pasada se ha parado: los casos que faltan no cuentan.'; return; }
+      if (error && SIN_SERVICIO.test(error)) { ctl.cancelada = true; ctl.error = 'La IA no está disponible (saldo agotado, límite mensual de gasto alcanzado o clave sin permiso). La pasada se ha parado: los casos que faltan no cuentan.'; return; }
       ins.run(id, caso.id, rep, r?.pasa ? 1 : 0, JSON.stringify(r?.fallosAuto || []), JSON.stringify(r?.criterios || []), JSON.stringify(r?.conversacion || []), JSON.stringify(r?.estado || {}), error);
       db.prepare('UPDATE bateria_pasadas SET hechos = hechos + 1, pasan = pasan + ?, usd = usd + ? WHERE id = ?').run(r?.pasa ? 1 : 0, r?.usd || 0, id);
     }

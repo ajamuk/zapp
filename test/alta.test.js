@@ -53,9 +53,11 @@ test('aviso de alta al lead: sede, fecha, app, documentos e importe verificado',
   assert.ok(nuevo.some((m) => /correo a a@b\.es/.test(m)));
   assert.ok(nuevo.some((m) => /app CrossFit MetroPolitano/.test(m)));
   assert.match(nuevo.at(-1), /firma los documentos.*22,67 €/);
+  assert.equal(nuevo.length, 3); // con la burbuja de Sofía, 4 como mucho
   const ex = mensajesAlta({ sede: 'getafe', fecha_inicio: '2026-12-01', email: 'a@b.es', pendiente: 95, exSocio: true });
   assert.ok(ex.some((m) => /reenviado la invitación/.test(m)));
   assert.ok(ex.some((m) => /recuperarla/.test(m)));
   assert.match(ex.at(-1), /95 €/);
+  assert.equal(ex.length, 3);
   for (const m of [...nuevo, ...ex]) { assert.ok(!/\.$/.test(m)); assert.ok(!/^[A-ZÁÉÍÓÚ]/.test(m)); }
 });

@@ -574,7 +574,7 @@ const htmlPrevisto = (t, plantilla) => t == null ? '<span class="ayuda">Preparan
 // Pide los textos de tres en tres (cada uno es una llamada al modelo): tarda la tercera parte que de uno en uno
 async function prepararTextos(items, pedir, pintar) {
   const cola = [...items];
-  const obrero = async () => { for (let it; (it = cola.shift()) !== undefined;) { try { pintar(it, await pedir(it)); } catch (e) { pintar(it, { error: e.message }); } } };
+  const obrero = async () => { for (let it; (it = cola.shift()) !== undefined;) { try { pintar(it, await pedir(it)); } catch (e) { pintar(it, { error: e.message }); for (const resto of cola.splice(0)) pintar(resto, { error: e.message }); } } }; // si una falla (IA caída), no se insiste con las demás
   await Promise.all([obrero(), obrero(), obrero()]);
 }
 

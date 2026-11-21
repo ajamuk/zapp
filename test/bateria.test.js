@@ -130,3 +130,10 @@ test('si la IA se queda sin saldo, la pasada se para y no apunta fallos', async 
   assert.equal(fila.estado, 'error'); assert.match(fila.error, /saldo/);
   assert.equal(db.prepare('SELECT count(*) n FROM bateria_resultados').get().n, 0);
 });
+
+test('la batería reconoce el límite mensual de gasto de la API como IA no disponible', async () => {
+  const { SIN_SERVICIO } = await import('../src/bateria.js');
+  assert.ok(SIN_SERVICIO.test('400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."}}'));
+  assert.ok(SIN_SERVICIO.test('Your credit balance is too low'));
+  assert.ok(!SIN_SERVICIO.test('overloaded_error'));
+});

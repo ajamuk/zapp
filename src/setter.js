@@ -581,7 +581,7 @@ export class Setter {
         ok: true, estado: 'preparada', ex_socio: Boolean(res.exSocio), sede: SEDE_NOMBRE[sede], fecha_inicio: d.fecha_inicio,
         pendiente_verificado: res.pendiente,
         nota: avisar
-          ? 'El sistema ya le envía el aviso del alta con la sede, la fecha, la app, los documentos y el importe pendiente. Tú no repitas esos datos: como mucho una frase corta de bienvenida, o nada.'
+          ? 'El sistema ya le envía el aviso del alta con la sede, la fecha, la app, los documentos y el importe pendiente. Son 3 mensajes que salen justo después de los tuyos, así que tú manda UNA sola burbuja corta de bienvenida y no repitas ninguno de esos datos.'
           : 'Alta preparada sin avisar al lead (lo ha pedido el equipo). No le digas nada del alta.',
       };
     }
@@ -610,11 +610,9 @@ export function mensajesAlta({ sede, fecha_inicio, email, pendiente, exSocio }) 
   const donde = `${SEDE_NOMBRE[sede] || sede}`;
   const m = [`listo, ya tienes el alta hecha en ${donde} para empezar el ${fechaLarga(fecha_inicio)}`];
   if (exSocio) {
-    m.push(`como ya habías estado con nosotros he usado tu ficha de siempre y te he reenviado la invitación a ${email}`);
-    m.push('entra en la app CrossFit MetroPolitano con ese email, y si no recuerdas la contraseña dale a recuperarla en la propia app');
+    m.push(`como ya habías estado con nosotros he usado tu ficha de siempre y te he reenviado la invitación a ${email}, entra en la app CrossFit MetroPolitano con ese email (si no recuerdas la contraseña, dale a recuperarla en la propia app)`);
   } else {
-    m.push(`te acaba de llegar un correo a ${email} con tu contraseña, míralo también en spam por si acaso`);
-    m.push('descárgate la app CrossFit MetroPolitano y entra con ese email y la contraseña del correo');
+    m.push(`te acaba de llegar un correo a ${email} con tu contraseña (mira también en spam), descárgate la app CrossFit MetroPolitano y entra con ese email y esa contraseña`);
   }
   m.push(`antes de tu primera clase firma los documentos y paga el primer recibo desde la app${pendiente ? `, son ${euros(pendiente)}` : ''}`);
   return m;
