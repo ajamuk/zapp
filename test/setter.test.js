@@ -251,3 +251,20 @@ test('webhook de cambio de etiquetas de GHL', () => {
   assert.equal(e.contactId, 'k9');
   assert.deepEqual(e.tags, ['a', 'b']);
 });
+
+test('si Sofía enumera las sedes sin El Cañaveral, se le devuelve una vez para que lo añada', async () => {
+  const { runTurn, revisarRespuesta } = await import('../src/llm.js');
+  assert.ok(revisarRespuesta({ mensajes: ['en qué sede te viene mejor, Parla, Getafe o Las Rosas?'] }));
+  assert.equal(revisarRespuesta({ mensajes: ['Parla, Getafe, Las Rosas o El Cañaveral, que abre el 1 de febrero de 2027?'] }), null);
+  assert.equal(revisarRespuesta({ mensajes: ['en Getafe y Las Rosas no hay clase de prueba'] }), null); // no es una lista de sedes
+  const resp = (id, mensajes) => ({ content: [{ type: 'tool_use', id, name: 'responder', input: { mensajes, fase: 'f1 apertura' } }] });
+  const guion = [resp('a', ['tenemos Parla, Getafe y Las Rosas, cuál te viene mejor?']), resp('b', ['tenemos Parla, Getafe, Las Rosas y El Cañaveral, nuestra próxima apertura el 1 de febrero de 2027, cuál te viene mejor?'])];
+  const vistos = [];
+  const r = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete: async (req) => { vistos.push(req.messages.at(-1)); return guion.shift(); } });
+  assert.match(r.respuesta.mensajes[0], /Cañaveral/);
+  assert.equal(vistos[1].content[0].tool_use_id, 'a');
+  assert.match(vistos[1].content[0].content, /nombrando las cuatro/);
+  // Solo se corrige una vez: si insiste, se envía lo que diga (no se bloquea el chat)
+  const terco = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete: async () => resp('x', ['Parla, Getafe o Las Rosas?']) });
+  assert.equal(terco.respuesta.mensajes[0], 'Parla, Getafe o Las Rosas?');
+});

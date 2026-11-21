@@ -91,7 +91,7 @@ Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de
 Son el horario habitual: no confirman plazas libres. La disponibilidad real se ve en la app.
 Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consultan con la herramienta `consultar_horarios`.
 
-- Actividades: Academy, CrossFit y HYROX en las tres sedes; CrossFit Partner los sábados; Open Box y Halterofilia en Parla y Las Rosas (no en Getafe); Fuerza en Parla.
+- Actividades: Academy, CrossFit y HYROX en todos los centros; CrossFit Partner los sábados; Open Box y Halterofilia en Parla y Las Rosas (no en Getafe); Fuerza en Parla.
 
 - Las clases se abren para reservar 4 días antes a las 22:00 y se pueden reservar hasta 1 minuto antes.
 - No hay turno fijo: cada día se elige la hora en la app.

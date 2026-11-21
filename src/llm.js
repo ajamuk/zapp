@@ -119,6 +119,18 @@ let client;
 const getClient = () => (client ??= new Anthropic({ apiKey: config.ai.apiKey }));
 
 /**
+ * Reglas que no se dejan al criterio del modelo. Devuelve el motivo si la respuesta no se debe enviar tal cual.
+ * Hoy solo una: si enumera las sedes, El Cañaveral (próxima apertura, 1 feb 2027) tiene que estar en la lista.
+ */
+export function revisarRespuesta(input) {
+  const t = (Array.isArray(input?.mensajes) ? input.mensajes : []).join(' ').toLowerCase();
+  if (/parla/.test(t) && /getafe/.test(t) && /las rosas/.test(t) && !/ca[ñn]averal/.test(t)) {
+    return 'No enviado: has enumerado las sedes sin El Cañaveral. Vuelve a llamar a `responder` con los mismos mensajes, nombrando las cuatro: Parla, Getafe, Las Rosas y El Cañaveral, que es nuestra próxima apertura el 1 de febrero de 2027.';
+  }
+  return null;
+}
+
+/**
  * Ejecuta un turno: llama al modelo, resuelve herramientas y devuelve la entrada de `responder`.
  * `complete` se puede sustituir en tests.
  */
@@ -130,7 +142,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
   // normal tarda 4-8 s, y sin límite una llamada colgada bloquearía el chat hasta 10 minutos.
   const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: 60000, maxRetries: 2 }));
   const conv = [...messages];
-  let recordatorios = 0;
+  let recordatorios = 0; let correcciones = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
     const t0 = Date.now();
     const res = await llamar({
@@ -146,6 +158,14 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
     const final = usos.find((u) => u.name === 'responder');
+    // Comprobación fija antes de enviar: si falla, se le devuelve al modelo una vez para que lo corrija
+    const pega = final && usos.length === 1 && correcciones < 1 ? revisarRespuesta(final.input) : null;
+    if (pega) {
+      correcciones++;
+      conv.push({ role: 'assistant', content: res.content });
+      conv.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: final.id, content: pega, is_error: true }] });
+      continue;
+    }
     if (final) {
       // Si junto a `responder` pidió otras herramientas (derivar, reservar, enviar un archivo…), se ejecutan también:
       // si no, el lead leería «te paso con el equipo» sin que el chat se derive de verdad.
