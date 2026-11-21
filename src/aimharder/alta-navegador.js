@@ -71,6 +71,9 @@ export function prepararFormulario(d, cfg = cargarConfig()) {
 async function login(page) {
   await page.goto('https://aimharder.com/login', { waitUntil: 'networkidle' });
   if (!/login/.test(page.url())) return; // sesión ya abierta
+  // Sin responder al aviso de cookies AimHarder no deja entrar («Acepta o deniega las cookies para continuar»)
+  const denegar = page.locator('a.removeCookie', { hasText: /denegar todas/i });
+  if (await denegar.isVisible().catch(() => false)) await denegar.click().catch(() => {});
   await page.fill('input[type="email"], input[name*="mail" i]', config.aimharder.adminUser);
   await page.fill('input[type="password"]', config.aimharder.adminPassword);
   await Promise.all([page.waitForURL((u) => !/login/.test(String(u)), { timeout: 20000 }), page.keyboard.press('Enter')]);
