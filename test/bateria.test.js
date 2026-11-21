@@ -18,11 +18,11 @@ const lead = (frases) => { const cola = [...frases]; return async () => ({ conte
 
 test('casos: se cargan los reales de Zapp (anonimizados) y los escenarios, con reparto estable en reserva', () => {
   const db = openDb(':memory:');
-  assert.equal(bat.sembrarCasos(db), 59);
+  assert.equal(bat.sembrarCasos(db), 61);
   assert.equal(bat.sembrarCasos(db), 0); // no duplica
   const c = bat.listarCasos(db);
   assert.equal(c.filter((x) => x.origen === 'zapp').length, 32);
-  assert.equal(c.filter((x) => x.tipo === 'escenario').length, 27);
+  assert.equal(c.filter((x) => x.tipo === 'escenario').length, 29);
   const reserva = c.filter((x) => x.grupo === 'reserva').length;
   assert.ok(reserva >= 8 && reserva <= 22, `reserva: ${reserva}`);
   assert.ok(!c.some((x) => /\d{9}|@\w+\.\w+/.test(JSON.stringify(x.contexto)) && x.origen === 'zapp'));

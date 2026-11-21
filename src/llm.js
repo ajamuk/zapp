@@ -63,7 +63,7 @@ export const TOOLS = [
   },
   {
     name: 'reservar_prueba_parla',
-    description: 'Pide al equipo la clase de prueba gratuita en Parla. Solo si el lead la ha pedido.',
+    description: 'Pide al equipo la clase de prueba gratuita en Parla, cuando el lead la pide o acepta la que le ofreces, con día y hora elegidos.',
     input_schema: {
       type: 'object',
       properties: {

@@ -92,7 +92,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
       // Reglas que aplican a esta prueba: las de silencio, las de largo plazo (si lo ha aplazado), las de las
       // etiquetas que lleva y el recordatorio si ha pedido clase de prueba
       seguimientos: reglasSeg.listar(repo.db).filter((x) => x.canales.includes(c.channel)
-        && (x.tipo === 'silencio' || (x.tipo === 'largo-plazo' && c.retomar) || (x.tipo === 'cita' && c.prueba_fecha)
+        && (x.tipo === 'silencio' || (x.tipo === 'largo-plazo' && c.retomar) || (['cita', 'tras-cita'].includes(x.tipo) && c.prueba_fecha)
           || (x.tipo === 'etiqueta' && db.prepare('SELECT 1 FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').get(id, x.etiquetaId))))
         .map((x) => ({ id: x.id, nombre: x.nombre, minutos: x.minutos, tipo: x.tipo, dias: x.dias, despuesDe: x.despuesDe, activo: x.activo, modo: x.modo })),
       prueba_fecha: c.prueba_fecha,
@@ -228,8 +228,8 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
     const ahora = ahoraDe(c)();
     const ret = json(c.retomar, null);
     const clase = c.prueba_fecha ? new Date(c.prueba_fecha) : null;
-    if (regla.tipo === 'cita' && clase) {
-      return { id: null, conversation_id: c.id, regla_id: regla.id, tipo: 'cita', due_at: new Date(clase.getTime() - regla.minutos * 60000).toISOString(),
+    if (['cita', 'tras-cita'].includes(regla.tipo) && clase) {
+      return { id: null, conversation_id: c.id, regla_id: regla.id, tipo: 'cita', due_at: new Date(clase.getTime() + (regla.tipo === 'tras-cita' ? 1 : -1) * regla.minutos * 60000).toISOString(),
         contexto: JSON.stringify({ prueba: clase.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) }) };
     }
     const due = regla.tipo === 'largo-plazo'

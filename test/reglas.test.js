@@ -36,7 +36,8 @@ const responder = (input) => [{ name: 'responder', input: { fase: 'f2 diagnósti
 test('las reglas se copian del archivo la primera vez, con el recordatorio de prueba', () => {
   const db = openDb(':memory:');
   const r = reglas.listar(db);
-  assert.deepEqual(r.map((x) => x.id), ['comercial-5h', 'info-tras-reserva', 'ultimo-intento-24h', 'cierre-4-dias', 'largo-plazo', 'largo-plazo-2', 'recordatorio-prueba']);
+  assert.deepEqual(r.map((x) => x.id), ['comercial-5h', 'info-tras-reserva', 'ultimo-intento-24h', 'cierre-4-dias', 'largo-plazo', 'largo-plazo-2', 'recordatorio-prueba', 'tras-prueba']);
+  assert.equal(reglas.obtener(db, 'tras-prueba').tipo, 'tras-cita');
   assert.equal(reglas.obtener(db, 'largo-plazo').dias, 21);
   assert.equal(reglas.obtener(db, 'cierre-4-dias').plantilla, true);
   assert.equal(reglas.obtener(db, 'comercial-5h').plantilla, false);
@@ -102,6 +103,38 @@ test('recordatorio de la clase de prueba: 3 h antes, con la clase en la tarea; s
   assert.match(sal.requests.at(-1).system.at(-1).text, /Su clase de prueba: jueves, 19 de noviembre/);
   cancelarCita(repo, 'c1');
   assert.equal(repo.getConv('c1').prueba_fecha, null);
+});
+
+test('después de la clase de prueba: sale 3 h después de la clase, con la clase en la tarea; se cancela si se anula', async () => {
+  const { repo, setter, sal } = montar({ respuestas: [
+    [{ name: 'reservar_prueba_parla', input: { modalidad: 'academy', fecha_hora: '2026-11-19 10:00' } }],
+    responder({ mensajes: ['te la dejo apuntada'] }),
+  ] });
+  await setter.responder('c1');
+  const tras = pend(repo).find((x) => x.regla_id === 'tras-prueba');
+  assert.equal(tras.tipo, 'cita');
+  assert.equal(tras.due_at, '2026-11-19T12:00:00.000Z'); // 10:00 Madrid (UTC+1) + 3 h
+  assert.equal(pend(repo).find((x) => x.regla_id === 'recordatorio-prueba').due_at, '2026-11-19T06:00:00.000Z');
+  const regla = reglas.obtener(repo.db, 'tras-prueba');
+  const tarea = (await import('../src/followups.js')).contextoTarea(regla, { contexto: JSON.stringify({ prueba: 'jueves, 19 de noviembre, 10:00' }) });
+  assert.match(tarea, /ya ha pasado/);
+  assert.match(tarea, /Su clase de prueba: jueves/);
+  cancelarCita(repo, 'c1');
+  assert.ok(!pend(repo).some((x) => ['tras-prueba', 'recordatorio-prueba'].includes(x.regla_id)));
+  assert.deepEqual(sal.enviados, ['te la dejo apuntada']);
+});
+
+test('bases que ya existían reciben la regla de después de la prueba una sola vez', () => {
+  const db = openDb(':memory:');
+  db.prepare("DELETE FROM reglas_seguimiento WHERE id = 'tras-prueba'").run();
+  db.prepare("DELETE FROM ajustes WHERE clave = 'semilla_tras_prueba'").run();
+  reglas.sembrarReglas(db);
+  assert.equal(reglas.obtener(db, 'tras-prueba').minutos, 180);
+  assert.equal(reglas.listar(db).length, 8);
+  // Si el equipo la borra, no vuelve
+  reglas.borrar(db, 'tras-prueba');
+  reglas.sembrarReglas(db);
+  assert.equal(reglas.obtener(db, 'tras-prueba'), null);
 });
 
 test('hora de Madrid con cambio de horario', () => {

@@ -992,11 +992,12 @@ const TIPOS_SEG = [
   ['silencio', 'Cuando el lead se queda callado', 'Salen si el lead no contesta a la última respuesta de Sofía. Se cancelan si el lead escribe. Pasadas 24 h desde su último mensaje, WhatsApp solo deja plantillas.'],
   ['etiqueta', 'Al ponerse una etiqueta', 'Salen un tiempo después de poner una etiqueta (Sofía, el equipo, una regla o GHL). Una vez por chat y etiqueta. Sobreviven a que el lead escriba; se cancelan si quitan la etiqueta. Ej.: «Le parece caro» + 2 días.'],
   ['cita', 'Antes de la clase de prueba', 'Se preparan cuando Sofía pide la clase de prueba de Parla y se cancelan si se anula desde el chat. Salen aunque el lead haya escrito entre medias.'],
+  ['tras-cita', 'Después de la clase de prueba', 'Salen un tiempo después de la hora de la clase de prueba de Parla, para saber qué tal y cerrar el alta. Se cancelan si se anula desde el chat. Salen aunque el lead haya escrito entre medias.'],
   ['largo-plazo', '🗓️ Cuando lo deja para más adelante', 'Cuando el lead dice que lo decidirá o se apuntará más adelante: en la fecha que dé (o a los días indicados), sustituyendo a los de silencio. Sofía comprueba antes si siguen teniendo sentido. Solo WhatsApp.'],
 ];
 const unidades = (min) => (min % 1440 === 0 ? [min / 1440, 'dias'] : min % 60 === 0 ? [min / 60, 'horas'] : [min, 'minutos']);
 const textoEspera = (r) => { const [n, u] = unidades(r.minutos); const t = `${n} ${u === 'dias' ? (n === 1 ? 'día' : 'días') : u === 'horas' ? (n === 1 ? 'hora' : 'horas') : 'min'}`;
-  return r.tipo === 'cita' ? `${t} antes` : r.tipo === 'largo-plazo' ? (r.despuesDe ? `${t} después del anterior` : `fecha que dé el lead o ${t}`) : `${t} después`; };
+  return r.tipo === 'cita' ? `${t} antes` : r.tipo === 'tras-cita' ? `${t} después de la clase` : r.tipo === 'largo-plazo' ? (r.despuesDe ? `${t} después del anterior` : `fecha que dé el lead o ${t}`) : `${t} después`; };
 
 async function seguimientos() {
   if (estado.editRegla) return editorRegla();
@@ -1046,7 +1047,7 @@ async function editorRegla() {
   estado.recLista = await api('/panel/recursos').catch(() => []);
   if (estado.seccion !== 'seguimientos') return;
   const original = estado.editRegla.id ? todas.find((r) => r.id === estado.editRegla.id) : null;
-  const d = original ? JSON.parse(JSON.stringify(original)) : { nombre: '', tipo: estado.editRegla.nuevo, canales: ['whatsapp', 'instagram'], minutos: estado.editRegla.nuevo === 'cita' ? 180 : estado.editRegla.nuevo === 'largo-plazo' ? 30 * 1440 : 1440, modo: 'ia', instrucciones: '', textoFijo: '', condicion: '', excluir: { clientes: true, pausada: true, calladasHoras: 0 }, plantilla: true, activo: true, etiquetaId: etqs[0]?.id || null, ponerEtiqueta: null, despuesDe: null };
+  const d = original ? JSON.parse(JSON.stringify(original)) : { nombre: '', tipo: estado.editRegla.nuevo, canales: ['whatsapp', 'instagram'], minutos: ['cita', 'tras-cita'].includes(estado.editRegla.nuevo) ? 180 : estado.editRegla.nuevo === 'largo-plazo' ? 30 * 1440 : 1440, modo: 'ia', instrucciones: '', textoFijo: '', condicion: '', excluir: { clientes: true, pausada: true, calladasHoras: 0 }, plantilla: true, activo: true, etiquetaId: etqs[0]?.id || null, ponerEtiqueta: null, despuesDe: null };
   if (d.tipo === 'largo-plazo' && !original) d.canales = ['whatsapp'];
   const m = $('#main');
   const salir = () => { estado.editRegla = null; seguimientos(); };
@@ -1060,7 +1061,7 @@ async function editorRegla() {
         <div class="fila-f" style="margin-top:10px">
           <input type="number" id="rnum" min="1" value="${n}" style="width:90px" aria-label="Cantidad">
           <select id="runi" aria-label="Unidad">${[['minutos', 'minutos'], ['horas', 'horas'], ['dias', 'días']].map(([v, t]) => `<option value="${v}" ${u === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
-          <span>${{ silencio: 'después de la última respuesta de Sofía sin contestar', etiqueta: 'después de ponerse la etiqueta', cita: 'antes de la clase de prueba', 'largo-plazo': d.despuesDe ? 'después del seguimiento anterior' : 'si el lead no da fecha' }[d.tipo]}</span></div>
+          <span>${{ silencio: 'después de la última respuesta de Sofía sin contestar', etiqueta: 'después de ponerse la etiqueta', cita: 'antes de la clase de prueba', 'tras-cita': 'después de la hora de la clase de prueba', 'largo-plazo': d.despuesDe ? 'después del seguimiento anterior' : 'si el lead no da fecha' }[d.tipo]}</span></div>
         ${d.tipo === 'etiqueta' ? `<label class="fila-f" style="margin-top:8px">Etiqueta: <select id="retq">${etqs.map((e) => `<option value="${e.id}" ${d.etiquetaId === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></label>${etqs.length ? '' : '<p class="error">Crea antes alguna etiqueta.</p>'}` : ''}
         ${d.tipo === 'largo-plazo' ? `<label class="fila-f" style="margin-top:8px">Va detrás de: <select id="rdesp"><option value="">Ninguno (es el primero)</option>${todas.filter((r) => r.tipo === 'largo-plazo' && r.id !== d.id).map((r) => `<option value="${esc(r.id)}" ${d.despuesDe === r.id ? 'selected' : ''}>${esc(r.nombre)}</option>`).join('')}</select></label>` : ''}
         <div class="fila-f" style="margin-top:8px">Canales: ${['whatsapp', 'instagram'].map((c) => `<label class="check"><input type="checkbox" data-can="${c}" ${d.canales.includes(c) ? 'checked' : ''}> ${CANAL[c]}</label>`).join('')}</div>

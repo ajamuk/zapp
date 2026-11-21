@@ -5,12 +5,14 @@
 //   silencio     — Sofía responde y el lead se queda callado: sale `minutos` después. Se cancela si el lead escribe.
 //   etiqueta     — al ponerse una etiqueta: sale `minutos` después. Solo se cancela si quitan la etiqueta.
 //   cita         — antes de la clase de prueba: sale `minutos` antes. Se cancela si se anula la prueba.
+//   tras-cita    — después de la clase de prueba: sale `minutos` después de la hora de la clase. Igual que cita.
 //   largo-plazo  — el lead lo deja para más adelante: en la fecha que da (o `minutos` después); `despues_de` encadena.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const TIPOS = ['silencio', 'etiqueta', 'cita', 'largo-plazo'];
+export const TIPOS = ['silencio', 'etiqueta', 'cita', 'tras-cita', 'largo-plazo'];
+export const TIPOS_CITA = ['cita', 'tras-cita'];
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -32,9 +34,29 @@ export function deFila(f) {
 export const listar = (db) => db.prepare('SELECT * FROM reglas_seguimiento ORDER BY orden, created_at').all().map(deFila);
 export const obtener = (db, id) => deFila(db.prepare('SELECT * FROM reglas_seguimiento WHERE id = ?').get(id));
 
-/** Copia las reglas de config/followups.json la primera vez (y añade el recordatorio de la clase de prueba). */
+/** Seguimiento después de la clase de prueba de Parla: para cerrar el alta con quien ya ha probado. */
+export const TRAS_PRUEBA = {
+  id: 'tras-prueba', nombre: 'Después de la clase de prueba', tipo: 'tras-cita', canales: ['whatsapp', 'instagram'], minutos: 180,
+  condicion: 'Solo si la clase de prueba se hizo (no la anuló ni la cambió), no se ha dado de alta y no ha escrito después de la clase contando qué tal o diciendo que no sigue.',
+  instrucciones: 'Un mensaje breve y cercano: pregúntale qué tal la clase de prueba y, en la misma pregunta, si quiere que le dejes el alta preparada (con la tarifa que ya hablasteis, si la hay). Una sola pregunta, sin presión y sin dar precios nuevos.',
+  plantillaWhatsapp: {},
+};
+
+/** Bases que ya existían: añade una sola vez la regla de después de la prueba (si la borran, no vuelve). */
+function sembrarTrasPrueba(db) {
+  if (db.prepare("SELECT 1 FROM ajustes WHERE clave = 'semilla_tras_prueba'").get()) return;
+  if (!db.prepare('SELECT 1 FROM reglas_seguimiento WHERE id = ?').get(TRAS_PRUEBA.id)) {
+    const orden = (db.prepare('SELECT max(orden) m FROM reglas_seguimiento').get().m ?? -1) + 1;
+    db.prepare(`INSERT INTO reglas_seguimiento (id, nombre, tipo, canales, minutos, condicion, instrucciones, modo, excluir, plantilla, activo, orden)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'ia', ?, 1, 1, ?)`).run(TRAS_PRUEBA.id, TRAS_PRUEBA.nombre, TRAS_PRUEBA.tipo, JSON.stringify(TRAS_PRUEBA.canales), TRAS_PRUEBA.minutos,
+      TRAS_PRUEBA.condicion, TRAS_PRUEBA.instrucciones, JSON.stringify({ clientes: true, pausada: true }), orden);
+  }
+  db.prepare("INSERT INTO ajustes (clave, valor) VALUES ('semilla_tras_prueba', 'true')").run();
+}
+
+/** Copia las reglas de config/followups.json la primera vez (y añade el recordatorio y el seguimiento de la clase de prueba). */
 export function sembrarReglas(db) {
-  if (db.prepare('SELECT count(*) n FROM reglas_seguimiento').get().n) return;
+  if (db.prepare('SELECT count(*) n FROM reglas_seguimiento').get().n) return sembrarTrasPrueba(db);
   let base;
   try { base = JSON.parse(fs.readFileSync(path.join(raiz, 'config', 'followups.json'), 'utf8')); } catch { return; }
   let toggles = {};
@@ -48,6 +70,7 @@ export function sembrarReglas(db) {
       plantillaWhatsapp: {},
     });
   }
+  if (!reglas.some((r) => r.tipo === 'tras-cita')) reglas.push(TRAS_PRUEBA);
   const ins = db.prepare(`INSERT INTO reglas_seguimiento (id, nombre, tipo, canales, minutos, despues_de, condicion, instrucciones, modo, excluir, plantilla, activo, orden)
     VALUES (@id, @nombre, @tipo, @canales, @minutos, @despues_de, @condicion, @instrucciones, 'ia', @excluir, @plantilla, @activo, @orden)`);
   db.transaction(() => reglas.forEach((r, i) => ins.run({
@@ -56,6 +79,7 @@ export function sembrarReglas(db) {
     condicion: r.condicion || null, instrucciones: r.instrucciones || null, excluir: JSON.stringify({ clientes: true, pausada: true }),
     plantilla: r.plantillaWhatsapp ? 1 : 0, activo: toggles[r.id] === false ? 0 : 1, orden: i,
   })))();
+  db.prepare("INSERT OR IGNORE INTO ajustes (clave, valor) VALUES ('semilla_tras_prueba', 'true')").run();
 }
 
 const slug = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'regla';

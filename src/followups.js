@@ -20,6 +20,7 @@ export function contextoSeguimiento(regla) {
       silencio: 'El lead no ha contestado a tu último mensaje. Decide si enviar este seguimiento.',
       etiqueta: 'Este seguimiento se programó al ponerse una etiqueta en el chat. Decide si enviarlo.',
       cita: 'El lead tiene una clase de prueba próximamente. Decide si enviar este recordatorio.',
+      'tras-cita': 'El lead tenía una clase de prueba que ya ha pasado. Decide si enviar este seguimiento.',
       'largo-plazo': 'El lead dijo que lo dejaba para más adelante. Decide si enviar este seguimiento.',
     }[regla.tipo] || 'Decide si enviar este seguimiento.',
     regla.condicion ? `Condición para enviarlo: ${regla.condicion}` : 'Envíalo salvo que no tenga ningún sentido con la conversación delante (por ejemplo, ya se apuntó o pidió no recibir mensajes).',
@@ -49,7 +50,7 @@ export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() 
     futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
     contextoSeguimiento(regla),
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
-    regla.tipo === 'cita' && c?.prueba ? `Su clase de prueba: ${c.prueba}.` : '',
+    reglas.TIPOS_CITA.includes(regla.tipo) && c?.prueba ? `Su clase de prueba: ${c.prueba}.` : '',
     plantilla ? 'El texto irá dentro de una plantilla aprobada de WhatsApp: una sola frase, sin saltos de línea.' : '',
   ].filter(Boolean).join('\n');
 }
@@ -227,7 +228,8 @@ export function horaMadrid(texto) {
 }
 
 /**
- * Clase de prueba pedida (fecha «AAAA-MM-DD HH:MM», hora de Madrid): programa los recordatorios «cita».
+ * Clase de prueba pedida (fecha «AAAA-MM-DD HH:MM», hora de Madrid): programa los recordatorios «cita» (antes)
+ * y los seguimientos «tras-cita» (después). Todos se guardan como tipo «cita» y se cancelan juntos.
  * Si ya había una, se cancelan los anteriores. Devuelve el instante de la clase o null si la fecha no vale.
  */
 export function programarCita(repo, catalogo, convId, fechaHora, ahora = new Date()) {
@@ -238,8 +240,8 @@ export function programarCita(repo, catalogo, convId, fechaHora, ahora = new Dat
   repo.updateConv(convId, { prueba_fecha: clase.toISOString() });
   if (!conv || String(convId).startsWith('prueba-')) return clase;
   const etiqueta = clase.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-  for (const r of reglas.listar(catalogo).filter((x) => x.tipo === 'cita' && x.activo && x.canales.includes(conv.channel))) {
-    const due = new Date(clase.getTime() - r.minutos * 60000);
+  for (const r of reglas.listar(catalogo).filter((x) => reglas.TIPOS_CITA.includes(x.tipo) && x.activo && x.canales.includes(conv.channel))) {
+    const due = new Date(clase.getTime() + (r.tipo === 'tras-cita' ? 1 : -1) * r.minutos * 60000);
     if (due > ahora) repo.schedule(convId, r.id, due.toISOString(), { prueba: etiqueta }, 'cita');
   }
   return clase;

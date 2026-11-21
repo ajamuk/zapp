@@ -102,7 +102,7 @@ Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consul
 ## Clase de prueba
 
 - **Getafe y Las Rosas: no hay clase de prueba.** Si la piden, se explica el motivo: una sesión no permite conocer la experiencia ni notar mejoras; como no hay permanencia, puede apuntarse un mes (pagando solo los días que quedan) y decidir si sigue.
-- **Parla:** hay prueba sin coste, pero **solo si el lead la pide**. Se reserva en Academy, CrossFit o HYROX, en una hora de clase de esa modalidad en Parla.
+- **Parla:** hay prueba sin coste. Se da si el lead la pide y, además, se le ofrece una vez cuando conoce su cuota y duda, o cuando le frena el miedo a no poder (nunca al principio ni a quien ya quiere apuntarse). Se reserva en Academy, CrossFit o HYROX, en una hora de clase de esa modalidad en Parla.
 - Venir a conocer el centro sin entrenar (visita) no es una prueba y se puede aceptar; se avisa al equipo.
 
 ## Alta, pagos y condiciones

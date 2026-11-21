@@ -25,7 +25,7 @@
    "No le manda a Academy: al tener experiencia le orienta a CrossFit/HYROX",
    "Da precios correctos de Parla (S 55 €, M 85 €, L 95 €, XL 105 € ilimitada) o al menos la XL de 105 € como la que encaja con 4-5 días",
    "No menciona matrícula, permanencia ni promociones inexistentes (puede decir que no las hay)",
-   "No ofrece por iniciativa propia la clase de prueba"
+   "Si ofrece la clase de prueba, es una sola vez y después de darle su cuota, no al principio"
   ],
   "turnos": 5,
   "canal": "whatsapp",
@@ -76,19 +76,50 @@
   "canal": "whatsapp"
  },
  {
-  "id": "prueba-no-ofrecer-parla",
-  "nombre": "No ofrecer la prueba en Parla si no la piden",
+  "id": "prueba-parla-ofrecer-si-duda",
+  "nombre": "Parla: ofrece la prueba tras el precio si duda",
   "tema": "prueba",
-  "perfil": "Te llamas Óscar, vives en Parla, nunca has hecho CrossFit. Preguntas cómo funciona y cuánto cuesta. NO pides clase de prueba en ningún momento. Dudas un poco pero no dices que no.",
+  "perfil": "Te llamas Óscar, vives en Parla, nunca has hecho CrossFit. Preguntas cómo funciona y cuánto cuesta. NO pides clase de prueba. Te ves 2 días por semana, por las tardes. Cuando te dan el precio dudas («uf, me lo tengo que pensar»), pero no dices que no. Si te ofrecen una clase de prueba, aceptas la primera hora de tarde que te propongan.",
   "apertura": "hola, cómo funciona lo de empezar con vosotros en parla?",
   "criterios": [
-   "Explica Academy como la ruta para empezar de cero",
-   "No ofrece la clase de prueba por iniciativa propia en ningún mensaje",
-   "Da el precio de Academy en Parla cuando toca (85 € 2 días / 95 € 3 días)"
+   "No ofrece la clase de prueba antes de saber que empieza desde cero ni antes de darle su cuota",
+   "Da el precio de Academy en Parla que le encaja (85 € con 2 días)",
+   "Cuando el lead duda tras el precio, le ofrece una clase de prueba gratis en Parla, una sola vez",
+   "Propone horas reales de Academy en Parla por la tarde (ha consultado horarios; en ficha_tecnica aparece consultar_horarios)",
+   "Si el lead acepta día y hora, la apunta con reservar_prueba_parla (prueba_pedida: true)"
   ],
-  "turnos": 5,
+  "turnos": 7,
   "canal": "whatsapp",
   "grupo": "reserva"
+ },
+ {
+  "id": "prueba-parla-no-si-se-apunta",
+  "nombre": "Parla: no ofrece la prueba a quien ya quiere apuntarse",
+  "tema": "prueba",
+  "perfil": "Te llamas Lucía, 31 años, vives en Parla. Nunca has hecho CrossFit pero lo tienes decidido: quieres apuntarte ya, 3 días por semana, por las mañanas. Das tus datos cuando te los piden: Lucía Gómez Ruiz, 12/04/1995, lucia.gomez@example.com. No pides clase de prueba.",
+  "apertura": "hola! quiero apuntarme en parla, cómo lo hago?",
+  "criterios": [
+   "No ofrece la clase de prueba en ningún mensaje: el lead ya quiere apuntarse",
+   "Le orienta a Academy y le da su cuota (95 € con 3 días)",
+   "Avanza hacia el alta pidiendo los datos que faltan"
+  ],
+  "turnos": 6,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "prueba-parla-miedo",
+  "nombre": "Parla: ofrece la prueba ante el miedo a no poder",
+  "tema": "prueba",
+  "perfil": "Te llamas Rosa, 47 años, vives en Parla. Nunca has hecho deporte en serio y te da mucho respeto: dices que no estás en forma y que te da vergüenza no poder seguir a los demás. No pides clase de prueba. Si te la ofrecen, te parece buena idea y te viene bien cualquier mañana.",
+  "apertura": "hola, me gustaría empezar algo de ejercicio pero no estoy nada en forma, eso de crossfit es para mí?",
+  "criterios": [
+   "Recoge su miedo con empatía y le explica que Academy es para empezar desde cero",
+   "Le ofrece una clase de prueba gratis de Academy en Parla como respuesta a su miedo, una sola vez",
+   "Propone horas reales de Academy en Parla por la mañana (en ficha_tecnica aparece consultar_horarios)",
+   "No le insiste ni la presiona"
+  ],
+  "turnos": 6,
+  "canal": "whatsapp"
  },
  {
   "id": "salud-hernia",

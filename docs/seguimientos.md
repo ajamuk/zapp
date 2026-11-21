@@ -24,7 +24,8 @@ sirve de semilla y para el estilo común). Desde el panel se crean, editan, apag
 - **Cuándo**: *cuando el lead se queda callado* (X después de la última respuesta de Sofía; se cancela si el lead
   escribe), *al ponerse una etiqueta* (X después; una vez por chat y etiqueta; solo se cancela si quitan la etiqueta),
   *antes de la clase de prueba* (X antes; se prepara cuando Sofía pide la prueba de Parla y se cancela con «Anular o
-  cambiada» en el chat) y *cuando lo deja para más adelante* (en la fecha que dé el lead; se pueden encadenar).
+  cambiada» en el chat), *después de la clase de prueba* (X después de la hora de la clase, para saber qué tal y
+  cerrar el alta; se cancela igual) y *cuando lo deja para más adelante* (en la fecha que dé el lead; se pueden encadenar).
 - **Canales**, **condición** (siempre / solo si…, la comprueba Sofía justo antes de enviar).
 - **Quién escribe**: Sofía (con instrucciones) o un **texto fijo**; lo que va [entre corchetes] lo rellena Sofía sin
   tocar el resto (como mucho 3 huecos). Si Sofía cambia el texto fijo o no tiene el dato, no sale.
