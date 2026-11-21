@@ -289,7 +289,7 @@ export const PRECIOS = {
   'claude-sonnet-5-5': [2, 10, 0.10, 2.5], 'claude-opus-5-5': [4, 20, 0.20, 5], 'claude-haiku-5-5': [0.10, 0.50, 0.01, 0.125],
   'claude-sonnet-5': [2, 10, 0.20, 2.5], 'claude-opus-5': [5, 25, 0.50, 6.25], 'claude-fable-5-2': [8, 40, 0.20, 10],
 };
-const MOTIVOS = { 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
+const MOTIVOS = { bateria: 'Batería de pruebas', 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
 
 export function costeRun(r) {
   const p = PRECIOS[r.modelo] || PRECIOS['claude-sonnet-5-5'];

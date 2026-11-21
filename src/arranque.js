@@ -12,7 +12,8 @@ export function recuperar(db, ahora = new Date()) {
   db.prepare('UPDATE conversations SET respondiendo_desde = NULL WHERE respondiendo_desde IS NOT NULL').run();
   const seguimientos = db.prepare("UPDATE scheduled SET estado = 'error', detalle = 'interrumpido por un reinicio del servicio' WHERE estado = 'enviando'").run().changes;
   const reportes = db.prepare("UPDATE reportes SET estado = 'error', error = 'El análisis se interrumpió por un reinicio del servicio. Pulsa «Volver a analizar».' WHERE estado = 'analizando'").run().changes;
-  return { chats, seguimientos, reportes };
+  const pasadas = db.prepare("UPDATE bateria_pasadas SET estado = 'error', error = 'interrumpida por un reinicio del servicio', terminado_at = datetime('now') WHERE estado = 'en_curso'").run().changes;
+  return { chats, seguimientos, reportes, ...(pasadas ? { pasadas } : {}) };
 }
 
 /**

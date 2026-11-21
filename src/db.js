@@ -213,6 +213,51 @@ CREATE TABLE IF NOT EXISTS actividad (
   accion TEXT NOT NULL,
   ruta TEXT
 );
+CREATE TABLE IF NOT EXISTS casos_prueba (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  tipo TEXT NOT NULL,               -- momento (Sofía contesta a un punto de una conversación) | escenario (lead simulado, varios turnos)
+  canal TEXT NOT NULL DEFAULT 'whatsapp',
+  tema TEXT,
+  contexto TEXT,                    -- momento: JSON [[quien, texto], …]
+  perfil TEXT,                      -- escenario: quién es el lead y qué quiere
+  apertura TEXT,                    -- escenario: su primer mensaje
+  turnos INTEGER NOT NULL DEFAULT 5,
+  socio INTEGER NOT NULL DEFAULT 0, -- escenario: su teléfono es de un socio
+  criterios TEXT NOT NULL DEFAULT '[]', -- JSON: frases de sí o no que debe cumplir
+  referencia TEXT,                  -- lo que contestó Zapp o lo que pidió el equipo (orientativo para el juez)
+  grupo TEXT NOT NULL DEFAULT 'ajuste', -- ajuste | reserva (no se usa para ajustar el prompt: comprueba que la mejora es real)
+  origen TEXT NOT NULL DEFAULT 'panel', -- zapp | escenario | reporte | panel
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS bateria_pasadas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  prompt_v INTEGER, negocio_v INTEGER,
+  borradores TEXT,                  -- JSON { prompt: id, negocio: id } si se probó un borrador
+  repeticiones INTEGER NOT NULL DEFAULT 2,
+  filtro TEXT,                      -- JSON { grupo, tema, ids }
+  estado TEXT NOT NULL DEFAULT 'en_curso', -- en_curso | terminada | error | cancelada
+  total INTEGER NOT NULL DEFAULT 0, hechos INTEGER NOT NULL DEFAULT 0, pasan INTEGER NOT NULL DEFAULT 0,
+  usd REAL NOT NULL DEFAULT 0,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  terminado_at TEXT
+);
+CREATE TABLE IF NOT EXISTS bateria_resultados (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  pasada_id INTEGER NOT NULL,
+  caso_id TEXT NOT NULL,
+  repeticion INTEGER NOT NULL,
+  pasa INTEGER NOT NULL,
+  fallos_auto TEXT,                 -- JSON [texto]
+  criterios TEXT,                   -- JSON [{ criterio, cumple, motivo }]
+  conversacion TEXT,                -- JSON [{ autor, texto }]
+  estado TEXT,                      -- JSON: fase, sede, herramientas, etiquetas…
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS bateria_res_pasada ON bateria_resultados(pasada_id, caso_id);
 CREATE TABLE IF NOT EXISTS ajustes (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL,              -- JSON

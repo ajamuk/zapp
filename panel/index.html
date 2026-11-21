@@ -315,6 +315,15 @@
   .resumen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
   .res-ap { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; } .res-ap ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
   #bexp { min-height: 42px; }
+  .crit { margin: 6px 0; padding-left: 20px; font-size: 13px; } ul.crit { list-style: none; padding-left: 0; }
+  .crit li.no { color: var(--red); } .crit li.si { color: var(--green); } .crit li .ayuda { margin-left: 18px; }
+  .caso-r { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; }
+  .caso-r.mal { border-left: 4px solid var(--red); } .caso-r.medio { border-left: 4px solid #c58a17; } .caso-r.ok { border-left: 4px solid var(--green); }
+  .caso-r > summary { cursor: pointer; }
+  .rep-r { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 8px; }
+  tr.apagada { opacity: .55; }
+  td.acciones-f { white-space: nowrap; }
+  #fbat select { max-width: 260px; }
 </style>
 </head>
 <body>
@@ -1178,11 +1187,12 @@ const botonReporte = (m) => (m.autor === 'ia' && m.id ? `<button type="button" c
 async function reportes() {
   const partes = location.hash.slice(1).split('/');
   if (partes[1] === 'instrucciones') return instrucciones(partes[2]);
+  if (partes[1] === 'bateria') return bateriaPagina(partes[2]);
   if (partes[1]) return fichaReporte(Number(partes[1]));
   const datos = await api('/panel/reportes' + (estado.filtroRep ? `?estado=${estado.filtroRep}` : ''));
   if (estado.seccion !== 'reportes') return;
   const total = Object.values(datos.contadores).reduce((a, b) => a + b, 0);
-  $('#main').innerHTML = `<div class="cab-seccion"><h2>Reportes</h2><div class="acciones-f"><a class="boton" href="#reportes/instrucciones">Instrucciones de Sofía</a><button class="primario" id="rgen">+ Reporte general</button></div></div>
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Reportes</h2><div class="acciones-f"><a class="boton" href="#reportes/bateria">Batería de pruebas</a><a class="boton" href="#reportes/instrucciones">Instrucciones de Sofía</a><button class="primario" id="rgen">+ Reporte general</button></div></div>
     <p class="intro">Reporta cualquier respuesta de Sofía con el botón ⚑ (en Chats o en Probar IA) y cuenta qué falló. Sofía lo analiza con sus instrucciones: si hace falta, propone un cambio concreto, lo comprueba repitiendo la conversación y te lo deja listo para aplicar con un clic. Si le falta un dato, te pregunta. Nada cambia hasta que pulsas «Aplicar».</p>
     <div id="rgenf"></div>
     <div class="filtros"><button data-fe="" class="${estado.filtroRep ? '' : 'activo'}">Todos <span class="n">${total}</span></button>${Object.entries(datos.estados).filter(([k]) => datos.contadores[k]).map(([k, t]) => `<button data-fe="${k}" class="${estado.filtroRep === k ? 'activo' : ''}">${t} <span class="n">${datos.contadores[k]}</span></button>`).join('')}</div>
@@ -1294,6 +1304,101 @@ async function instrucciones(abrirId) {
     };
   });
   if (abrirId) m.querySelector(`[data-ver="${abrirId}"]`)?.click();
+}
+
+// ---------- Batería de pruebas ----------
+const pctTxt = (a, b) => (b ? `${Math.round((a / b) * 100)} %` : '–');
+async function bateriaPagina(pasadaId) {
+  if (pasadaId) return bateriaPasada(Number(pasadaId));
+  const d = await api('/panel/bateria');
+  if (estado.seccion !== 'reportes') return;
+  const enCurso = d.pasadas.find((p) => p.estado === 'en_curso');
+  const temas = [...new Set(d.casos.map((c) => c.tema))].sort();
+  const act = d.casos.filter((c) => c.activo);
+  const vsel = (doc) => `<select data-bv="${doc}">${d.versiones[doc].map((v) => `<option value="${v.estado === 'produccion' ? '' : v.id}" ${v.estado === 'produccion' ? 'selected' : ''}>${doc === 'prompt' ? 'Prompt' : 'Base de conocimiento'} v${v.version} · ${v.estado === 'produccion' ? 'producción' : esc(v.estado)}</option>`).join('')}</select>`;
+  const ORIGEN = { zapp: 'Real de Zapp', escenario: 'Lead simulado', reporte: 'De un reporte', panel: 'Creado aquí' };
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Batería de pruebas</h2><a class="boton" href="#reportes">Volver a reportes</a></div>
+    <p class="intro">Casos que Sofía tiene que resolver bien: ${act.filter((c) => c.tipo === 'momento').length} momentos de conversaciones (reales de Zapp y de reportes aplicados) y ${act.filter((c) => c.tipo === 'escenario').length} leads simulados por IA. Cada caso se pasa varias veces y un juez comprueba sus criterios de sí o no. Sirve para medir una versión de las instrucciones antes de ponerla en producción. Los casos de «reserva» (${act.filter((c) => c.grupo === 'reserva').length}) no deben usarse para ajustar el prompt: comprueban que la mejora es real. No toca chats, GHL ni AimHarder.</p>
+    <section class="doc"><h3>Lanzar una pasada</h3>
+      ${enCurso ? `<p class="aviso-mini" role="status">Hay una pasada en marcha: ${enCurso.hechos} de ${enCurso.total}. <a href="#reportes/bateria/${enCurso.id}">Verla</a></p>` : `<form id="fbat" class="fila-f">${vsel('prompt')}${vsel('negocio')}
+        <label>Casos <select name="grupo"><option value="">Todos (${act.length})</option><option value="ajuste">Solo ajuste</option><option value="reserva">Solo reserva</option></select></label>
+        <label>Tema <select name="tema"><option value="">Todos</option>${temas.map((t) => `<option>${esc(t)}</option>`).join('')}</select></label>
+        <label>Repeticiones <select name="rep"><option>1</option><option selected>2</option><option>3</option></select></label>
+        <button class="primario" ${estado.info.modelo_configurado ? '' : 'disabled'}>Lanzar</button></form>
+        <p class="ayuda">Una pasada completa (todos los casos, 2 repeticiones) tarda unos 10-15 minutos y cuesta alrededor de 1,5-2 € de IA. El coste real queda apuntado en cada pasada.</p><p class="error" id="berr"></p>`}
+    </section>
+    <section class="doc"><h3>Pasadas</h3>${d.pasadas.length ? `<div class="tabla"><table><tr><th>#</th><th>Versión</th><th>Resultado</th><th>Casos</th><th>Coste</th><th>Fecha</th><th></th></tr>${d.pasadas.map((p) => `<tr><td>${p.id}</td><td>Prompt v${p.prompt_v} · Base v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ''}${p.filtro.grupo ? ` <span class="chip">${esc(p.filtro.grupo)}</span>` : ''}${p.filtro.tema ? ` <span class="chip">${esc(p.filtro.tema)}</span>` : ''}</td>
+      <td>${p.estado === 'en_curso' ? `<span class="chip ambar">en marcha ${p.hechos}/${p.total}</span>` : p.estado !== 'terminada' ? `<span class="chip rojo">${esc(p.estado)}</span>` : `<b>${pctTxt(p.pasan, p.hechos)}</b>`}</td><td>${p.pasan}/${p.hechos}</td><td>${(p.usd * 0.92).toFixed(2)} €</td><td>${hora(p.created_at)}</td><td><a href="#reportes/bateria/${p.id}">Ver</a></td></tr>`).join('')}</table></div>` : '<p class="ayuda">Todavía no se ha lanzado ninguna.</p>'}</section>
+    <section class="doc"><h3>Casos <button class="mini" id="bnuevo">+ Nuevo caso</button></h3><div id="bform"></div>
+      <div class="tabla"><table><tr><th>Caso</th><th>Tipo</th><th>Tema</th><th>Grupo</th><th>Criterios</th><th></th></tr>${d.casos.map((c) => `<tr class="${c.activo ? '' : 'apagada'}"><td>${esc(c.nombre)}<div class="ayuda">${ORIGEN[c.origen] || c.origen}</div></td><td>${c.tipo === 'escenario' ? `Lead simulado · ${c.turnos} turnos` : `Momento · ${c.mensajes} mensajes`}</td><td>${esc(c.tema || '')}</td><td>${c.grupo === 'reserva' ? '<span class="chip violeta">reserva</span>' : 'ajuste'}</td><td><details><summary>${c.criterios.length}</summary><ol class="crit">${c.criterios.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></details></td>
+        <td class="acciones-f"><button class="mini" data-bed="${esc(c.id)}">Editar</button><button class="mini" data-bon="${esc(c.id)}" data-v="${c.activo ? 0 : 1}">${c.activo ? 'Desactivar' : 'Activar'}</button></td></tr>`).join('')}</table></div></section>`;
+  const m = $('#main');
+  $('#fbat') && ($('#fbat').onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target;
+    const borradores = Object.fromEntries([...f.querySelectorAll('[data-bv]')].filter((x) => x.value).map((x) => [x.dataset.bv, Number(x.value)]));
+    try { const r = await api('/panel/bateria/pasadas', { method: 'POST', body: JSON.stringify({ borradores, grupo: f.grupo.value, tema: f.tema.value, repeticiones: Number(f.rep.value) }) }); location.hash = `#reportes/bateria/${r.id}`; }
+    catch (err) { $('#berr').textContent = err.message; }
+  });
+  const formCaso = async (id) => {
+    const c = id ? await api('/panel/bateria/casos/' + encodeURIComponent(id)) : { nombre: '', tipo: 'escenario', canal: 'whatsapp', tema: '', perfil: '', apertura: '', turnos: 5, criterios: [], grupo: 'ajuste', contexto: [], socio: false };
+    $('#bform').innerHTML = `<form class="editor" id="fcaso"><section><h3>${id ? 'Editar caso' : 'Nuevo caso'}</h3>
+      <input name="n" value="${esc(c.nombre)}" placeholder="Nombre. Ej: Pide prueba en Getafe" maxlength="120" required style="width:100%">
+      <div class="fila-f" style="margin:8px 0"><label>Tipo <select name="tipo" ${id ? 'disabled' : ''}><option value="escenario" ${c.tipo === 'escenario' ? 'selected' : ''}>Lead simulado</option><option value="momento" ${c.tipo === 'momento' ? 'selected' : ''}>Momento de una conversación</option></select></label>
+        <label>Canal <select name="canal"><option value="whatsapp">WhatsApp</option><option value="instagram" ${c.canal === 'instagram' ? 'selected' : ''}>Instagram</option></select></label>
+        <label>Tema <input name="tema" value="${esc(c.tema || '')}" maxlength="30" style="width:130px"></label>
+        <label>Grupo <select name="grupo"><option value="ajuste">Ajuste</option><option value="reserva" ${c.grupo === 'reserva' ? 'selected' : ''}>Reserva</option></select></label></div>
+      <div data-solo="escenario"><textarea name="perfil" rows="3" placeholder="Quién es el lead y qué quiere. Ej: Marta, 34 años, vive en Getafe, nunca ha hecho CrossFit, quiere saber precios y no decidirse hoy">${esc(c.perfil || '')}</textarea>
+        <input name="apertura" value="${esc(c.apertura || '')}" placeholder="Su primer mensaje" style="width:100%;margin-top:6px">
+        <div class="fila-f" style="margin-top:6px"><label>Turnos como mucho <input type="number" name="turnos" min="1" max="8" value="${c.turnos}" style="width:70px"></label><label class="check"><input type="checkbox" name="socio" ${c.socio ? 'checked' : ''}> Su teléfono es de un socio</label></div></div>
+      <div data-solo="momento"><textarea name="ctx" rows="5" placeholder="La conversación hasta el punto en que Sofía debe contestar, una línea por mensaje:&#10;lead: hola, precio?&#10;sofia: de qué sede?&#10;lead: getafe">${esc((c.contexto || []).map(([r, t]) => `${r === 'ia' ? 'sofia' : r === 'humano' ? 'equipo' : 'lead'}: ${t.replace(/\n/g, ' / ')}`).join('\n'))}</textarea></div>
+      <textarea name="crit" rows="4" required placeholder="Criterios, uno por línea, que se puedan contestar con sí o no. Ej:&#10;Dice que en Getafe no hay clase de prueba&#10;No ofrece descuentos" style="margin-top:8px">${esc((c.criterios || []).join('\n'))}</textarea>
+      <div class="acciones-f"><button class="primario">Guardar</button><button type="button" id="bcan">Cancelar</button>${id ? '<button type="button" class="peligro" id="bdel">Borrar</button>' : ''}</div><p class="error"></p></section></form>`;
+    const f = $('#fcaso'); const ver = () => f.querySelectorAll('[data-solo]').forEach((x) => { x.hidden = x.dataset.solo !== f.tipo.value; });
+    f.tipo.onchange = ver; ver(); f.scrollIntoView({ block: 'nearest' });
+    $('#bcan').onclick = () => { $('#bform').innerHTML = ''; };
+    $('#bdel') && ($('#bdel').onclick = async () => { const b = $('#bdel'); if (b.dataset.s !== '1') { b.dataset.s = '1'; b.textContent = '¿Seguro?'; return; } await api('/panel/bateria/casos/' + encodeURIComponent(id), { method: 'DELETE' }); bateriaPagina(); });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const contexto = f.ctx.value.split('\n').map((l) => l.match(/^\s*(lead|sofia|sofía|equipo)\s*:\s*(.+)$/i)).filter(Boolean).map((x) => [{ lead: 'lead', equipo: 'humano' }[x[1].toLowerCase()] || 'ia', x[2].trim()]);
+      const body = { nombre: f.n.value, tipo: f.tipo.value, canal: f.canal.value, tema: f.tema.value, grupo: f.grupo.value, perfil: f.perfil.value, apertura: f.apertura.value, turnos: Number(f.turnos.value), socio: f.socio.checked, contexto, criterios: f.crit.value.split('\n') };
+      try { await api(id ? '/panel/bateria/casos/' + encodeURIComponent(id) : '/panel/bateria/casos', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) }); bateriaPagina(); } catch (err) { f.querySelector('.error').textContent = err.message; }
+    };
+  };
+  $('#bnuevo').onclick = () => formCaso(null);
+  m.querySelectorAll('[data-bed]').forEach((b) => b.onclick = () => formCaso(b.dataset.bed));
+  m.querySelectorAll('[data-bon]').forEach((b) => b.onclick = async () => { await api('/panel/bateria/casos/' + encodeURIComponent(b.dataset.bon), { method: 'PUT', body: JSON.stringify({ activo: b.dataset.v === '1' }) }); bateriaPagina(); });
+  if (enCurso) setTimeout(() => { if (location.hash === '#reportes/bateria') bateriaPagina(); }, 6000);
+}
+
+async function bateriaPasada(id) {
+  const lista = await api('/panel/bateria');
+  const p0 = lista.pasadas.find((x) => x.id === id);
+  // Se compara con la última pasada terminada de producción con el mismo filtro (si esta no lo es)
+  const ref = lista.pasadas.find((x) => x.id !== id && x.estado === 'terminada' && !x.borradores && JSON.stringify(x.filtro) === JSON.stringify(p0?.filtro) && x.id < id);
+  const r = await api(`/panel/bateria/pasadas/${id}${ref ? `?comparar=${ref.id}` : ''}`);
+  if (estado.seccion !== 'reportes' || location.hash !== `#reportes/bateria/${id}`) return;
+  const p = r.pasada; const c = r.comparacion;
+  const AUT = { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' };
+  const barra = (g) => `<div class="eh"><span>${esc(g.nombre)}</span><div class="eh-barra"><i style="width:${g.total ? (g.pasan / g.total) * 100 : 0}%"></i></div><b>${pctTxt(g.pasan, g.total)}</b><span class="ayuda">${g.pasan} de ${g.total}</span></div>`;
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Pasada #${p.id}</h2><a class="boton" href="#reportes/bateria">Volver</a></div>
+    <p class="intro">Prompt v${p.prompt_v} · Base de conocimiento v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ' <span class="chip verde">producción</span>'} · ${p.repeticiones} repeticion${p.repeticiones === 1 ? '' : 'es'} · ${hora(p.created_at)} · coste ${(p.usd * 0.92).toFixed(2)} €</p>
+    ${p.estado === 'en_curso' ? `<p class="aviso-mini" role="status">En marcha: ${p.hechos} de ${p.total}. Se actualiza sola. <button class="mini" id="bcanp">Cancelar</button></p>` : p.estado !== 'terminada' ? `<p class="error">${esc(p.estado)}${p.error ? `: ${esc(p.error)}` : ''}</p>` : ''}
+    <div class="tarjetas">${tarjeta(pctTxt(p.pasan, p.hechos), `Pasan (${p.pasan} de ${p.hechos})`, 'green')}${r.porGrupo.map((g) => tarjeta(pctTxt(g.pasan, g.total), `Casos de ${g.nombre}`)).join('')}${tarjeta(r.casos.filter((x) => x.pasan < x.total).length, 'Casos con algún fallo', 'red')}</div>
+    ${c ? `<section class="doc"><h3>Comparada con la pasada #${c.antes.id} (prompt v${c.antes.prompt_v}, ${Math.round(c.antes.pct * 100)} %)</h3>
+      <p>${c.ahora.pct > c.antes.pct ? '⬆️ Mejora' : c.ahora.pct < c.antes.pct ? '⬇️ Empeora' : 'Igual'}: ${Math.round(c.antes.pct * 100)} % → <b>${Math.round(c.ahora.pct * 100)} %</b></p>
+      ${c.empeoran.length ? `<p class="error"><b>Empeoran (${c.empeoran.length}):</b></p><ul>${c.empeoran.map((x) => `<li>${esc(x.nombre)} <span class="ayuda">${x.antes} → ${x.ahora}</span></li>`).join('')}</ul>` : '<p>No empeora ningún caso.</p>'}
+      ${c.mejoran.length ? `<p><b>Mejoran (${c.mejoran.length}):</b></p><ul>${c.mejoran.map((x) => `<li>${esc(x.nombre)} <span class="ayuda">${x.antes} → ${x.ahora}</span></li>`).join('')}</ul>` : ''}
+      <p class="ayuda">Con pocas repeticiones, un caso que cambia de 1/2 a 2/2 puede ser casualidad: fíate de los que pasan de 0 a todo o al revés.</p></section>` : ''}
+    <h3>Por tema</h3><div class="embudo-h">${r.porTema.map(barra).join('')}</div>
+    <h3>Casos <span class="ayuda">los que fallan, primero</span></h3>
+    ${r.casos.map((x) => `<details class="caso-r ${x.pasan === x.total ? 'ok' : x.pasan ? 'medio' : 'mal'}"><summary><span class="chip ${x.pasan === x.total ? 'verde' : x.pasan ? 'ambar' : 'rojo'}">${x.pasan}/${x.total}</span> ${esc(x.nombre)} <span class="ayuda">${esc(x.tema)}${x.grupo === 'reserva' ? ' · reserva' : ''}</span></summary>
+      ${x.repeticiones.map((rep) => `<div class="rep-r"><b>Repetición ${rep.n}: ${rep.pasa ? '✓ pasa' : '✗ falla'}</b>${rep.error ? `<p class="error">${esc(rep.error)}</p>` : ''}
+        ${rep.fallos_auto.length ? `<p class="error">Automáticos: ${rep.fallos_auto.map(esc).join(' · ')}</p>` : ''}
+        <ul class="crit">${rep.criterios.map((k) => `<li class="${k.cumple ? 'si' : 'no'}">${k.cumple ? '✓' : '✗'} ${esc(k.criterio)}<div class="ayuda">${esc(k.motivo)}</div></li>`).join('')}</ul>
+        <details><summary class="ayuda">Ver la conversación</summary><div class="mini-chat">${rep.conversacion.map((mm) => `<div class="burbuja b-${esc(mm.autor)}">${esc(mm.texto)}<div class="meta">${AUT[mm.autor] || mm.autor}</div></div>`).join('')}</div>
+          <p class="ayuda">Herramientas: ${(rep.estado.herramientas || []).map(esc).join(', ') || 'ninguna'} · fase ${esc(rep.estado.fase || '–')} · sede ${esc(rep.estado.sede || '–')}${rep.estado.derivado ? ' · derivado' : ''}${rep.estado.prueba_pedida ? ' · prueba pedida' : ''}${rep.estado.alta ? ` · alta ${esc(rep.estado.alta)}` : ''}${rep.estado.lo_deja_para ? ` · lo deja para ${esc(rep.estado.lo_deja_para)}` : ''}</p></details></div>`).join('')}</details>`).join('') || '<div class="vacio">Todavía no hay resultados.</div>'}`;
+  $('#bcanp') && ($('#bcanp').onclick = async () => { await api(`/panel/bateria/pasadas/${id}/cancelar`, { method: 'POST' }); bateriaPasada(id); });
+  if (p.estado === 'en_curso') setTimeout(() => { if (location.hash === `#reportes/bateria/${id}`) bateriaPasada(id); }, 6000);
 }
 
 // ---------- Probar IA ----------

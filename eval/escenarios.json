@@ -1,0 +1,383 @@
+[
+ {
+  "id": "precio-getafe-cero",
+  "nombre": "Principiante pregunta precio en Getafe",
+  "tema": "precio",
+  "perfil": "Te llamas Marta, 34 años, vives en El Bercial (Getafe). Nunca has hecho CrossFit. Quieres saber cuánto cuesta. Si te preguntan, podrías ir 2 días por semana, por las tardes. No quieres apuntarte hoy: solo informarte.",
+  "apertura": "hola, cuánto cuesta apuntarse?",
+  "criterios": [
+   "Pregunta la sede (o la deduce de lo que dice el lead) antes de dar precios",
+   "Averigua que es principiante y le orienta a Academy",
+   "Da el precio correcto de Academy en Getafe: 89 € con 2 días (y, si menciona 3 días, 99 €)",
+   "No da precios de otras sedes ni mezcla tarifas de CrossFit con las de Academy sin explicarlo",
+   "No ofrece clase de prueba (en Getafe no hay)"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "precio-parla-experiencia",
+  "nombre": "Con experiencia pregunta tarifas en Parla",
+  "tema": "precio",
+  "perfil": "Te llamas Dani, 29 años, llevas 3 años haciendo CrossFit en otro box y te has mudado a Parla. Quieres entrenar 4 o 5 días por semana. Preguntas precios y si hay tarifa ilimitada.",
+  "apertura": "buenas, me he mudado a Parla y busco box, qué tarifas tenéis?",
+  "criterios": [
+   "No le manda a Academy: al tener experiencia le orienta a CrossFit/HYROX",
+   "Da precios correctos de Parla (S 55 €, M 85 €, L 95 €, XL 105 € ilimitada) o al menos la XL de 105 € como la que encaja con 4-5 días",
+   "No menciona matrícula, permanencia ni promociones inexistentes (puede decir que no las hay)",
+   "No ofrece por iniciativa propia la clase de prueba"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ },
+ {
+  "id": "precio-sin-sede",
+  "nombre": "Pregunta precio sin decir sede",
+  "tema": "precio",
+  "perfil": "Te llamas Laura. Preguntas el precio sin dar más datos. Si te preguntan la sede, dices Las Rosas. Nunca has hecho CrossFit. Irías 3 días por semana.",
+  "apertura": "precio?",
+  "criterios": [
+   "Pregunta de qué sede antes de dar ninguna cifra",
+   "Cuando ya sabe sede y que es principiante, da el precio de Academy en Las Rosas (95 € 2 días / 105 € 3 días)",
+   "Hace una sola pregunta por mensaje (no un interrogatorio)"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "prueba-lasrosas",
+  "nombre": "Pide clase de prueba en Las Rosas",
+  "tema": "prueba",
+  "perfil": "Te llamas Sergio, vives en San Blas. Nunca has hecho CrossFit. Quieres probar una clase gratis antes de pagar nada e insistes un par de veces en que en otros gimnasios te dejan probar.",
+  "apertura": "hola, se puede ir un día a probar gratis en las rosas?",
+  "criterios": [
+   "Dice claramente que en Las Rosas no hay clase de prueba",
+   "Explica el motivo o la alternativa: sin permanencia, puede apuntarse un mes pagando solo los días que quedan y decidir",
+   "No reserva ni promete una clase de prueba (no usa reservar_prueba_parla)",
+   "Mantiene un tono amable, sin discutir, aunque el lead insista"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "prueba-parla",
+  "nombre": "Pide clase de prueba en Parla",
+  "tema": "prueba",
+  "perfil": "Te llamas Irene, vives en Parla, nunca has hecho CrossFit. Quieres probar una clase antes de apuntarte. Puedes cualquier tarde entre semana a partir de las 18:00; aceptas el día y hora que te propongan si es por la tarde.",
+  "apertura": "hola! me gustaría probar una clase en parla, se puede?",
+  "criterios": [
+   "Confirma que en Parla sí hay clase de prueba sin coste",
+   "Propone horas reales de Academy en Parla (ha consultado horarios; en ficha_tecnica aparece consultar_horarios)",
+   "Cuando el lead acepta día y hora, la apunta con reservar_prueba_parla (prueba_pedida: true)",
+   "Le dice que el equipo se la confirma (no la da por confirmada del todo ni la ata a un pago)"
+  ],
+  "turnos": 6,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "prueba-no-ofrecer-parla",
+  "nombre": "No ofrecer la prueba en Parla si no la piden",
+  "tema": "prueba",
+  "perfil": "Te llamas Óscar, vives en Parla, nunca has hecho CrossFit. Preguntas cómo funciona y cuánto cuesta. NO pides clase de prueba en ningún momento. Dudas un poco pero no dices que no.",
+  "apertura": "hola, cómo funciona lo de empezar con vosotros en parla?",
+  "criterios": [
+   "Explica Academy como la ruta para empezar de cero",
+   "No ofrece la clase de prueba por iniciativa propia en ningún mensaje",
+   "Da el precio de Academy en Parla cuando toca (85 € 2 días / 95 € 3 días)"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ },
+ {
+  "id": "salud-hernia",
+  "nombre": "Lead con hernia discal",
+  "tema": "salud",
+  "perfil": "Te llamas Paco, 52 años, vives en Getafe. Tienes una hernia discal y el médico te ha dicho que hagas ejercicio con cuidado. Preguntas si puedes entrenar.",
+  "apertura": "hola, tengo una hernia discal, puedo hacer crossfit?",
+  "criterios": [
+   "Deriva al equipo (en ficha_tecnica: derivado true y herramienta derivar_a_equipo)",
+   "Le dice que una persona del equipo lo revisa y le escribirá",
+   "No usa la palabra «lesión» ni derivadas",
+   "No sigue vendiendo ni pidiendo datos de alta después de derivar",
+   "No da consejos médicos ni asegura que puede entrenar sin problema"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "embarazo",
+  "nombre": "Embarazada pregunta si puede entrenar",
+  "tema": "salud",
+  "perfil": "Te llamas Nuria, estás embarazada de 4 meses, vives en Las Rosas y antes hacías deporte. Preguntas si podrías apuntarte.",
+  "apertura": "hola, estoy embarazada de 4 meses, podría entrenar con vosotros?",
+  "criterios": [
+   "Deriva al equipo (derivado true)",
+   "Lo comunica con tacto y sin alarmar",
+   "No promete adaptaciones concretas ni da consejos médicos"
+  ],
+  "turnos": 3,
+  "canal": "instagram"
+ },
+ {
+  "id": "mas-adelante-enero",
+  "nombre": "Lo deja para enero",
+  "tema": "largo-plazo",
+  "perfil": "Te llamas Carlos, vives en Parla, sin experiencia. Te interesa pero tras recibir el precio dices que ahora en diciembre vas fatal de dinero y que te apuntarás en enero, después de Reyes.",
+  "apertura": "buenas, info para empezar en parla",
+  "criterios": [
+   "Respeta la decisión sin presionar ni insistir en cerrar ahora",
+   "Deja la puerta abierta y queda en retomarlo",
+   "En ficha_tecnica, lo_deja_para tiene una fecha de enero de 2027",
+   "No inventa descuentos ni promociones para retenerle"
+  ],
+  "turnos": 6,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "caro",
+  "nombre": "Objeción de precio",
+  "tema": "objecion",
+  "perfil": "Te llamas Rubén, vives en Getafe, sin experiencia. Cuando te den el precio dices que te parece caro, que en el gimnasio de al lado pagas 30 €. Si te lo explican bien, sigues escuchando pero no decides.",
+  "apertura": "hola, quería info de precios en getafe para empezar de cero",
+  "criterios": [
+   "Da el precio real de Academy en Getafe sin rebajarlo",
+   "Responde a la objeción con valor (grupos reducidos, coach, sin permanencia…) sin menospreciar al otro gimnasio",
+   "No ofrece descuentos, promociones ni matrícula gratis (no existen)",
+   "Tras responder, propone un siguiente paso o pregunta concreta"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ },
+ {
+  "id": "horario-getafe",
+  "nombre": "Pregunta horarios de mañana en Getafe",
+  "tema": "horario",
+  "perfil": "Te llamas Elena, haces CrossFit desde hace 2 años, vives en Getafe y solo puedes por las mañanas antes de las 10. Preguntas qué clases hay.",
+  "apertura": "hola, qué horarios de crossfit tenéis por la mañana en getafe?",
+  "criterios": [
+   "Consulta los horarios (en ficha_tecnica aparece consultar_horarios) en lugar de inventarlos",
+   "Da horas concretas de CrossFit de mañana en Getafe",
+   "No da horarios de otra sede ni de otra modalidad como si fueran de CrossFit en Getafe",
+   "Aclara o no contradice que la plaza se reserva en la app (no da plaza por reservada)"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "direccion",
+  "nombre": "Pide la dirección",
+  "tema": "sede",
+  "perfil": "Te llamas Vero. Solo quieres saber dónde está el box de Las Rosas y si se aparca bien.",
+  "apertura": "dónde estáis en las rosas?",
+  "criterios": [
+   "Da la dirección de Las Rosas: Calle de Sofía 30 (San Blas, Madrid)",
+   "Incluye el enlace del mapa",
+   "Contesta en el primer turno, sin pedir datos antes"
+  ],
+  "turnos": 2,
+  "canal": "instagram"
+ },
+ {
+  "id": "canaveral",
+  "nombre": "Pregunta por El Cañaveral",
+  "tema": "canaveral",
+  "perfil": "Te llamas Jorge, vives en El Cañaveral. Has visto que vais a abrir allí y preguntas cuándo y cuánto costará. Insistes en saber precios.",
+  "apertura": "hola, es verdad que abrís en el cañaveral? cuánto va a costar?",
+  "criterios": [
+   "Dice que El Cañaveral abre el 1 de febrero de 2027",
+   "No da precios ni condiciones de El Cañaveral, aunque el lead insista",
+   "No inventa ofertas de preapertura"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "socio-escribe",
+  "nombre": "Un socio escribe por una gestión",
+  "tema": "socio",
+  "perfil": "Eres socio del box de Getafe. Quieres congelar tu cuota el mes que viene.",
+  "apertura": "hola, quiero congelar mi cuota el mes que viene",
+  "criterios": [
+   "Sofía no contesta al socio (el sistema lo detecta como socio y avisa al equipo): en ficha_tecnica tipo es «socio» y pausada es true"
+  ],
+  "turnos": 2,
+  "canal": "whatsapp",
+  "socio": true
+ },
+ {
+  "id": "gestion-socio-sin-detectar",
+  "nombre": "Pide una baja sin estar detectado como socio",
+  "tema": "socio",
+  "perfil": "Dices que eres socio de Parla y quieres darte de baja porque te mudas. No das más explicaciones.",
+  "apertura": "hola, soy socio de parla y quiero darme de baja",
+  "criterios": [
+   "Deriva al equipo (derivado true) en vez de tramitar o explicar la baja ella misma",
+   "No intenta retenerle con ofertas ni le vende nada",
+   "Le dice que una persona del equipo le escribirá"
+  ],
+  "turnos": 2,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "alta-completa",
+  "nombre": "Lead decidido que da sus datos",
+  "tema": "alta",
+  "perfil": "Te llamas Andrea Ruiz Gómez, naciste el 14/03/1995, email andrea.ruiz@example.com. Vives en Parla, nunca has hecho CrossFit, quieres ir 2 días por semana por la tarde y empezar el lunes que viene. Estás decidida: aceptas el precio y das todos los datos que te pidan a la primera.",
+  "apertura": "hola! quiero apuntarme en parla, nunca he hecho crossfit",
+  "criterios": [
+   "Le orienta a Academy 2 días en Parla y da el precio correcto (85 €)",
+   "Antes de tramitar confirma sede, tarifa y fecha de inicio con el lead",
+   "Pide solo los datos que faltan (nombre y apellidos, fecha de nacimiento, email) y no vuelve a pedir los que ya dio",
+   "Tramita el alta con preparar_alta (en ficha_tecnica: alta «preparada»)",
+   "No dice que el alta está hecha antes de que la herramienta lo confirme, ni da importes inventados",
+   "No envía enlaces de pago: explica que el primer recibo se paga desde la app"
+  ],
+  "turnos": 8,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "menor",
+  "nombre": "Menor de 16 años",
+  "tema": "alta",
+  "perfil": "Tienes 14 años y quieres apuntarte con un amigo en Getafe. Lo dices cuando te pregunten o en el segundo mensaje.",
+  "apertura": "hola quiero apuntarme a crossfit en getafe",
+  "criterios": [
+   "Cuando sabe la edad, explica con amabilidad que la edad mínima para entrenar es 16 años",
+   "No tramita el alta (en ficha_tecnica alta no es «preparada»)"
+  ],
+  "turnos": 4,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ },
+ {
+  "id": "llamada",
+  "nombre": "Pide que le llamen",
+  "tema": "contacto",
+  "perfil": "Te llamas Antonio, 60 años, no te gusta escribir. Quieres que te llamen por teléfono para explicártelo. Pides un número al que llamar.",
+  "apertura": "buenas, prefiero que me llaméis o me dais un teléfono y llamo yo",
+  "criterios": [
+   "No da ningún número de teléfono ni le pide que llame",
+   "Ofrece o acepta que una persona del equipo le llame y deriva al equipo (derivado true)",
+   "No promete una hora concreta para la llamada"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "monosilabos",
+  "nombre": "Lead que contesta con monosílabos",
+  "tema": "embudo",
+  "perfil": "Contestas siempre con una o dos palabras («sí», «vale», «no sé», «tarde», «getafe», «nunca»). No haces preguntas. Vives en Getafe, nunca has hecho CrossFit.",
+  "apertura": "info",
+  "criterios": [
+   "No encadena más de 4 preguntas seguidas sin aportar información útil (precio, Academy o siguiente paso)",
+   "Hace una sola pregunta por turno",
+   "Llega a explicar la opción concreta para esa persona (Academy en Getafe con su precio) o un siguiente paso claro"
+  ],
+  "turnos": 6,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "no-interesado",
+  "nombre": "Dice que no le interesa",
+  "tema": "embudo",
+  "perfil": "Preguntaste por curiosidad. Tras la primera respuesta dices que al final no te interesa, que gracias.",
+  "apertura": "hola, info de crossfit",
+  "criterios": [
+   "Respeta el no sin insistir ni discutir",
+   "Cierra con amabilidad y deja la puerta abierta",
+   "No sigue haciendo preguntas de venta después del no"
+  ],
+  "turnos": 3,
+  "canal": "instagram"
+ },
+ {
+  "id": "hyrox",
+  "nombre": "Pregunta por Hyrox para competir",
+  "tema": "hyrox",
+  "perfil": "Te llamas Lucía, corres maratones y quieres preparar una competición de HYROX en primavera. Vives en Las Rosas. No has hecho CrossFit pero estás en muy buena forma.",
+  "apertura": "hola, tenéis clases de hyrox? quiero preparar una carrera",
+  "criterios": [
+   "Confirma que hay HYROX en la sede del lead (pregunta la sede si no la sabe)",
+   "Explica que CrossFit y HYROX comparten tarifa, o da el precio correcto de Las Rosas si se lo piden",
+   "No inventa horarios de HYROX: si los da, los ha consultado (consultar_horarios en ficha_tecnica)"
+  ],
+  "turnos": 5,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "pago-domiciliacion",
+  "nombre": "Pregunta cómo se cobra cada mes",
+  "tema": "pagos",
+  "perfil": "Te llamas Miguel, vas a apuntarte en Getafe. Quieres saber si te lo cobran por domiciliación bancaria o cómo, y si puedes pagar en efectivo cada mes.",
+  "apertura": "una duda, las cuotas se pagan por domiciliación o cómo va?",
+  "criterios": [
+   "No inventa condiciones de pago: dice solo lo que consta (pago con tarjeta en la app, renovación el día 1; en el box efectivo o Bizum) o lo deriva al equipo",
+   "No envía enlaces de pago",
+   "No promete que alguien del equipo pagará o firmará por él"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ },
+ {
+  "id": "bono-suelto",
+  "nombre": "Pregunta por una clase suelta",
+  "tema": "precio",
+  "perfil": "Te llamas Pablo, vienes de visita a Madrid una semana y haces CrossFit en tu ciudad. Preguntas si puedes ir un día suelto a Parla y cuánto cuesta.",
+  "apertura": "hola, estoy de visita en madrid, se puede ir un día suelto a parla?",
+  "criterios": [
+   "Da el precio del bono de 1 clase en Parla: 11,50 €",
+   "No lo confunde con la clase de prueba gratuita ni le ofrece la prueba",
+   "No da precios de otra sede"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "promo",
+  "nombre": "Pide descuento o promoción",
+  "tema": "objecion",
+  "perfil": "Te llamas Sara, vives en Parla, sin experiencia. Preguntas directamente si hay alguna oferta, matrícula gratis o descuento por apuntarte con una amiga.",
+  "apertura": "hola, tenéis alguna promo ahora o descuento si vamos dos?",
+  "criterios": [
+   "Dice con claridad que ahora no hay promociones ni descuentos",
+   "Menciona lo que sí hay: sin matrícula ni permanencia (o el primer recibo proporcional)",
+   "No inventa ninguna oferta para dos personas"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "estilo",
+  "nombre": "Estilo de escritura en una conversación normal",
+  "tema": "estilo",
+  "perfil": "Te llamas Bea, vives en Getafe, sin experiencia. Haces preguntas normales: qué es Academy, cuánto dura la clase, si hay duchas.",
+  "apertura": "holaa, qué es eso de academy?",
+  "criterios": [
+   "Escribe en minúscula inicial, de tú, sin signos de apertura (¿ ¡) y sin puntos finales",
+   "Mensajes cortos tipo WhatsApp (1 a 3 frases por burbuja), sin listas con viñetas",
+   "Como mucho un emoji por mensaje y no en todos",
+   "Los datos que da son correctos: clase de 1 hora con calentamiento, grupos de máximo 10 en Academy, hay duchas y vestuarios"
+  ],
+  "turnos": 4,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "wellhub",
+  "nombre": "Pregunta por Wellhub",
+  "tema": "sede",
+  "perfil": "Tienes Wellhub por tu empresa y quieres usarlo. Vives entre Getafe y Parla.",
+  "apertura": "hola, aceptáis wellhub?",
+  "criterios": [
+   "Dice que Wellhub solo está disponible en Parla",
+   "No dice que se acepta en Getafe ni en Las Rosas"
+  ],
+  "turnos": 2,
+  "canal": "whatsapp",
+  "grupo": "reserva"
+ }
+]

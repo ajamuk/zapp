@@ -10,6 +10,7 @@ import { openDb, repo as crearRepo } from './db.js';
 import { Setter } from './setter.js';
 import { pedirJSON } from './llm.js';
 import * as docs from './documentos.js';
+import { casoDesdeReporte } from './bateria.js';
 
 /** Apunta en ai_runs lo que gasta el optimizador (para Consumo). */
 const registrar = (db, id, motivo) => (u, modelo) => db.prepare(`INSERT INTO ai_runs (conversation_id, motivo, modelo, tokens_in, tokens_cache_read, tokens_cache_write, tokens_out, ms)
@@ -207,6 +208,8 @@ export function aplicar(db, id, { aunqueFallido = false } = {}) {
   catch (e) { throw new Error(`Las instrucciones han cambiado desde que se preparó: ${e.message} Vuelve a analizarlo.`); }
   const v = docs.crearVersion(db, r.propuesta.doc, texto, { nota: `Reporte #${id}: ${r.propuesta.resumen || r.que_fallo}`.slice(0, 300), autor: 'reporte', reporteId: id, produccion: true });
   actualizar(db, id, { estado: 'aplicado', version_aplicada: v.version });
+  // El reporte pasa a ser un caso de la batería: un cambio posterior no debe deshacer este arreglo
+  try { casoDesdeReporte(db, r); } catch (e) { console.error('Caso desde reporte:', e.message); }
   return v;
 }
 

@@ -31,6 +31,8 @@ export const config = {
     model: env('AI_MODEL', 'claude-sonnet-5-5'),
     // Modelo que analiza los reportes y propone cambios en las instrucciones (no habla con leads)
     modeloOptimizador: env('OPTIMIZADOR_MODEL', 'claude-opus-5-5'),
+    // Modelo que hace de lead en la batería de pruebas (barato: solo escribe mensajes cortos)
+    modeloLead: env('BATERIA_LEAD_MODEL', 'claude-haiku-5-5'),
     minDelay: num('AI_MIN_DELAY', 15),
     maxDelay: num('AI_MAX_DELAY', 50),
     typingSpeed: num('AI_TYPING_SPEED', 4),

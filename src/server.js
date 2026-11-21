@@ -16,6 +16,7 @@ import * as recursosMod from './recursos.js';
 import * as alertas from './alertas.js';
 import * as meta from './meta.js';
 import * as actividad from './actividad.js';
+import * as bateria from './bateria.js';
 import { resumenInstrucciones } from './resumen.js';
 import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
@@ -33,7 +34,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead }) {
   const app = express();
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
@@ -194,6 +195,38 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   });
   admin.delete('/panel/recursos/:id', (req, res) => res.json({ ok: recursosMod.borrar(db, Number(req.params.id), { base: medios?.base }) }));
   admin.get('/panel/recursos/:id/archivo', (req, res) => { const r = recursosMod.obtener(db, Number(req.params.id)); return enviarMedio(res, r && { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios()); });
+
+  // ---------- Batería de pruebas ----------
+  bateria.sembrarCasos(db);
+  admin.get('/panel/bateria', (_req, res) => {
+    const casos = bateria.listarCasos(db);
+    res.json({ casos: casos.map(({ contexto, ...c }) => ({ ...c, mensajes: contexto.length })), pasadas: bateria.listarPasadas(db),
+      versiones: Object.fromEntries(Object.keys(documentos.DOCS).map((d) => [d, documentos.versiones(db, d).filter((v) => v.estado !== 'archivada')])) });
+  });
+  admin.post('/panel/bateria/pasadas', (req, res) => {
+    if (sinModelo(res)) return;
+    if (db.prepare("SELECT 1 FROM bateria_pasadas WHERE estado = 'en_curso'").get()) return res.status(409).json({ error: 'Ya hay una pasada en marcha. Espera a que termine o cancélala.' });
+    const b = req.body || {};
+    try {
+      const p = bateria.lanzarPasada(db, { borradores: b.borradores, repeticiones: b.repeticiones, filtro: { grupo: b.grupo || undefined, tema: b.tema || undefined, ids: b.ids }, complete, completeLead, completeJSON });
+      p.fin.catch(() => {});
+      res.status(201).json({ id: p.id, total: p.total });
+    } catch (e) { errorUsuario(res, e); }
+  });
+  admin.get('/panel/bateria/pasadas/:id', (req, res) => {
+    const r = bateria.resumenPasada(db, Number(req.params.id));
+    if (!r) return res.status(404).json({ error: 'Esa pasada no existe.' });
+    const con = Number(req.query.comparar);
+    res.json({ ...r, comparacion: con ? bateria.comparar(db, con, Number(req.params.id)) : null });
+  });
+  admin.post('/panel/bateria/pasadas/:id/cancelar', (req, res) => res.json({ ok: bateria.cancelarPasada(db, Number(req.params.id)) }));
+  admin.get('/panel/bateria/casos/:id', (req, res) => { const c = bateria.obtenerCaso(db, req.params.id); return c ? res.json(c) : res.status(404).json({ error: 'Ese caso no existe.' }); });
+  admin.post('/panel/bateria/casos', (req, res) => { try { res.status(201).json(bateria.guardarCaso(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/bateria/casos/:id', (req, res) => {
+    if (!bateria.obtenerCaso(db, req.params.id)) return res.status(404).json({ error: 'Ese caso no existe.' });
+    try { res.json(bateria.guardarCaso(db, req.body || {}, req.params.id)); } catch (e) { errorUsuario(res, e); }
+  });
+  admin.delete('/panel/bateria/casos/:id', (req, res) => res.json({ ok: bateria.borrarCaso(db, req.params.id) }));
 
   // ---------- Reportes ----------
   admin.get('/panel/reportes', (req, res) => res.json({

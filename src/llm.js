@@ -193,6 +193,14 @@ export async function pedirJSON({ system, contenido, schema, modelo = config.ai.
   try { return JSON.parse(texto); } catch { throw new Error('El modelo no devolvió un JSON válido'); }
 }
 
+/** Llamada de texto simple (el lead simulado de la batería de pruebas). */
+export async function pedirTexto({ system, messages, modelo = config.ai.modeloLead, complete, onUsage }) {
+  const llamar = complete || ((req) => getClient().messages.create(req, { timeout: 60000, maxRetries: 2 }));
+  const res = await llamar({ model: modelo, max_tokens: 2000, system, messages });
+  onUsage?.(res.usage || {}, modelo);
+  return (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+}
+
 /** Bloques de sistema con caché: el prompt y la base de conocimiento casi no cambian. */
 export function systemBlocks(prompt, negocio, contexto) {
   return [

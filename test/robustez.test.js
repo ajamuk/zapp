@@ -52,11 +52,9 @@ test('varios chats a la vez: uno lento no retrasa a los demás, con un máximo e
   const { repo, setter, sal, chat } = montar({ complete: async () => { activos++; pico = Math.max(pico, activos); await espera(40); activos--; return responder(['hola!']); } });
   setter.maxParalelo = 3;
   for (const id of ['a', 'b', 'c', 'd', 'e']) chat(id);
-  const t = Date.now();
   await setter.tick();
-  assert.equal(pico, 3);
+  assert.equal(pico, 3); // los tres a la vez, no uno detrás de otro
   assert.equal(sal.enviados.length, 3);
-  assert.ok(Date.now() - t < 110, 'los tres a la vez, no uno detrás de otro');
   await setter.tick();
   assert.equal(sal.enviados.length, 5);
   assert.equal(repo.db.prepare('SELECT count(*) n FROM conversations WHERE respondiendo_desde IS NOT NULL OR respond_at IS NOT NULL').get().n, 0);
