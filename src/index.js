@@ -1,8 +1,10 @@
+import path from 'node:path';
 import { config } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
 import { sincronizarHorarios } from './horarios-sync.js';
+import { subirCopias } from './copia-drive.js';
 import { avisarEquipo } from './notify.js';
 import { Setter } from './setter.js';
 import { aplicarAjustes } from './ajustes.js';
@@ -88,6 +90,7 @@ cada('alertas', 10 * 60000, async () => {
   else resolverAlerta(repo.db, 'bucle-parado');
 }, 60000);
 
+let copiaDriveDia = null;
 // Mantenimiento: copia de seguridad diaria (se guardan 14 días) y volcado del registro de escritura a disco
 cada('mantenimiento', 3600 * 1000, async () => {
   repo.db.pragma('wal_checkpoint(PASSIVE)');
@@ -99,6 +102,17 @@ cada('mantenimiento', 3600 * 1000, async () => {
     const { default: Database } = await import('better-sqlite3');
     const p = new Database(rp, { fileMustExist: true });
     try { p.pragma('busy_timeout = 5000'); await copiaSeguridad(p, rp, { dias: 7 }); } finally { p.close(); }
+  }
+  // Copia fuera del servidor (Google Drive, cifrada): una vez al día; si falla, se reintenta en la vuelta siguiente
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (copiaDriveDia !== hoy) {
+    try {
+      const r = await subirCopias(path.join(path.dirname(config.dbPath), 'backups'));
+      if (r) { copiaDriveDia = hoy; console.log(`Copia en Drive al día: ${r.ficheros} ficheros, última ${r.ultima}`); resolverAlerta(repo.db, 'copia-drive'); }
+    } catch (e) {
+      console.error('Copia en Drive:', e.message);
+      registrarAlerta(repo.db, { clave: 'copia-drive', tipo: 'servidor', titulo: 'La copia de seguridad no se ha podido subir a Google Drive', detalle: `${e.message}\nLa copia local del servidor sí se ha hecho. Se reintenta cada hora.`, nivel: 'aviso' });
+    }
   }
 }, 5 * 60000);
 
