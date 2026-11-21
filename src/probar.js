@@ -245,6 +245,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
     if (sinModelo(res)) return;
     const k = clavePrevia(c, regla);
     if (!previas.has(k)) {
+      if (previas.size > 300) for (const vieja of [...previas.keys()].slice(0, 150)) previas.delete(vieja); // no crece sin límite
       const sim = seguimientoSimulado(c, regla);
       const { setter } = sandbox(c);
       previas.set(k, (async () => ({ ...(await textoPrevisto(setter, sim)), due_at: sim.due_at }))().catch((e) => { previas.delete(k); throw e; }));

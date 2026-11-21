@@ -40,3 +40,21 @@ Sofía escucha las notas de voz y ve las imágenes que manda el lead:
 - **Ajustes**: si escribe el equipo, Sofía se aparta (se puede apagar); palabras que la paran (lead o equipo) y que la
   reanudan (equipo); canales cuyos chats nuevos empiezan en pausa; horario distinto por día. **Registro de actividad**:
   quién cambió qué (usuario de MetroTools por la cabecera `X-CFMPO-User`).
+
+## Estabilidad y velocidad
+
+- **Llamadas externas con tiempo límite**: GHL 20 s (se reintentan lecturas y los 429; un envío de mensaje nunca se
+  repite tras un corte, para no duplicarlo), AimHarder 30 s, Telegram 10 s, modelo 60 s por llamada.
+- **Respuestas en paralelo**: hasta 4 chats a la vez; cada chat se marca mientras se atiende. Si la IA o GHL fallan
+  se reintenta a los 2 y 5 minutos (solo si no salió nada y el turno no hizo un alta o una derivación); el equipo
+  recibe un aviso cuando se rinde.
+- **Reinicios**: al arrancar (`src/arranque.js`) los chats que se estaban contestando vuelven a la cola; los envíos
+  programados a medias quedan en error (nunca se duplican) y los reportes a medias se pueden volver a analizar. Con
+  SIGTERM se espera hasta 25 s a las respuestas en curso y se vuelca la base.
+- **Bucles** que no se solapan ni se caen por un error; `/health` devuelve 503 si la base no responde o un bucle
+  lleva parado más del triple de su intervalo, y se abre la alerta «tarea interna parada».
+- **Seguimientos**: cada envío se «toma» antes de procesarlo y se vuelve a comprobar el chat justo antes de salir
+  (lead que acaba de escribir, pausa, socio nuevo según AimHarder).
+- **Base de datos**: `busy_timeout`, índices para el panel y los bucles, y copia diaria en `data/backups/`
+  (14 días la principal, 7 la de Probar IA).
+- La zona horaria del negocio es `BUSINESS_TZ` (por defecto Europe/Madrid), no la del servidor.

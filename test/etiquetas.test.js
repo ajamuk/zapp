@@ -184,7 +184,7 @@ test('filtros combinados: estado, etiquetas (alguna/todas/excluir), sede, canal,
 });
 
 test('sincronización con GHL: tags que llegan, tags quitados en GHL y reintentos', async () => {
-  const { db, repo, e, sal } = montar();
+  const { db, repo, e, sal, avanzar } = montar();
   const hyrox = etq.crear(db, { nombre: 'Interesado en Hyrox', acciones: { avisar: true } });
   const caro = etq.crear(db, { nombre: 'Le parece caro' });
   const parar = etq.crear(db, { nombre: 'Parar', acciones: { pausar_ia: true } });
@@ -198,7 +198,11 @@ test('sincronización con GHL: tags que llegan, tags quitados en GHL y reintento
   assert.equal(sal.avisos.length, 2);
   assert.equal(sal.tags.length, 0); // no se reenvía a GHL lo que viene de GHL
 
-  // Quitan «parar» en GHL → se quita del panel
+  // Una lista de GHL que llega justo después (puede ser anterior a nuestro tag) no quita nada todavía
+  r = await e.sincronizarContacto('k1', ['interesado en hyrox']);
+  assert.equal(r.quitadas, 0);
+  // Quitan «parar» en GHL → pasados 2 minutos, se quita del panel
+  avanzar(1);
   r = await e.sincronizarContacto('k1', ['interesado en hyrox']);
   assert.equal(r.quitadas, 2);
 

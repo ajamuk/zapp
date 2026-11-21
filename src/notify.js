@@ -10,6 +10,7 @@ export async function avisarEquipo(texto, { sede, fetchImpl = fetch } = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, text: texto, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(10000), // un aviso nunca debe frenar a Sofía
     });
     return r.ok;
   } catch (e) {

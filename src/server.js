@@ -33,7 +33,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null }) {
   const app = express();
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
@@ -43,7 +43,14 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   app.get('/panel', (_req, res) => res.sendFile(panelPath));
 
-  app.get('/health', (_req, res) => res.json({ ok: true, modo: config.mode }));
+  // Salud real: comprueba que la base responde y que los bucles siguen dando vueltas (503 si no)
+  app.get('/health', (_req, res) => {
+    try {
+      repo.db.prepare('SELECT 1').get();
+      const s = salud?.() || { ok: true };
+      res.status(s.ok ? 200 : 503).json({ ok: s.ok, modo: config.mode, ...(s.ok ? {} : { bucles_parados: s.bucles_parados }) });
+    } catch { res.status(503).json({ ok: false, modo: config.mode }); }
+  });
 
   // Recursos públicos para que GHL los descargue al enviarlos (código aleatorio; solo los activos)
   app.get('/r/:token', (req, res) => {
@@ -289,8 +296,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.post('/panel/lanzamientos/:id/cancelar', (req, res) => res.json({ ok: cancelarLanzamiento(db, Number(req.params.id)) }));
 
   admin.post('/panel/seguimientos/:id/cancelar', (req, res) => {
-    repo.finishScheduled(Number(req.params.id), 'cancelado', 'cancelado desde el panel');
-    res.json({ ok: true });
+    const r = db.prepare("UPDATE scheduled SET estado = 'cancelado', detalle = 'cancelado desde el panel' WHERE id = ? AND estado IN ('pendiente', 'enviando')").run(Number(req.params.id));
+    res.json({ ok: r.changes > 0 });
   });
   // ---------- Etiquetas ----------
   const errorUsuario = (res, e) => res.status(400).json({ error: e.message });
@@ -377,5 +384,14 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     next();
   }, admin);
   app.use('/metrotools', metrotools);
+
+  // Cualquier error de una ruta: respuesta JSON corta (sin detalles internos) y el servicio sigue
+  app.use((err, req, res, _next) => {
+    const cuerpo = err?.type === 'entity.too.large' ? [413, 'El archivo o el texto es demasiado grande.']
+      : err?.type === 'entity.parse.failed' ? [400, 'Petición mal formada.'] : [500, 'Ha habido un error interno. Inténtalo otra vez.'];
+    if (cuerpo[0] === 500) console.error(`[ruta] ${req.method} ${req.path}:`, err?.stack || err);
+    if (res.headersSent) return;
+    res.status(cuerpo[0]).json({ error: cuerpo[1] });
+  });
   return app;
 }

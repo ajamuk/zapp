@@ -164,7 +164,9 @@ export class Etiquetador {
   get db() { return this.repo.db; }
 
   /** Pone una etiqueta. Devuelve { puesta: bool, motivo? }. Las acciones solo corren si es nueva. */
-  async poner(convId, etiquetaId, origen = 'manual', { porInactividad = false } = {}) {
+  async poner(convId, etiquetaId, origen = 'manual', { porInactividad = false, retroactivo = false } = {}) {
+    // retroactivo («aplicar a chats de antes»): solo marca y copia a GHL; no pausa, no fuerza respuesta, no avisa,
+    // no manda eventos a Meta ni programa seguimientos (serían mensajes a leads de hace meses).
     // origen 'ghl': la han puesto en GHL (a mano o una automatización); cuenta como manual y ya está allí.
     if (!ORIGENES.includes(origen)) throw new Error('origen no válido');
     const etq = obtener(this.catalogo, etiquetaId);
@@ -179,8 +181,11 @@ export class Etiquetador {
     }
     this.db.prepare('INSERT OR IGNORE INTO conv_etiquetas (conversation_id, etiqueta_id, origen, created_at, ghl_sync) VALUES (?, ?, ?, ?, ?)')
       .run(convId, etq.id, origen, this.now().toISOString(), origen === 'ghl' ? 1 : 0);
-    await this.acciones(conv, etq, origen, porInactividad);
-    await this.safe(async () => this.alPoner?.(convId, etq.id));
+    if (retroactivo) await this.subirAGhl(conv, etq);
+    else {
+      await this.acciones(conv, etq, origen, porInactividad);
+      await this.safe(async () => this.alPoner?.(convId, etq.id));
+    }
     return { puesta: true, etiqueta: { id: etq.id, nombre: etq.nombre, color: etq.color } };
   }
 
@@ -249,12 +254,16 @@ export class Etiquetador {
     const chats = this.db.prepare("SELECT * FROM conversations WHERE contact_id = ? AND id NOT LIKE 'prueba-%'").all(contactId);
     const out = { puestas: 0, quitadas: 0, subidas: 0 };
     for (const conv of chats) {
-      const actuales = new Map(this.db.prepare('SELECT etiqueta_id, ghl_sync FROM conv_etiquetas WHERE conversation_id = ?').all(conv.id).map((r) => [r.etiqueta_id, r.ghl_sync]));
+      const filas = this.db.prepare('SELECT etiqueta_id, ghl_sync, created_at FROM conv_etiquetas WHERE conversation_id = ?').all(conv.id);
+      const actuales = new Map(filas.map((r) => [r.etiqueta_id, r.ghl_sync]));
+      // Recién puestas (2 min): la lista de GHL puede venir de antes de que llegase nuestro tag; no se quitan todavía
+      const recientes = new Set(filas.filter((r) => this.now().getTime() - Date.parse(r.created_at) < 120000).map((r) => r.etiqueta_id));
       for (const etq of catalogo) {
         const enElChat = actuales.has(etq.id);
         const estaEnGhl = enGhl.has(clave(etq.nombre));
         if (estaEnGhl && !enElChat) { if ((await this.poner(conv.id, etq.id, 'ghl')).puesta) out.puestas++; }
         else if (estaEnGhl && enElChat && !actuales.get(etq.id)) this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
+        else if (!estaEnGhl && enElChat && actuales.get(etq.id) && recientes.has(etq.id)) { /* esperar a la siguiente sincronización */ }
         else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; await this.safe(async () => this.alQuitar?.(conv.id, etq.id)); }
         else if (!estaEnGhl && enElChat) { if (await this.subirAGhl(conv, etq)) out.subidas++; }
       }
@@ -315,10 +324,12 @@ export class Etiquetador {
     let n = 0;
     for (const { e, horas } of reglas) {
       const limite = new Date(this.now().getTime() - horas * 3600e3).toISOString();
+      // Solo chats recientes (hasta 7 días después de cumplir el plazo): una regla nueva no etiqueta el histórico entero
+      const antiguo = new Date(this.now().getTime() - horas * 3600e3 - 7 * 864e5).toISOString();
       const chats = this.db.prepare(`SELECT c.id FROM conversations c
         JOIN messages m ON m.id = (SELECT max(id) FROM messages WHERE conversation_id = c.id)
-        WHERE m.autor IN ('ia', 'humano') AND m.created_at <= ? AND c.id NOT LIKE 'prueba-%'
-          AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id = ?)`).all(limite, e.id);
+        WHERE m.autor IN ('ia', 'humano') AND m.created_at <= ? AND m.created_at >= ? AND c.id NOT LIKE 'prueba-%'
+          AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id = ?)`).all(limite, antiguo, e.id);
       for (const c of chats) if ((await this.poner(c.id, e.id, 'regla', { porInactividad: true })).puesta) n++;
     }
     return n;
@@ -341,7 +352,7 @@ export class Etiquetador {
     }
     let aplicadas = 0;
     for (const id of candidatos) {
-      const r = await this.poner(id, etq.id, 'regla');
+      const r = await this.poner(id, etq.id, 'regla', { retroactivo: true });
       if (r.puesta) aplicadas++;
     }
     return { aplicadas, revisados: candidatos.size };

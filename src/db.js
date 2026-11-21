@@ -220,12 +220,48 @@ CREATE TABLE IF NOT EXISTS ajustes (
 );
 `;
 
+// Índices para las consultas del panel y de los bucles (se crean después de migrar: usan columnas nuevas)
+const INDICES = `
+CREATE INDEX IF NOT EXISTS conversations_contact ON conversations(contact_id);
+CREATE INDEX IF NOT EXISTS conversations_created ON conversations(created_at);
+CREATE INDEX IF NOT EXISTS messages_autor_fecha ON messages(autor, created_at);
+CREATE INDEX IF NOT EXISTS scheduled_conv ON scheduled(conversation_id, estado);
+CREATE INDEX IF NOT EXISTS scheduled_regla ON scheduled(regla_id, estado);
+CREATE INDEX IF NOT EXISTS ai_runs_fecha ON ai_runs(created_at);
+CREATE INDEX IF NOT EXISTS ai_runs_conv ON ai_runs(conversation_id);
+CREATE INDEX IF NOT EXISTS altas_conv ON altas(conversation_id);
+CREATE INDEX IF NOT EXISTS meta_eventos_id ON meta_eventos(event_id);
+`;
+
+/**
+ * Copia de seguridad en caliente a `<carpeta>/backups/<nombre>-AAAA-MM-DD.db` (una al día; se guardan `dias`).
+ * Devuelve la ruta, o null si ya existía la de hoy o la base está en memoria.
+ */
+export async function copiaSeguridad(db, dbPath, { dias = 14, ahora = new Date() } = {}) {
+  if (!dbPath || dbPath === ':memory:') return null;
+  const dir = path.join(path.dirname(dbPath), 'backups');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const base = path.basename(dbPath, '.db');
+  const destino = path.join(dir, `${base}-${ahora.toISOString().slice(0, 10)}.db`);
+  if (fs.existsSync(destino)) return null;
+  const tmp = `${destino}.tmp`;
+  await db.backup(tmp);
+  fs.renameSync(tmp, destino);
+  fs.chmodSync(destino, 0o600);
+  const viejas = fs.readdirSync(dir).filter((f) => f.startsWith(`${base}-`) && f.endsWith('.db')).sort().slice(0, -dias);
+  for (const f of viejas) fs.rmSync(path.join(dir, f), { force: true });
+  return destino;
+}
+
 export function openDb(dbPath) {
   if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');   // si otro proceso tiene la base ocupada, espera en vez de fallar
+  db.pragma('synchronous = NORMAL');  // seguro con WAL y bastante más rápido al escribir
   db.exec(SCHEMA);
   migrar(db);
+  db.exec(INDICES);
   sembrarReglas(db);
   sembrarDocumentos(db);
   return db;
@@ -241,6 +277,8 @@ const COLUMNAS_NUEVAS = {
     retomar: 'TEXT',              // JSON: { fecha, motivo, at } cuando el lead lo deja para más adelante
     prueba_fecha: 'TEXT',         // instante de la clase de prueba pedida (para los recordatorios)
     prompt_v: 'INTEGER',          // versión del prompt con la que Sofía empezó este chat (rendimiento por versión)
+    respondiendo_desde: 'TEXT',   // Sofía está contestando (si hay un reinicio a mitad, se vuelve a poner en cola)
+    reintentos: 'INTEGER NOT NULL DEFAULT 0', // respuestas fallidas seguidas (IA o GHL caídos)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -321,7 +359,8 @@ export function repo(db) {
     cancelScheduled: (convId, motivo, { soloCortos = false, tipos = null, reglaIds = null } = {}) => {
       const t = tipos || (soloCortos ? ['silencio'] : ['silencio', 'largo-plazo']);
       const filtroRegla = reglaIds ? `AND regla_id IN (${reglaIds.map(() => '?').join(',') || "''"})` : '';
-      return db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado = 'pendiente'
+      // También los que se están preparando ahora mismo ('enviando'): el envío lo comprueba antes de salir
+      return db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = ? WHERE conversation_id = ? AND estado IN ('pendiente', 'enviando')
         AND IFNULL(tipo, 'silencio') IN (${t.map(() => '?').join(',')}) ${filtroRegla}`).run(motivo, convId, ...t, ...(reglaIds || []));
     },
     guardarPrevisto: (id, texto, msgId) =>

@@ -18,7 +18,8 @@ export function contienePalabra(texto, lista = []) {
   const t = ` ${n(texto).replace(/[^a-z0-9#ñ@]+/g, ' ')} `;
   return lista.find((p) => p && t.includes(` ${n(p).replace(/[^a-z0-9#ñ@]+/g, ' ').trim()} `)) || null;
 }
-const SIN_RESPUESTA = /^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
+const ESPERAS_REINTENTO = [2 * 60000, 5 * 60000]; // si falla la IA o GHL: reintento a los 2 y a los 5 minutos
+const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
 /**
@@ -81,7 +82,12 @@ export class Setter {
     // Audios e imágenes: se descargan y los audios se transcriben antes de que Sofía conteste
     let transcripcion = null;
     if (evt.adjuntos?.length || evt.subida) {
-      const m = evt.subida || (await this.safe(() => this.medios.procesarAdjuntos(evt.adjuntos)));
+      // Mientras se descarga y transcribe, el bucle no contesta este chat (si no, diría «no he podido oír el audio»)
+      this.mediosEnCurso ??= new Map();
+      this.mediosEnCurso.set(conv.id, (this.mediosEnCurso.get(conv.id) || 0) + 1);
+      let m;
+      try { m = evt.subida || (await this.safe(() => this.medios.procesarAdjuntos(evt.adjuntos))); }
+      finally { const n = this.mediosEnCurso.get(conv.id) - 1; if (n > 0) this.mediosEnCurso.set(conv.id, n); else this.mediosEnCurso.delete(conv.id); }
       if (m) {
         adjunto = m.adjunto; transcripcion = m.transcripcion;
         this.repo.updateMessage(ins.lastInsertRowid, { adjunto: m.adjunto, media_ruta: m.media_ruta, media_mime: m.media_mime, transcripcion: m.transcripcion, media_error: m.media_error, ...(evt.texto ? {} : { texto: `[${m.adjunto}]` }) });
@@ -148,14 +154,52 @@ export class Setter {
   // ---------- Respuesta ----------
 
   /** Procesa las conversaciones cuya respuesta toca ya. Lo llama el bucle de index.js. */
+  /**
+   * Varios chats a la vez (hasta `maxParalelo`): la espera de «escribiendo…» de uno no retrasa a los demás.
+   * Cada chat se marca `respondiendo_desde` mientras se atiende; si el servicio se reinicia a mitad, al arrancar
+   * se vuelve a poner en cola (arranque.js). Si la IA o GHL fallan, se reintenta a los 2 y a los 5 minutos.
+   */
   async tick() {
+    this.enCurso ??= new Set();
+    const libres = (this.maxParalelo || 4) - this.enCurso.size;
+    if (libres <= 0) return;
     const ahora = this.now();
+    this.ultimoTick = Date.now();
     const ajustes = leerAjustes(this.repo);
-    for (const c of this.repo.dueResponses(ahora.toISOString())) {
-      this.repo.updateConv(c.id, { respond_at: null });
-      // Sofía apagada (o el canal) desde el panel: contesta el equipo en GHL
-      if (!ajustes.ia_activa || !ajustes.canales[c.channel]) continue;
-      try { await this.responder(c.id); } catch (e) { console.error(`Error respondiendo ${c.id}:`, e); }
+    const tanda = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id)).slice(0, libres);
+    await Promise.all(tanda.map((c) => this.atender(c, ajustes)));
+  }
+
+  async atender(c, ajustes) {
+    // Sofía apagada (o el canal) desde el panel: contesta el equipo en GHL
+    if (!ajustes.ia_activa || !ajustes.canales[c.channel]) { this.repo.updateConv(c.id, { respond_at: null }); return; }
+    this.enCurso.add(c.id);
+    this.repo.updateConv(c.id, { respond_at: null, respondiendo_desde: this.now().toISOString() });
+    const reintentos = c.reintentos || 0;
+    const ultimo = reintentos >= ESPERAS_REINTENTO.length;
+    let reloj;
+    try {
+      // Tope de seguridad: ningún chat ocupa un hueco más de 5 minutos
+      await Promise.race([
+        this.responder(c.id, { avisarFallo: ultimo }),
+        new Promise((_, mal) => { reloj = setTimeout(() => mal(new Error('la respuesta ha tardado más de 5 minutos')), 5 * 60000); reloj.unref?.(); }),
+      ]);
+      this.repo.updateConv(c.id, { respondiendo_desde: null, reintentos: 0 });
+    } catch (e) {
+      console.error(`Error respondiendo ${c.id} (intento ${reintentos + 1}):`, e.message);
+      const actual = this.repo.getConv(c.id);
+      const patch = { respondiendo_desde: null };
+      // Se reintenta solo si no ha salido ya nada de este turno y el lead no ha vuelto a escribir (eso ya lo reprograma)
+      const yaSalio = Boolean(this.repo.db.prepare(`SELECT 1 FROM messages WHERE conversation_id = ? AND autor = 'ia'
+        AND id > IFNULL((SELECT max(id) FROM messages WHERE conversation_id = ? AND autor = 'lead'), 0) LIMIT 1`).get(c.id, c.id));
+      if (!ultimo && !e.noReintentar && actual && !actual.respond_at && !actual.ai_paused && !actual.derivado && !yaSalio) {
+        patch.respond_at = new Date(this.now().getTime() + ESPERAS_REINTENTO[reintentos]).toISOString();
+        patch.reintentos = reintentos + 1;
+      } else patch.reintentos = 0;
+      this.repo.updateConv(c.id, patch);
+    } finally {
+      clearTimeout(reloj);
+      this.enCurso.delete(c.id);
     }
   }
 
@@ -224,7 +268,7 @@ export class Setter {
     return out.map((x) => (x.content.every((b) => b.type === 'text') ? { role: x.role, content: x.content.map((b) => b.text).join('\n') } : x));
   }
 
-  async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null } = {}) {
+  async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null, avisarFallo = true } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
     const system = this.sistema(conv, extraContexto);
@@ -245,16 +289,30 @@ export class Setter {
       }));
     } catch (e) {
       this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: e.message });
-      await this.avisar?.(`La IA falló en una conversación y no ha contestado: ${e.message}`, { sede: conv.sede });
+      if (avisarFallo) await this.safe(() => this.avisar?.(`La IA falló en una conversación y no ha contestado: ${e.message}`, { sede: conv.sede }));
       throw e;
     }
+
+    // Mientras Sofía pensaba, alguien del equipo ha escrito o han pausado el chat: no se envía nada
+    const ahoraConv = this.repo.getConv(convId);
+    if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
 
     if (conv.prompt_v == null) this.repo.updateConv(convId, { prompt_v: this.versiones().prompt_v });
     await this.aplicarRespuesta(conv, respuesta, efectos);
     let mensajes = (respuesta.mensajes || []).map((m) => m.trim()).filter(Boolean);
     if (plantilla) mensajes = mensajes.slice(0, 1);
-    if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
-    if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
+    try {
+      if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
+      if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
+    } catch (e) {
+      // GHL ha fallado al enviar: queda registrado y el aviso del alta se intenta igualmente. Si en este turno
+      // ya se hizo algo que no se debe repetir (alta, derivación), no se reintenta el turno: se avisa al equipo.
+      this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: `envío: ${e.message}`, ...this.versiones() });
+      if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
+      e.noReintentar = Boolean(efectos.avisoAlta || efectos.derivado || efectos.herramientas.some((h) => ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo'].includes(h.nombre)));
+      if (e.noReintentar) await this.safe(() => this.avisar?.(`Sofía no ha podido enviar su respuesta por un fallo de GHL (${e.message}). Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
+      throw e;
+    }
     if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
     // Seguimientos (también en modo prueba: al vencer quedan como borrador). Si lo deja para más adelante,
     // en vez de los cortos se programa el de largo plazo.
@@ -312,8 +370,11 @@ export class Setter {
       return [r?.messageId || null];
     }
     const ids = [];
+    const pausadaAlEmpezar = Boolean(this.repo.getConv(conv.id)?.ai_paused);
     for (let i = 0; i < mensajes.length; i++) {
       await this.sleep(escritura[i]);
+      // Alguien del equipo ha escrito mientras Sofía «escribía»: no se mandan las burbujas que faltan
+      if (i > 0 && !pausadaAlEmpezar && this.repo.getConv(conv.id)?.ai_paused) break;
       const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto: mensajes[i] });
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[i] });
       ids.push(r?.messageId || null);
@@ -448,6 +509,8 @@ export class Setter {
   }
 
   async alta(conv, datos, efectos) {
+    // Un alta ya hecha no se repite (duplicaría la tarifa y el recibo en AimHarder)
+    if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
     const sede = normalizarSede(datos.sede);
     const telefono = datos.telefono || conv.telefono || '';
     const d = { ...datos, sede, telefono, canal: conv.channel };

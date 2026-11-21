@@ -114,9 +114,14 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
   }
   const sesion = path.join(path.dirname(config.dbPath), 'aimharder-sesion.json');
   const browser = await playwright.chromium.launch({ headless: true });
-  const context = await browser.newContext(fs.existsSync(sesion) ? { storageState: sesion } : {});
-  const page = await context.newPage();
-  page.on('dialog', (d) => d.dismiss().catch(() => {}));
+  let context; let page;
+  try {
+    // Si la sesión guardada está corrupta, se empieza sin ella (y nunca queda un navegador abierto)
+    try { context = await browser.newContext(fs.existsSync(sesion) ? { storageState: sesion } : {}); }
+    catch { context = await browser.newContext({}); }
+    page = await context.newPage();
+    page.on('dialog', (d) => d.dismiss().catch(() => {}));
+  } catch (e) { await browser.close().catch(() => {}); return { estado: 'fallida', detalle: `No se pudo abrir el navegador: ${e.message}` }; }
   const c = cfg.campos;
   const hoy = hoyDdMmYyyy();
   try {
@@ -252,6 +257,6 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
     await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
     return { estado: 'fallida', detalle: `${e.message} (captura: ${shot})` };
   } finally {
-    await browser.close();
+    await browser.close().catch(() => {});
   }
 }

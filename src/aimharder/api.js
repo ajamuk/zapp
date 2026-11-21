@@ -17,6 +17,7 @@ export class AimHarderApi {
       method,
       headers: { Authorization: `Bearer ${this.access}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30000), // que una sincronización nunca se quede colgada
     });
     if (r.status === 410 && reintento && this.refresh && !this.leerToken) { // token caducado
       await this.refrescar();
@@ -29,7 +30,7 @@ export class AimHarderApi {
   }
 
   async refrescar() {
-    const r = await this.fetch(`${BASE}/auth/tokens/refresh`, { headers: { Authorization: `Bearer ${this.refresh}`, 'Content-Type': 'application/json' } });
+    const r = await this.fetch(`${BASE}/auth/tokens/refresh`, { headers: { Authorization: `Bearer ${this.refresh}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(30000) });
     if (!r.ok) throw new Error(`AimHarder refresh → ${r.status}`);
     const { data } = await r.json();
     this.access = data['access-token'];
@@ -46,9 +47,9 @@ export class AimHarderApi {
       const page = await this.req('GET', cursor ? `${path}${sep}cursor=${encodeURIComponent(cursor)}` : path);
       out.push(...(page.data || []));
       cursor = page.pagination?.nextCursor;
-      if (!cursor) break;
+      if (!cursor) return out;
     }
-    return out;
+    throw new Error(`AimHarder ${path}: demasiadas páginas (lista sin terminar)`);
   }
 
   tarifas() { return this.todo('/memberships'); }

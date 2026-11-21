@@ -21,7 +21,8 @@ export const config = {
   mode: env('MODE', 'shadow'),
   port: num('PORT', 3200),
   dbPath: path.resolve(root, env('DB_PATH', './data/setter.db')),
-  tz: env('TZ', 'Europe/Madrid'),
+  // Zona horaria del negocio (no la del servidor: si el servicio corre en UTC, el horario de Sofía no se mueve)
+  tz: env('BUSINESS_TZ', 'Europe/Madrid'),
   ghlWebhookEnabled: env('GHL_WEBHOOK_ENABLED', 'true') === 'true',
   webhookSecret: env('WEBHOOK_SECRET'),
   adminToken: env('ADMIN_TOKEN'),

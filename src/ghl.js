@@ -14,6 +14,9 @@ export function canalDesdeTipo(t) {
  * Normaliza el webhook de GHL (eventos InboundMessage / OutboundMessage de la app de GHL,
  * o el "Custom Webhook" de un workflow con los mismos campos).
  */
+/** GHL puede mandar listas como texto («a, b») cuando vienen de un campo de workflow. */
+const aLista = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : v == null ? null : []);
+
 export function parseWebhook(b = {}) {
   const tipoEvento = b.type || b.event || '';
   const direction = String(b.direction || (tipoEvento.includes('Outbound') ? 'outbound' : 'inbound')).toLowerCase();
@@ -28,10 +31,10 @@ export function parseWebhook(b = {}) {
     messageId: b.messageId || b.id || msg.id || null,
     userId: b.userId || msg.userId || null, // presente cuando escribe una persona del equipo desde GHL
     source: b.source || msg.source || null,
-    adjuntos: b.attachments || msg.attachments || [],
+    adjuntos: aLista(b.attachments ?? msg.attachments) || [],
     nombre: b.contactName || b.full_name || b.contact?.name || null,
     telefono: b.phone || b.contact?.phone || null,
-    tags: b.tags || b.contact?.tags || null,
+    tags: aLista(b.tags ?? b.contact?.tags),
     fecha: b.dateAdded || new Date().toISOString(),
   };
 }
@@ -43,17 +46,38 @@ export class Ghl {
     this.fetch = fetchImpl;
   }
 
-  async req(method, path, body) {
-    const r = await this.fetch(this.baseUrl + path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Version: '2021-07-28',
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  /**
+   * Petición a GHL con tiempo límite (20 s) para que nunca se quede colgada. Se reintenta (2 veces, con espera)
+   * solo lo que es seguro repetir: lecturas, y cualquier petición si GHL contesta 429 (no la ha procesado).
+   * Los envíos de mensajes NO se reintentan ante un corte o un 5xx: podría salir duplicado.
+   */
+  async req(method, path, body, { intentos = 3, esperaMs = 800 } = {}) {
+    let r; let ultimo;
+    for (let i = 1; i <= intentos; i++) {
+      try {
+        r = await this.fetch(this.baseUrl + path, {
+          method,
+          headers: {
+            Authorization: `Bearer ${this.token}`,
+            Version: '2021-07-28',
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: AbortSignal.timeout(20000),
+        });
+      } catch (e) {
+        ultimo = new Error(`GHL ${method} ${path} → ${e.name === 'TimeoutError' ? 'sin respuesta en 20 s' : e.message}`);
+        if (method !== 'GET' || i === intentos) throw ultimo;
+        await new Promise((ok) => setTimeout(ok, esperaMs * i));
+        continue;
+      }
+      const repetible = r.status === 429 || (method === 'GET' && r.status >= 500);
+      if (!repetible || i === intentos) break;
+      await r.text().catch(() => null);
+      const pedido = Number(r.headers?.get?.('retry-after')) * 1000;
+      await new Promise((ok) => setTimeout(ok, Math.min(10000, pedido || esperaMs * i)));
+    }
     const text = await r.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }

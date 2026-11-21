@@ -562,11 +562,11 @@ async function cargarMedios(cont) {
 const cuandoRegla = (r) => r.tipo === 'largo-plazo' ? (r.despuesDe ? `${r.dias} días después del anterior` : `a los ${r.dias} días o la fecha que diga el lead`) : `a las ${minutos(r.minutos)}`;
 const fechaCorta = (iso) => new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const htmlPrevisto = (t, plantilla) => t == null ? '<span class="ayuda">Preparando el texto…</span>' : t === '' ? '<span class="ayuda">Sofía no lo enviaría ahora: no se cumple la condición.</span>' : `<div class="previsto">${plantilla ? '<span class="chip">plantilla WhatsApp</span> ' : ''}«${esc(t)}»</div>`;
-// Pide los textos de uno en uno (cada uno es una llamada al modelo)
+// Pide los textos de tres en tres (cada uno es una llamada al modelo): tarda la tercera parte que de uno en uno
 async function prepararTextos(items, pedir, pintar) {
-  for (const it of items) {
-    try { const r = await pedir(it); pintar(it, r); } catch (e) { pintar(it, { error: e.message }); }
-  }
+  const cola = [...items];
+  const obrero = async () => { for (let it; (it = cola.shift()) !== undefined;) { try { pintar(it, await pedir(it)); } catch (e) { pintar(it, { error: e.message }); } } };
+  await Promise.all([obrero(), obrero(), obrero()]);
 }
 
 // ---------- Chats: vistas y filtros ----------

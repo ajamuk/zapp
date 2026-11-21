@@ -101,7 +101,14 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
 function motivoParaNoEnviar(s, regla, conv, ajustes, ahora) {
   const deSofia = QUIEN_DEPENDE_DE_SOFIA.includes(s.tipo);
   const delEquipo = s.tipo === 'manual' || s.tipo === 'lanzamiento';
-  if (delEquipo) return null;
+  if (s.tipo === 'manual') return null; // lo ha escrito una persona para este chat: sale siempre
+  // Lanzamientos: nunca a socios, a quien ya tiene el alta, a chats derivados ni a quien pidió no recibir mensajes
+  if (s.tipo === 'lanzamiento') {
+    if (conv.tipo === 'socio' || conv.alta_estado === 'preparada') return 'ya es cliente';
+    if (conv.derivado) return 'chat derivado al equipo';
+    if (/^el lead escribió/.test(conv.pause_reason || '')) return 'pidió no recibir mensajes';
+    return null;
+  }
   if (!ajustes.ia_activa || !ajustes.canales[conv.channel]) return 'Sofía desactivada desde el panel';
   if (!regla.activo) return 'seguimiento desactivado desde el panel';
   if ((deSofia || regla.excluir.pausada) && (conv.ai_paused || conv.derivado)) return 'IA pausada o derivada';
@@ -120,16 +127,35 @@ export async function procesarSeguimientos(setter) {
   const ahora = setter.now();
   const ajustes = leerAjustes(repo);
   await procesarLanzamientos(setter);
+  let aplazados = 0;
+  const tomar = repo.db.prepare("UPDATE scheduled SET estado = 'enviando' WHERE id = ? AND estado = 'pendiente'");
+  const sigueEnMarcha = repo.db.prepare("SELECT 1 FROM scheduled WHERE id = ? AND estado = 'enviando'");
   for (const s of repo.dueScheduled(ahora.toISOString())) {
+   try { // un fallo en un envío nunca corta los demás
+    if (setter.enCurso?.has(s.conversation_id)) continue; // Sofía está contestando en ese chat: al siguiente minuto
+    // Se «toma» el envío: si otro proceso o una vuelta anterior ya lo tiene, o se canceló, se salta (nunca sale dos veces)
+    if (!tomar.run(s.id).changes) continue;
     const regla = reglaDelPendiente(setter.catalogo, s);
     const conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    // ¿Se ha hecho socio desde que empezó el chat (alta en recepción)? Se mira el índice de AimHarder antes de escribirle
+    if (s.tipo !== 'manual' && conv.tipo !== 'socio' && conv.telefono && setter.aimharder?.buscarSocioPorTelefono) {
+      const socio = await setter.safe(() => setter.aimharder.buscarSocioPorTelefono(conv.telefono));
+      if (socio?.esSocio) {
+        repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: 'socio' });
+        repo.cancelScheduled(conv.id, 'ya es socio', { tipos: ['silencio', 'largo-plazo', 'etiqueta'] });
+        repo.finishScheduled(s.id, 'omitido', 'ya es socio');
+        continue;
+      }
+    }
     const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora);
     if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
     // Los mensajes a mano salen a su hora exacta; el resto, dentro del horario de Sofía
     if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
       repo.finishScheduled(s.id, 'cancelado', 'fuera de horario: reprogramado');
-      const r = repo.schedule(conv.id, s.regla_id, siguienteApertura(ahora).toISOString(), json(s.contexto), s.tipo, s.texto_previsto);
+      // Los envíos de un lanzamiento conservan su reparto (uno cada 20 s) al pasar a la siguiente apertura
+      const apertura = new Date(siguienteApertura(ahora).getTime() + (s.tipo === 'lanzamiento' ? (aplazados++) * ESPACIADO_MS : 0));
+      const r = repo.schedule(conv.id, s.regla_id, apertura.toISOString(), json(s.contexto), s.tipo, s.texto_previsto);
       if (s.previsto_msg != null) repo.guardarPrevisto(r.lastInsertRowid, s.texto_previsto, s.previsto_msg);
       continue;
     }
@@ -145,6 +171,11 @@ export async function procesarSeguimientos(setter) {
       const previsto = s.texto_previsto != null && (s.tipo === 'manual' || s.tipo === 'lanzamiento' || fueraDeVentana(conv, s.due_at) === plantilla) ? s : { ...s, texto_previsto: null };
       const { texto } = await textoPrevisto(setter, previsto);
       if (!texto) { repo.finishScheduled(s.id, 'omitido', 'la IA decidió no enviar'); continue; }
+      // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale
+      if (!sigueEnMarcha.get(s.id)) continue;
+      const fresco = repo.getConv(conv.id);
+      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now()) : 'el chat ya no existe';
+      if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null);
       repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.live ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
@@ -153,6 +184,10 @@ export async function procesarSeguimientos(setter) {
     } catch (e) {
       repo.finishScheduled(s.id, 'error', e.message);
     }
+   } catch (e) {
+    console.error(`Seguimiento ${s.id}:`, e.message);
+    try { repo.finishScheduled(s.id, 'error', e.message); } catch { /* la base no responde: se verá en las alertas */ }
+   }
   }
   marcarLanzamientosTerminados(repo.db);
 }
@@ -238,6 +273,7 @@ export function destinatarios(db, { dias_actividad = 30, canales = ['whatsapp'],
   if (!can.length) return [];
   return db.prepare(`SELECT c.id, c.channel, c.nombre, c.last_inbound_at FROM conversations c
     WHERE c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio' AND c.derivado = 0
+      AND IFNULL(c.alta_estado, '') != 'preparada' AND IFNULL(c.pause_reason, '') NOT LIKE 'el lead escribió%'
       AND c.channel IN (${can.map(() => '?').join(',')})
       AND datetime(c.last_inbound_at) >= datetime('now', ?)
       ${exc.length ? `AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id IN (${exc.map(() => '?').join(',')}))` : ''}

@@ -126,7 +126,9 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
   // Sonnet 5.5 no admite forzar herramienta (tool_choice any/tool → 400): se pide en modo auto y, si contesta
   // en texto sin llamar a `responder`, se le recuerda una vez. Si el modelo se niega por seguridad, la API
   // reintenta con su modelo de respaldo (fallbacks "default").
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }));
+  // Tiempo límite de 60 s por llamada (el SDK reintenta 2 veces los fallos de red, 429 y 5xx): una respuesta
+  // normal tarda 4-8 s, y sin límite una llamada colgada bloquearía el chat hasta 10 minutos.
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: 60000, maxRetries: 2 }));
   const conv = [...messages];
   let recordatorios = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
@@ -141,9 +143,19 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     });
     onUsage?.(res.usage || {}, Date.now() - t0);
     if (res.stop_reason === 'refusal') throw new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`);
+    if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
     const final = usos.find((u) => u.name === 'responder');
-    if (final) return { respuesta: final.input, herramientas: conv.length - messages.length };
+    if (final) {
+      // Si junto a `responder` pidió otras herramientas (derivar, reservar, enviar un archivo…), se ejecutan también:
+      // si no, el lead leería «te paso con el equipo» sin que el chat se derive de verdad.
+      for (const u of usos.filter((x) => x !== final && x.name !== 'responder')) {
+        let out;
+        try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
+        onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
+      }
+      return { respuesta: final.input, herramientas: conv.length - messages.length };
+    }
     if (!usos.length) {
       if (recordatorios++ >= 1) throw new Error('El modelo no usó la herramienta responder');
       conv.push({ role: 'assistant', content: res.content });
@@ -168,7 +180,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
  * reportes, que no habla con leads. `complete` se puede sustituir en tests.
  */
 export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000, onUsage }) {
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }));
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: 240000, maxRetries: 1 }));
   const res = await llamar({
     model: modelo, max_tokens: maxTokens, system,
     messages: [{ role: 'user', content: contenido }],

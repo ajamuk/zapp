@@ -90,6 +90,10 @@ export async function sincronizarSocios(repo, apis = clientesApi()) {
       filas.push({ telefono: tel, sede, aimharder_id: c.id, nombre: [c.name, c.first_surname].filter(Boolean).join(' '),
         activo: tarifas.length > 0 && !c.deactivation_date ? 1 : 0, tarifa: tarifas.map((m) => m.membership_name).join(', ') || null });
     }
+    // Una lista vacía o a menos de la mitad que la anterior es un fallo de AimHarder, no una fuga de socios:
+    // se conserva el índice que había (si no, Sofía trataría a los socios como leads).
+    const antes = repo.db.prepare('SELECT count(*) n FROM socios WHERE sede = ?').get(sede).n;
+    if (antes >= 20 && filas.length < antes / 2) throw new Error(`AimHarder devolvió ${filas.length} clientes en ${sede} (había ${antes}): no se actualiza el índice`);
     repo.reemplazarSocios(sede, filas);
     resumen[sede] = { clientes: clientes.length, socios: filas.filter((f) => f.activo).length };
   }
