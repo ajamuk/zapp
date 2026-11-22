@@ -131,3 +131,19 @@ test('en modo prueba, lo que contesta el equipo queda como contexto y Sofía sig
   assert.ok(en.notas.some((n) => n.startsWith('[Borrador IA')));
   assert.equal(en.enviados.length, 0);
 });
+
+test('lo que escribió el equipo hace rato entra una sola vez, aunque el conector lo repita (en cualquier orden)', async () => {
+  const { setter, repo, en, avanzar } = montar({ live: false });
+  en.lista = [msg('g1', 'inbound', 'TYPE_WHATSAPP', 'hola', hace(5)), copia('c1', 'inbound', 'hola', hace(4))];
+  await setter.handleWebhook(webhook('hola'));
+  const mas = (s) => new Date(T0.getTime() + s * 1000).toISOString();
+  // Desde GHL: mensaje nativo y, después, su copia. Desde el móvil: primero la copia y luego el eco nativo.
+  en.lista.push(msg('h1', 'outbound', 'TYPE_WHATSAPP', 'Hola Ana, te cuento', mas(60), { userId: 'u7', source: 'app' }));
+  en.lista.push(msg('h2', 'outbound', 'TYPE_CUSTOM_SMS', 'Hola Ana, te cuento \n \n💬Sent from 34600000000', mas(65), { userId: 'u7', source: 'api' }));
+  en.lista.push(msg('h3', 'outbound', 'TYPE_CUSTOM_SMS', 'son 85 € al mes', mas(120), { userId: 'u7', source: 'api' }));
+  en.lista.push(msg('h4', 'outbound', 'TYPE_WHATSAPP', 'son 85 € al mes', mas(123), { source: 'app' }));
+  en.lista.push(msg('g2', 'inbound', 'TYPE_WHATSAPP', 'vale, gracias', mas(1795)), copia('c2', 'inbound', 'vale, gracias', mas(1796)));
+  avanzar(30 * 60000);
+  await setter.handleWebhook(webhook('vale, gracias'));
+  assert.deepEqual(repo.history('cv1').map((m) => `${m.autor}: ${m.texto}`), ['lead: hola', 'humano: Hola Ana, te cuento', 'humano: son 85 € al mes', 'lead: vale, gracias']);
+});

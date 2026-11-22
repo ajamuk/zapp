@@ -141,7 +141,7 @@ export class Setter {
           const nuestro = db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
             .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
           if (!nuestro) {
-            await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto, messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos });
+            await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto, messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha });
             out.salientes++;
           }
         }
@@ -190,7 +190,8 @@ export class Setter {
     if (!evt.userId) return { ignorado: 'saliente sin usuario (sistema o plantilla)' };
     const conv = this.repo.getConv(evt.conversationId);
     if (!conv) return { ignorado: 'conversación desconocida' };
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) });
+    // `creado`: fecha real del mensaje en GHL cuando se recupera más tarde (su copia del conector se compara por esa fecha)
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}) });
     if (!ins) return { ignorado: 'duplicado' };
     await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) }));
     const ajustes = leerAjustes(this.repo);
