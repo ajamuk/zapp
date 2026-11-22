@@ -39,6 +39,73 @@ Revisión completa de Sofía (funcional, velocidad, seguridad y usabilidad). Cad
 - Si una acción falla (pausar, cancelar, borrar…), se ve un aviso con el motivo. Barra de carga si el servidor tarda.
 - En la entrada, el mensaje distingue entre clave incorrecta y falta de conexión.
 
+## Revisión del panel de control (22 de noviembre)
+
+Se recorrieron las 12 secciones y sus subpáginas con un navegador automático, en tamaño de escritorio (1366 px) y de
+móvil (390 px), sobre una copia local con 4.000 chats y 58.000 mensajes de ejemplo: 48 acciones probadas una a una
+(filtros, vistas, pausar, etiquetar, programar, exportar, crear y borrar etiquetas, seguimientos, lanzamientos,
+recursos, Probar IA, reportes, instrucciones, batería, ajustes) comprobando cada cifra y cada cambio contra la base.
+Las pruebas del servidor están en `test/panel-revision.test.js`.
+
+### Cifras que no eran lo que decían
+
+- **«Hoy» en Resumen eran las últimas 24 horas**: a las 10 de la mañana contaba también la tarde de ayer. Ahora es
+  desde las 00:00 de Madrid; «7 días» es hoy y los 6 anteriores. El gráfico por día iba por día UTC (un mensaje de
+  las 00:30 caía en el día anterior) y ahora va por día de Madrid.
+- El filtro de Chats «Actividad: Hoy» sigue siendo de 24 horas y ahora se llama así («Últimas 24 h»).
+- El coste de la batería de pruebas usaba un cambio a euros fijo (0,92) y Consumo el configurado: ahora el mismo.
+- Los números de las tarjetas (Resumen, Estadísticas) salían dentro de una pastilla gris por un estilo cruzado.
+
+### Cosas que no se actualizaban
+
+- **Cabecera**: el aviso «⚠️ N alertas» seguía ahí después de resolverlas, y el número de chats del menú era el de
+  cuando se abrió la página. Ahora la cabecera se refresca cada minuto y al resolver, comprobar o guardar ajustes.
+  El menú enseña también las **preguntas pendientes**.
+- **Resumen** se actualiza solo cada minuto (dice a qué hora) y los **contadores de las vistas** de Chats cada 30 s.
+- **Estadísticas**: si se cambiaba de filtro deprisa, podía quedarse pintada la respuesta del filtro anterior.
+
+### Cosas que no se podían hacer
+
+- La lista de chats enseñaba **100 y no avisaba de que había más**: ahora hay «Ver más chats» (hasta 500).
+- **Botón «atrás» del móvil** dentro de un chat: salía de la sección. Ahora cada chat tiene su dirección
+  (`#chats/<id>`): atrás vuelve a la lista, en el punto donde estabas, y el enlace se puede compartir.
+- Un **doble toque** en guardar o crear (vista, etiqueta, prueba, lanzamiento…) lo creaba dos veces.
+- **Ajustes**: los interruptores parecen inmediatos pero no se aplican hasta «Guardar»; ahora la barra de guardar
+  queda siempre a la vista y avisa de que hay cambios sin guardar.
+- Un interruptor que el servidor no llegaba a guardar se quedaba marcado como si sí.
+- Anular la clase de prueba desde el chat pide confirmación (cancela recordatorios).
+
+### Velocidad
+
+| Consulta (4.000 chats, 58.000 mensajes) | Antes | Ahora |
+| --- | --- | --- |
+| Estadísticas, 30 días | 147 ms | 45 ms |
+| Estadísticas, 90 días | 249 ms | 74 ms |
+| Consumo de la IA | 191 ms | 50–85 ms |
+| Resumen de hoy | 57 ms | 21 ms |
+
+Importa más de lo que parece: mientras el servidor calcula, Sofía no atiende nada más.
+
+- Al abrir el panel, la primera consulta de la sección sale a la vez que la comprobación de acceso (una espera menos).
+- Cambiar de vista en Chats hace una consulta en vez de tres; Estadísticas no repide el consumo al filtrar.
+- Etiquetas, el editor de seguimientos y la ficha de un reporte piden sus datos a la vez, no uno tras otro.
+- El refresco automático no repinta la lista de chats si no ha cambiado nada.
+
+### Móvil y escritorio
+
+- Cabecera en una línea en el móvil; las 12 secciones caben en el menú de un portátil.
+- Botones pequeños («Editar», «Cancelar», ✕, quitar filtro) con tamaño de dedo en pantallas táctiles, y campos a
+  16 px para que el iPhone no amplíe la página al escribir.
+- Botón «↑» para volver arriba en las páginas largas (Seguimientos, Altas, Batería).
+- En Seguimientos, las instrucciones largas se ven recortadas a tres líneas y se despliegan con un toque.
+- Una dirección que no existe (`#loquesea`) lleva a Resumen en vez de dejar el menú sin marcar.
+
+### No comprobado aquí
+
+- El panel integrado en MetroTools (`/zapp/`): usa el mismo código, pero la barra y los estilos de `metro-os` no
+  están en este repositorio. Conviene abrirlo una vez en el móvil tras desplegar.
+- Lo que depende de servicios reales (GHL, AimHarder, Anthropic, Meta, Telegram) se probó con dobles de prueba.
+
 ## Pendiente (hace falta el VPS)
 
 - El servicio corre sin `User=` en `deploy/codex-zapp.service` (como root). Conviene un usuario propio, pero hay que

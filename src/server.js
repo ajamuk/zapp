@@ -204,6 +204,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     modelo_configurado: Boolean(config.ai.apiKey), entrada_ghl: config.ghlWebhookEnabled,
     credenciales_alta: Boolean(config.aimharder.adminUser && config.aimharder.adminPassword),
     ajustes: leerAjustes(repo), contadores: panel.contadores(db), alertas: alertas.abiertas(db).length,
+    // Para los avisos de la cabecera y del menú, que el panel refresca solo
+    preguntas_pendientes: preguntas.contadores(db).pendiente || 0, eur_por_usd: Number(process.env.EUR_POR_USD) || 0.92,
   }));
   admin.get('/panel/resumen', (req, res) => res.json(panel.resumen(db, req.query.dias)));
   admin.get('/panel/embudo', async (req, res) => {

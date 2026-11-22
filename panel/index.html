@@ -36,7 +36,7 @@
   .sofia h3 { font-size: 16px; margin: 22px 0 10px; }
   .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
   .tarjeta { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
-  .tarjeta .n { font-size: 26px; font-weight: 700; }
+  .tarjeta .n { display: block; min-width: 0; padding: 0; border-radius: 0; background: none; text-align: left; font-size: 26px; font-weight: 700; }
   .tarjeta .l { color: var(--muted); font-size: 12px; }
   .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
   .chip.verde { color: var(--green); border-color: #2fbf7155; } .chip.ambar { color: var(--amber); border-color: #d1ad7166; }
@@ -139,7 +139,7 @@
   #raiz .vistas button { white-space: nowrap; min-height: 36px; padding: 5px 11px; font-size: 13px; }
   #raiz .vistas button.propia { border-color: #9fbf8f; }
   #raiz .vistas button.activo { background: var(--green); border-color: var(--green); color: #fff; }
-  .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 99px; background: #0000000f; font-size: 12px; text-align: center; }
+  :not(.tarjeta) > .n { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 99px; background: #0000000f; font-size: 12px; text-align: center; }
   .activo .n { background: #ffffff33; }
   #raiz button.suave { background: transparent; border-style: dashed; }
   .barra-filtros { display: flex; gap: 8px; margin-bottom: 10px; }
@@ -351,6 +351,38 @@
   html.cargando #cargando { opacity: 1; transition-delay: .35s; }
   @keyframes carga { from { background-position: -70% 0; } to { background-position: 170% 0; } }
   @media (prefers-reduced-motion: reduce) { #cargando { animation: none; background: var(--green); } }
+  /* Menú: caben las 12 secciones en un portátil; avisos con número */
+  .secciones .n { margin-left: 2px; }
+  .secciones a[aria-current="page"] .n { background: #ffffff33; }
+  .al-dia { align-self: center; margin-left: auto; }
+  @media (min-width: 541px) and (max-width: 1420px) { .secciones { gap: 5px; } .secciones a { padding: 8px 10px; } }
+  #raiz #arriba { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 50; width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 18px; background: var(--panel); box-shadow: 0 4px 16px #0003; }
+  #raiz .mas { display: block; width: 100%; border: 0; border-radius: 0; background: var(--panel2); min-height: 48px; }
+  .regla p.largo { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .regla p.largo.corta { cursor: pointer; }
+  .regla p.largo.abierta { display: block; }
+  .guardar-aj { position: sticky; bottom: 0; z-index: 5; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0; padding: 10px 0; background: var(--bg); }
+  .guardar-aj.pendiente { border-top: 2px solid #d1ad71; }
+  /* Pantallas táctiles: los botones pequeños crecen hasta un tamaño que se acierta con el dedo */
+  @media (pointer: coarse) {
+    #raiz button.mini, #raiz .fu button, #raiz .aviso-mini button { min-height: 38px; padding: 4px 12px; font-size: 13px; }
+    #raiz button.x { min-height: 38px; min-width: 38px; }
+    #raiz button.rep { min-height: 32px; min-width: 32px; top: -10px; right: -10px; }
+    .burbuja:has(> .rep) { padding-right: 30px; } /* el botón de reportar no tapa el texto */
+    #raiz .activo-f { min-height: 36px; padding: 4px 12px; }
+    #raiz .ch { min-height: 38px; }
+    .etq-card footer a, .modo a.chip { padding: 8px 6px; }
+    .modo a.chip { padding: 6px 10px; }
+    #raiz input, #raiz select, #raiz textarea { font-size: 16px; } /* con menos, el iPhone amplía la página al escribir */
+  }
+  @media (max-width: 540px) {
+    .sofia-cabecera { flex-wrap: nowrap; align-items: center; }
+    .sofia-cabecera h1 { font-size: 20px; white-space: nowrap; letter-spacing: -.3px; }
+    #raiz #bsalir { min-height: 36px; padding: 4px 10px; font-size: 13px; }
+    .modo { gap: 4px; }
+    .al-dia { flex-basis: 100%; margin-left: 0; }
+    .hilo .cab .acciones-f { width: 100%; } .hilo .cab .acciones-f button { flex: 1; }
+  }
   #avisos { position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; display: grid; gap: 8px; width: min(440px, calc(100vw - 24px)); pointer-events: none; }
   #avisos .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; background: #fff; color: var(--red); border: 1px solid #d9b8b8; border-left: 4px solid var(--red);
     border-radius: 8px; padding: 10px 12px; font: 14px/1.4 system-ui, sans-serif; box-shadow: 0 6px 24px #0003; }
@@ -405,7 +437,29 @@ window.addEventListener('unhandledrejection', (e) => {
   avisar(/^[A-ZÁÉÍÓÚÑ¿¡]/.test(m) && !/is not|undefined|null|Unexpected/.test(m) ? m : 'No se ha podido completar la acción. Inténtalo otra vez.');
 });
 
-async function api(ruta, opciones = {}) {
+// Un doble clic (o dos toques) en «Guardar», «Programar», «+ Nueva prueba»… lanza la misma petición dos veces:
+// mientras la primera está en camino, la segunda se une a ella en vez de crear la cosa por duplicado.
+const enCamino = new Map();
+// Consultas pedidas por adelantado al abrir el panel (mientras se comprueba el acceso): la sección las recoge aquí
+const precargadas = new Map();
+function precargar(...rutas) {
+  for (const ruta of rutas) {
+    if (precargadas.has(ruta)) continue;
+    const p = pedir(ruta); p.catch(() => {}); precargadas.set(ruta, p);
+    setTimeout(() => { if (precargadas.get(ruta) === p) precargadas.delete(ruta); }, 4000);
+  }
+}
+function api(ruta, opciones = {}) {
+  const metodo = opciones.method || 'GET';
+  if (metodo === 'GET') { const p = precargadas.get(ruta); if (p) { precargadas.delete(ruta); return p; } return pedir(ruta, opciones); }
+  const clave = `${metodo} ${ruta} ${opciones.body || ''}`;
+  if (enCamino.has(clave)) return enCamino.get(clave);
+  const p = pedir(ruta, opciones).finally(() => enCamino.delete(clave));
+  enCamino.set(clave, p);
+  return p;
+}
+
+async function pedir(ruta, opciones = {}) {
   const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
   let r;
   ocupado(1);
@@ -440,8 +494,25 @@ function pintarLogin(error = '') {
 
 const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
+const hoyMes = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
+const PRIMERA = {
+  resumen: () => [`/panel/resumen?dias=${estado.dias}`, '/panel/alertas'], embudo: () => [`/panel/embudo?mes=${estado.mes || hoyMes()}`],
+  estadisticas: () => ['/panel/estadisticas?dias=30&sede=&canal=', '/panel/consumo?meses=6'], chats: () => ['/panel/vistas', '/panel/opciones'],
+  etiquetas: () => ['/panel/etiquetas', '/panel/meta'], altas: () => ['/panel/altas'], preguntas: () => ['/panel/preguntas'], seguimientos: () => ['/panel/seguimientos'],
+  recursos: () => ['/panel/recursos'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
+};
+/** Sección y chat (si lo hay) que dice la dirección. Una sección que no existe lleva a Resumen. */
+function leerHash() {
+  const [id, sub] = location.hash.slice(1).split('/');
+  const seccion = SECCIONES.some(([x]) => x === id) ? id : 'resumen';
+  let chat = null; if (seccion === 'chats' && sub) { try { chat = decodeURIComponent(sub); } catch { chat = sub; } }
+  return { seccion, sub, chat };
+}
+
 async function iniciar() {
-  estado.seccion = location.hash.slice(1).split('/')[0] || 'resumen';
+  const h = leerHash();
+  estado.seccion = h.seccion; if (h.seccion === 'chats') estado.conv = h.chat;
+  if (!h.sub || h.seccion === 'chats') precargar('/panel/estado', ...(PRIMERA[h.seccion]?.() || []));
   $('#raiz').innerHTML = '<main id="main" tabindex="-1"><div class="vacio" role="status">Cargando ZAPP…</div></main>';
   try {
     estado.info = await api('/panel/estado');
@@ -453,25 +524,56 @@ async function iniciar() {
   const i = estado.info;
   $('#raiz').innerHTML = `<header class="sofia-cabecera">
     <h1>ZAPP · Sofía</h1>
-    <div class="modo">${i.modo === 'live' ? '<span class="chip verde">Modo real</span>' : '<span class="chip ambar">Modo prueba</span>'}
-      ${i.ajustes.ia_activa ? '' : '<span class="chip rojo">IA pausada</span>'}
-      ${i.alertas ? `<a href="#resumen" class="chip rojo" title="Hay problemas que revisar">⚠️ ${i.alertas} alerta${i.alertas === 1 ? '' : 's'}</a>` : ''}
-      ${integrado ? '' : '<button id="bsalir">Salir</button>'}</div>
+    <div class="modo"><span id="chips-estado"></span>${integrado ? '' : '<button id="bsalir">Salir</button>'}</div>
     </header>
     <nav class="secciones" aria-label="Secciones de ZAPP">
-      ${SECCIONES.map(([id, t]) => `<a href="#${id}" data-s="${id}">${t}${id === 'chats' && i.contadores.todos ? ` <span>${i.contadores.todos}</span>` : ''}</a>`).join('')}
-    </nav><main id="main" tabindex="-1"></main>`;
+      ${SECCIONES.map(([id, t]) => `<a href="#${id}" data-s="${id}">${t}<span class="n" data-n="${id}" hidden></span></a>`).join('')}
+    </nav><main id="main" tabindex="-1"></main><button type="button" id="arriba" aria-label="Volver arriba" title="Volver arriba" hidden>↑</button>`;
   $('#bsalir')?.addEventListener('click', salir);
+  $('#arriba').onclick = () => window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  pintarCabecera();
   pintar();
 }
+
+/** Avisos de la cabecera y números del menú, con lo último que se sabe del servidor (se refresca solo). */
+function pintarCabecera() {
+  const i = estado.info; const caja = $('#chips-estado'); if (!i || !caja) return;
+  caja.innerHTML = `${i.modo === 'live' ? '<span class="chip verde">Modo real</span>' : '<span class="chip ambar">Modo prueba</span>'}
+    ${i.ajustes.ia_activa ? '' : '<a href="#ajustes" class="chip rojo" title="Sofía está apagada en Ajustes">IA pausada</a>'}
+    ${i.alertas ? `<a href="#resumen" class="chip rojo" title="Hay problemas que revisar">⚠️ ${i.alertas} alerta${i.alertas === 1 ? '' : 's'}</a>` : ''}`;
+  const num = (id, n, titulo) => { const el = $(`[data-n="${id}"]`); if (!el) return; el.hidden = !n; el.textContent = n ? miles(n) : ''; if (titulo) el.title = titulo; };
+  num('chats', i.contadores.todos, 'Chats en total');
+  num('preguntas', i.preguntas_pendientes, 'Preguntas pendientes de responder');
+}
+
+// Cada minuto, con la pestaña a la vista (y al volver a ella): avisos de la cabecera, números del menú y, si
+// estás en Resumen, sus cifras. Sin recargar la página ni mover nada de sitio.
+let refrescandoEstado = false;
+async function refrescarEstado() {
+  if (refrescandoEstado || document.hidden || !estado.info) return;
+  refrescandoEstado = true;
+  try {
+    estado.info = await pedir('/panel/estado'); pintarCabecera();
+    if (estado.seccion === 'resumen' && $('#rs')) await resumen({ silencioso: true });
+  } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescandoEstado = false; }
+}
+setInterval(refrescarEstado, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarEstado(); });
+window.addEventListener('scroll', () => { const b = $('#arriba'); if (b) b.hidden = window.scrollY < 700; }, { passive: true });
 
 window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1).split('/')[0];
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
+  // Dentro de Chats, la dirección dice qué chat está abierto: el botón «atrás» del móvil vuelve a la lista
+  if (id === 'chats') {
+    const { chat } = leerHash();
+    if (estado.seccion === 'chats' && $('#lista')) { if (chat !== estado.conv) { if (chat) abrir(chat); else cerrarHilo(); } return; }
+    estado.conv = chat;
+  }
   if (id !== 'etiquetas') estado.editEtq = null;
   if (id !== 'seguimientos') { estado.editRegla = null; estado.nuevoLanz = false; }
-  if (id && id === estado.seccion && ['reportes', 'ajustes'].includes(id)) { pintar(); return; }
   estado.seccion = id || 'resumen';
+  window.scrollTo(0, 0);
   pintar();
 });
 
@@ -493,16 +595,19 @@ async function pintar() {
 
 const tarjeta = (n, l, color = '') => `<div class="tarjeta"><div class="n" style="${color ? 'color:var(--' + color + ')' : ''}">${n ?? 0}</div><div class="l">${l}</div></div>`;
 
-async function resumen() {
+async function resumen({ silencioso = false } = {}) {
   const m = $('#main');
-  m.innerHTML = `<h2>Resumen</h2><div id="alertas"></div><div class="filtros">${[[1, 'Hoy'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<button data-d="${d}" class="${estado.dias === d ? 'activo' : ''}">${t}</button>`).join('')}</div><div id="rs" class="vacio">Cargando…</div>`;
-  m.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { estado.dias = Number(b.dataset.d); resumen(); });
+  if (!silencioso) {
+    m.innerHTML = `<h2>Resumen</h2><div id="alertas"></div><div class="filtros">${[[1, 'Hoy'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<button data-d="${d}" class="${estado.dias === d ? 'activo' : ''}" title="${d === 1 ? 'Desde las 00:00 de hoy' : `Hoy y los ${d - 1} días anteriores`}">${t}</button>`).join('')}<span class="ayuda al-dia" id="rs-hora"></span></div><div id="rs"><div class="vacio">Cargando…</div></div>`;
+    m.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { estado.dias = Number(b.dataset.d); resumen(); });
+  }
   pintarAlertas();
   const r = await api('/panel/resumen?dias=' + estado.dias);
   const info = estado.info;
   const max = Math.max(1, ...r.serie.map((x) => (x.lead || 0) + (x.ia || 0)));
-  if (!$('#rs') || Number($('#main [data-d].activo')?.dataset.d) !== r.dias) return;
-  $('#rs').outerHTML = `
+  if (estado.seccion !== 'resumen' || !$('#rs') || Number($('#main [data-d].activo')?.dataset.d) !== r.dias) return;
+  $('#rs-hora').textContent = `Actualizado a las ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} · se actualiza solo`;
+  $('#rs').innerHTML = `
     ${!info.entrada_ghl ? '<div class="aviso">Entrada de GoHighLevel desactivada. Sofía está disponible para revisión interna.</div>' : info.modo !== 'live' ? '<div class="aviso">Modo prueba: Sofía no envía nada a los leads. Sus respuestas quedan como borrador (nota en GHL y línea discontinua en Chats) para compararlas con Zapp.</div>' : ''}
     ${info.entrada_ghl && info.alta_en_pruebas ? '<div class="aviso">El guardado de altas en AimHarder está desactivado.</div>' : ''}
     <div class="tarjetas">
@@ -524,9 +629,9 @@ async function resumen() {
       ${tarjeta(r.ahora.altas_pendientes, 'Altas pendientes', 'amber')}
       ${tarjeta(r.ahora.pruebas, 'Solicitudes de prueba en Parla')}
     </div>
-    ${r.serie.length > 1 ? `<h3>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h3><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead} lead · ${x.ia} Sofía">
+    ${r.serie.length > 1 ? `<h3>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h3><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead || 0} lead · ${x.ia || 0} Sofía">
       <i style="height:${(x.ia || 0) / max * 70}px;background:var(--green)"></i><i style="height:${(x.lead || 0) / max * 70}px;background:var(--muted)"></i></div>`).join('')}</div>` : ''}
-    <h3>Embudo (leads con actividad en el periodo)</h3>
+    <h3>Fase de los leads <span class="ayuda">con actividad en el periodo</span></h3>
     ${r.embudo.length ? `<table><tr><th>Fase</th><th>Leads</th></tr>${r.embudo.map((e) => `<tr><td>${esc(e.fase)}</td><td>${e.n}</td></tr>`).join('')}</table>` : '<div class="vacio">Sin datos todavía</div>'}
     <h3>IA</h3>
     <div class="tarjetas">
@@ -596,7 +701,7 @@ async function pintarAlertas(datos) {
   const el = $('#alertas'); if (!el) return;
   const a = datos || await api('/panel/alertas').catch(() => null);
   if (!a || !$('#alertas')) return;
-  estado.info.alertas = a.abiertas.length;
+  estado.info.alertas = a.abiertas.length; pintarCabecera();
   $('#alertas').innerHTML = `${a.abiertas.length ? `<section class="alertas"><h3>⚠️ Problemas que revisar</h3>${a.abiertas.map((x) => `<div class="alerta ${x.nivel}"><div><b>${esc(x.titulo)}</b><div class="ayuda">${esc(x.detalle || '')}</div><div class="ayuda">Desde ${hora(x.primera)}${x.veces > 1 ? ` · comprobado ${x.veces} veces` : ''}</div></div><button class="mini" data-ares="${x.id}">Ya está resuelto</button></div>`).join('')}</section>` : ''}
     <div class="estado-sis">${a.abiertas.length ? '' : '<span class="chip verde">✓ Todo funciona</span>'} <button class="mini" id="acomp">Comprobar ahora</button>${a.recientes.length ? ` <details><summary class="ayuda">Resueltas estos días (${a.recientes.length})</summary>${a.recientes.map((x) => `<div class="ayuda">${hora(x.resuelta_at)} · ${esc(x.titulo)} · ${esc(x.resolucion || '')}</div>`).join('')}</details>` : ''}</div>`;
   $('#alertas').querySelectorAll('[data-ares]').forEach((b) => b.onclick = async () => { await api(`/panel/alertas/${b.dataset.ares}/resolver`, { method: 'POST' }); pintarAlertas(); });
@@ -670,7 +775,7 @@ function resumenCriterios(c, opciones) {
   for (const s of c.sede || []) out.push(['sede', s, s === 'sin_sede' ? 'Sin sede' : SEDES[s] || s]);
   for (const s of c.canal || []) out.push(['canal', s, CANAL[s] || s]);
   for (const s of c.fase || []) out.push(['fase', s, s === 'sin_fase' ? 'Sin fase' : s]);
-  if (c.actividad) out.push(['actividad', c.actividad, c.actividad === 1 ? 'Activos hoy' : `Activos ${c.actividad} días`]);
+  if (c.actividad) out.push(['actividad', c.actividad, c.actividad === 1 ? 'Activos en las últimas 24 h' : `Activos en ${c.actividad} días`]);
   if (c.espera) out.push(['espera', c.espera, c.espera === 'equipo' ? 'Esperan nuestra respuesta' : 'Esperamos al lead']);
   return out;
 }
@@ -699,12 +804,15 @@ async function chats() {
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
     <div id="activos" class="activos"></div>
     <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="lista" id="lista"><div class="vacio">Cargando…</div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
+  // Cambiar de vista solo vuelve a pedir la lista (una consulta, no tres) y los contadores se ponen al día aparte
   $('#main').querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
-    estado.vista = b.dataset.v; estado.crit = { ...(vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.conv = null; chats();
+    estado.vista = b.dataset.v; estado.crit = { ...(estado.vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.limite = 100;
+    $('#main').querySelectorAll('[data-v]').forEach((x) => { const on = x === b; x.classList.toggle('activo', on); x.setAttribute('aria-selected', on); });
+    cerrarHilo(); pintarFiltros(); lista(); refrescarVistas();
   });
-  $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; chats(); };
+  $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; cerrarHilo(); chats(); };
   $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); };
-  let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; lista(); }, 300); };
+  let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; estado.limite = 100; lista(); }, 300); };
   pintarFiltros();
   $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
   await lista();
@@ -730,7 +838,7 @@ function pintarFiltros() {
     ${grupo('Canal', Object.entries(CANAL).map(([k, t]) => chip('canal', k, t, en('canal', k))).join(''))}
     ${grupo('Fase', [...FASES.map((f) => [f, f]), ['sin_fase', 'Sin fase']].map(([k, t]) => chip('fase', k, t, en('fase', k))).join(''))}
     <div class="fila-f">
-      <label>Actividad <select id="fact"><option value="">Cualquiera</option>${[[1, 'Hoy'], [3, '3 días'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<option value="${d}" ${Number(c.actividad) === d ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+      <label>Actividad <select id="fact"><option value="">Cualquiera</option>${[[1, 'Últimas 24 h'], [3, '3 días'], [7, '7 días'], [30, '30 días']].map(([d, t]) => `<option value="${d}" ${Number(c.actividad) === d ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
       <label>Quién debe contestar <select id="fesp"><option value="">Cualquiera</option><option value="equipo" ${c.espera === 'equipo' ? 'selected' : ''}>Nosotros (último mensaje del lead)</option><option value="lead" ${c.espera === 'lead' ? 'selected' : ''}>El lead (último mensaje nuestro)</option></select></label>
     </div>
     <div class="acciones-f">
@@ -739,7 +847,7 @@ function pintarFiltros() {
         <button type="button" id="frenombrar">Renombrar</button><button type="button" id="fborrar" class="peligro">Borrar vista</button>` : ''}
       <span class="guardar-vista"><input id="fnombre" placeholder="Nombre de la vista nueva" aria-label="Nombre de la vista nueva" maxlength="40"><button type="button" id="fguardar" class="${estado.creandoVista || (cambiado && !vista?.propia) ? 'primario' : ''}">Guardar como vista</button></span>
     </div>`;
-  const aplicar = (n) => { estado.crit = n; estado.conv = null; pintarFiltros(); lista(); };
+  const aplicar = (n) => { estado.crit = n; estado.limite = 100; cerrarHilo(); pintarFiltros(); lista(); };
   $('#pfil').querySelectorAll('[data-k]').forEach((b) => b.onclick = () => {
     const k = b.dataset.k, v = b.dataset.val; const n = { ...c };
     if (k === 'sin_ninguna') { n.sin_ninguna ? delete n.sin_ninguna : (n.sin_ninguna = true); }
@@ -774,7 +882,7 @@ function pintarFiltros() {
   $('#fborrar') && ($('#fborrar').onclick = async () => {
     const b = $('#fborrar');
     if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Pulsa otra vez para borrar'; return; }
-    await api('/panel/vistas/' + vista.id, { method: 'DELETE' }); estado.vista = 'todos'; estado.crit = {}; chats();
+    await api('/panel/vistas/' + vista.id, { method: 'DELETE' }); estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = false; chats();
   });
   // Filtros activos como chips quitables
   const act = resumenCriterios(c, estado.opciones);
@@ -796,7 +904,7 @@ async function refrescarChats() {
   if (refrescando || document.hidden || estado.seccion !== 'chats' || !estado.info || !$('#lista') || $('#q') === document.activeElement) return;
   refrescando = true;
   try {
-    await lista();
+    await Promise.all([lista(), refrescarVistas()]);
     const id = estado.conv; const hilo = $('#hilo');
     if (!id || !$('#msgs') || hilo.querySelector('form') || hilo.contains(document.activeElement) || [...hilo.querySelectorAll('audio, video')].some((a) => !a.paused)) return;
     const d = await api('/panel/conversaciones/' + encodeURIComponent(id));
@@ -806,25 +914,61 @@ async function refrescarChats() {
 setInterval(refrescarChats, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarChats(); });
 
+/** Pone al día los números de las vistas sin repintar la sección. */
+async function refrescarVistas() {
+  const v = await api('/panel/vistas').catch(() => null);
+  if (!v || estado.seccion !== 'chats') return;
+  estado.vistas = v;
+  for (const x of v) { const el = $(`#main [data-v="${x.id}"] .n`); if (el) el.textContent = x.total; }
+}
+
+/** Cierra el chat abierto y vuelve a la lista (donde estabas, en móvil). */
+function cerrarHilo() {
+  const habia = Boolean(estado.conv);
+  estado.conv = null; estado.progAbierto = false;
+  if (location.hash.startsWith('#chats/')) history.replaceState(null, '', '#chats');
+  $('#ch')?.classList.remove('con-hilo');
+  if ($('#hilo')) $('#hilo').innerHTML = '<div class="vacio">Elige un chat</div>';
+  document.querySelectorAll('.item.activo').forEach((el) => el.classList.remove('activo'));
+  if (habia && estado.scrollLista != null && matchMedia('(max-width: 1040px)').matches) window.scrollTo(0, estado.scrollLista);
+  estado.scrollLista = null;
+}
+
 async function lista() {
-  const pedido = JSON.stringify([estado.crit, estado.q]);
-  const filas = await api(`/panel/conversaciones?criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`);
-  if (!$('#lista') || pedido !== JSON.stringify([estado.crit, estado.q])) return;
+  const limite = estado.limite ||= 100;
+  const pedido = JSON.stringify([estado.crit, estado.q, limite]);
+  const filas = await api(`/panel/conversaciones?criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}&limite=${limite}`);
+  if (!$('#lista') || pedido !== JSON.stringify([estado.crit, estado.q, estado.limite])) return;
+  // Si la lista no ha cambiado (refresco automático), no se toca: ni parpadeo ni salto de posición
+  const firma = JSON.stringify(filas);
+  if ($('#lista').dataset.firma === firma && $('#lista .item')) return;
+  $('#lista').dataset.firma = firma;
+  const mas = filas.length >= limite && limite < 500 ? `<button type="button" class="mas" id="lmas">Ver más chats (se ven los ${filas.length} más recientes)</button>` : filas.length >= 500 ? '<div class="vacio">Se ven los 500 más recientes. Usa el buscador o los filtros para llegar a los anteriores.</div>' : '';
   $('#lista').innerHTML = filas.length ? filas.map((c) => `<button type="button" class="item ${estado.conv === c.id ? 'activo' : ''}" data-id="${esc(c.id)}">
     <div class="fila"><span class="nom">${esc(c.nombre || c.telefono || 'Sin nombre')}</span><span class="chip">${hora(c.ultimo_at || c.updated_at)}</span></div>
     <div class="ult">${c.ultimo_autor === 'lead' ? '<b class="punto" title="Espera respuesta"></b>' : c.ultimo_autor === 'ia' ? '✓ ' : ''}${esc(c.ultimo_texto || '')}</div>
-    <div class="chips">${c.etiquetas.map((e) => pill(e)).join('')}${chipsConv(c)}</div></button>`).join('') : `<div class="vacio">${vacios(estado.crit) && !estado.q ? 'No hay chats todavía' : 'Ningún chat cumple estos filtros'}</div>`;
+    <div class="chips">${c.etiquetas.map((e) => pill(e)).join('')}${chipsConv(c)}</div></button>`).join('') + mas : `<div class="vacio">${vacios(estado.crit) && !estado.q ? 'No hay chats todavía' : 'Ningún chat cumple estos filtros'}</div>`;
   $('#lista').querySelectorAll('.item').forEach((el) => el.onclick = () => abrir(el.dataset.id));
+  $('#lmas') && ($('#lmas').onclick = () => { $('#lmas').disabled = true; $('#lmas').textContent = 'Cargando…'; estado.limite = Math.min(500, limite + 100); lista(); });
 }
 
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
 const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado])]);
 
 async function abrir(id, { datos = null, mantener = false } = {}) {
+  const movil = matchMedia('(max-width: 1040px)').matches;
+  if (!$('#ch').classList.contains('con-hilo') && movil) estado.scrollLista = window.scrollY;
+  if (estado.conv !== id) estado.progAbierto = false;
   estado.conv = id;
+  // La dirección lleva el chat: se puede compartir el enlace y, en el móvil, «atrás» vuelve a la lista
+  const dir = '#chats/' + encodeURIComponent(id);
+  if (location.hash !== dir) { if (location.hash === '#chats') history.pushState({ zappChat: true }, '', dir); else history.replaceState(history.state, '', dir); }
   $('#ch').classList.add('con-hilo');
   document.querySelectorAll('.item').forEach((el) => el.classList.toggle('activo', el.dataset.id === id));
-  const d = datos || await api('/panel/conversaciones/' + encodeURIComponent(id));
+  if (!datos && !mantener && !$('#msgs')) $('#hilo').innerHTML = '<div class="vacio" role="status">Abriendo el chat…</div>';
+  let d;
+  try { d = datos || await api('/panel/conversaciones/' + encodeURIComponent(id)); }
+  catch (e) { if (estado.conv === id) { cerrarHilo(); avisar(/no existe/.test(e.message) ? 'Ese chat ya no existe.' : e.message); } return; }
   if (estado.seccion !== 'chats' || estado.conv !== id) return;
   estado.firmaHilo = firmaHilo(d);
   // Al refrescar solo, si estabas leyendo más arriba te quedas donde estabas; si estabas al final, sigues al final
@@ -852,26 +996,29 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
-  if (!mantener && matchMedia('(max-width: 1040px)').matches) $('#hilo').scrollIntoView({ block: 'start' });
+  if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
   cargarMedios($('#msgs'));
   $('#msgs').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/panel/conversaciones/${encodeURIComponent(id)}`, Number(b.dataset.rep)));
-  $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); abrir(id); });
-  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id).then(() => $('#ptxt')?.focus()); };
-  $('#banprueba') && ($('#banprueba').onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); abrir(id); });
+  $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); recargar(); });
+  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id, { datos: d, mantener: true }).then(() => $('#ptxt')?.focus()); };
+  $('#banprueba') && ($('#banprueba').onclick = async () => {
+    const b = $('#banprueba'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Se cancelan sus recordatorios'; return; }
+    await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); recargar();
+  });
   $('#fprog') && ($('#fprog').onsubmit = async (e) => {
     e.preventDefault();
-    try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify({ texto: $('#ptxt').value, cuando: new Date($('#pfec').value).toISOString() }) }); estado.progAbierto = false; abrir(id); }
+    try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify({ texto: $('#ptxt').value, cuando: new Date($('#pfec').value).toISOString() }) }); estado.progAbierto = false; recargar(); }
     catch (err) { $('#perr').textContent = err.message; }
   });
   if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
     (x) => api(`/panel/seguimientos/${x.id}/previa`, { method: 'POST' }),
     (x, r) => { const el = $(`#hilo [data-fu-id="${x.id}"] .fu-texto`); if (el && estado.conv === id) el.innerHTML = r.error ? `<span class="error">${esc(r.error)}</span>` : htmlPrevisto(r.texto, r.plantilla); });
-  $('#bv').onclick = () => { estado.conv = null; $('#ch').classList.remove('con-hilo'); };
-  const recargar = async () => { await lista(); abrir(id); };
+  $('#bv').onclick = () => { if (history.state?.zappChat) history.back(); else cerrarHilo(); };
+  const recargar = async () => { await Promise.all([lista(), abrir(id, { mantener: true })]); refrescarVistas(); };
   const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
   $('#bact') && ($('#bact').onclick = () => accion('reanudar'));
   $('#bpau') && ($('#bpau').onclick = () => accion('pausar'));
-  $('#bfor') && ($('#bfor').onclick = async () => { try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/forzar`, { method: 'POST' }); $('#bfor').textContent = '⚡ Contestará en unos segundos'; $('#bfor').disabled = true; } catch (e) { $('#bfor').textContent = e.message; } });
+  $('#bfor') && ($('#bfor').onclick = async () => { $('#bfor').disabled = true; try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/forzar`, { method: 'POST' }); $('#bfor').textContent = '⚡ Contestará en unos segundos'; } catch (e) { $('#bfor').textContent = e.message; } });
   $('#addetq') && ($('#addetq').onchange = async (e) => { if (!e.target.value) return; await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas`, { method: 'POST', body: JSON.stringify({ etiqueta: Number(e.target.value) }) }); recargar(); });
   $('#hilo').querySelectorAll('[data-quitar]').forEach((b) => b.onclick = async () => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/etiquetas/${b.dataset.quitar}`, { method: 'DELETE' }); recargar(); });
 }
@@ -887,10 +1034,9 @@ const ACCIONES = [
 const REGLA_NUEVA = { texto: { tipo: 'texto', quien: 'lead', operador: 'contiene', patron: '' }, adjunto: { tipo: 'adjunto', quien: 'lead', media: 'cualquiera' }, inactividad: { tipo: 'inactividad', horas: 24 }, fase: { tipo: 'fase', fase: 'f5 cierre' }, sede: { tipo: 'sede', sede: 'parla' } };
 
 async function etiquetas() {
-  const r = await api('/panel/etiquetas');
+  const [r, metaInfo] = await Promise.all([api('/panel/etiquetas'), api('/panel/meta').catch(() => ({ tipos: [], configurado: false, eventos: [] }))]);
   if (estado.seccion !== 'etiquetas') return;
-  estado.catalogo = r;
-  estado.metaInfo = await api('/panel/meta').catch(() => ({ tipos: [], configurado: false, eventos: [] }));
+  estado.catalogo = r; estado.metaInfo = metaInfo; estado.opciones = null;
   if (estado.editEtq) return editorEtiqueta(estado.editEtq === 'nueva' ? null : r.etiquetas.find((e) => e.id === estado.editEtq));
   const m = $('#main');
   m.innerHTML = `<div class="cab-seccion"><h2>Etiquetas</h2><div class="acciones-f"><button id="esync" title="Trae de GHL las etiquetas puestas o quitadas allí y reintenta las pendientes">Sincronizar con GHL</button><button id="eimport">Importar de GHL</button><button class="primario" id="enueva">+ Nueva etiqueta</button></div></div>
@@ -912,7 +1058,7 @@ async function etiquetas() {
   $('#esync').onclick = async () => {
     const b = $('#esync'); b.disabled = true; b.textContent = 'Sincronizando…';
     let msg;
-    try { const x = await api('/panel/etiquetas/sincronizar', { method: 'POST' }); msg = `Revisados ${x.contactos} contactos de GHL: ${x.puestas} etiquetas añadidas, ${x.quitadas} quitadas y ${x.subidas} subidas a GHL${x.errores ? ` (${x.errores} errores)` : ''}.`; }
+    try { const x = await api('/panel/etiquetas/sincronizar', { method: 'POST' }); msg = x.puestas == null ? 'GHL no está conectado en este servidor: no hay nada que sincronizar.' : `Revisados ${x.contactos} contactos de GHL: ${x.puestas} etiquetas añadidas, ${x.quitadas} quitadas y ${x.subidas} subidas a GHL${x.errores ? ` (${x.errores} errores)` : ''}.`; }
     catch (err) { msg = err.message; }
     await etiquetas();
     if ($('#esyncr')) $('#esyncr').textContent = msg;
@@ -936,7 +1082,7 @@ async function etiquetas() {
     };
   };
   m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editEtq = Number(b.dataset.ed); etiquetas(); });
-  m.querySelectorAll('[data-fil]').forEach((a) => a.onclick = () => { estado.vista = 'todos'; estado.crit = { etiquetas: [Number(a.dataset.fil)] }; estado.conv = null; });
+  m.querySelectorAll('[data-fil]').forEach((a) => a.onclick = () => { estado.vista = 'todos'; estado.crit = { etiquetas: [Number(a.dataset.fil)] }; estado.limite = 100; estado.q = ''; });
   m.querySelectorAll('[data-ap]').forEach((b) => b.onclick = async () => {
     const e = r.etiquetas.find((x) => x.id === Number(b.dataset.ap));
     if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = `¿Buscar en todos los chats y poner «${e.nombre}»?`; b.classList.add('primario'); return; }
@@ -1055,10 +1201,9 @@ async function altas() {
     i.alta_en_pruebas ? 'El guardado de altas en AimHarder está desactivado.' : '';
   $('#main').innerHTML = `<h2>Altas</h2>${aviso ? `<div class="aviso">${aviso}</div>` : ''}
     ${filas.length ? `<div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Detalle</th></tr>${filas.map((a) => `<tr>
-      <td>${hora(a.created_at)}</td><td><a href="#chats" data-c="${esc(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo)}</a><br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
+      <td>${hora(a.created_at)}</td><td><a href="#chats/${encodeURIComponent(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo)}</a><br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
       <td>${esc(SEDES[a.datos.sede] || a.datos.sede)} · ${esc(a.datos.tarifa)}</td><td>${esc(a.datos.fecha_inicio)}</td>
       <td><span class="chip ${COLOR[a.estado] || 'ambar'}">${esc(a.estado)}</span></td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay altas</div>'}`;
-  $('#main').querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
 }
 
 // ---------- Preguntas que Sofía no sabe responder ----------
@@ -1068,7 +1213,7 @@ async function preguntas() {
   if (estado.seccion !== 'preguntas') return;
   const pend = datos.preguntas.filter((p) => p.estado === 'pendiente');
   const resp = datos.preguntas.filter((p) => p.estado === 'respondida');
-  const quien = (p) => p.chat ? `<a href="#chats" data-c="${esc(p.conversation_id)}" style="color:var(--blue)">${esc(p.chat.nombre || p.chat.telefono || 'chat')}</a>` : 'sin chat';
+  const quien = (p) => p.chat ? `<a href="#chats/${encodeURIComponent(p.conversation_id)}" style="color:var(--blue)">${esc(p.chat.nombre || p.chat.telefono || 'chat')}</a>` : 'sin chat';
   const caja = 'border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0';
   $('#main').innerHTML = `<h2>Preguntas</h2>
     <p class="intro">Preguntas de leads que Sofía no ha sabido responder porque no están en su información. Al responder una, Sofía se lo cuenta al lead en su chat (si han pasado menos de 24 h desde su último mensaje) y, si dejas marcado «Que Sofía la use», la sabrá en todos los chats a partir de ahora. Las preguntas iguales de otros chats se responden a la vez.</p>
@@ -1091,7 +1236,6 @@ async function preguntas() {
       <td><input type="checkbox" data-usar="${p.id}" ${p.usar ? 'checked' : ''} aria-label="Sofía usa esta respuesta"></td>
       <td><button data-borrar="${p.id}" title="Borrar">Borrar</button></td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no se ha respondido ninguna</div>'}`;
   const m = $('#main');
-  m.querySelectorAll('[data-c]').forEach((a) => a.onclick = () => { estado.conv = a.dataset.c; estado.filtro = 'todos'; });
   m.querySelectorAll('.fpreg').forEach((f) => f.onsubmit = async (e) => {
     e.preventDefault();
     try {
@@ -1101,7 +1245,7 @@ async function preguntas() {
     } catch (err) { f.querySelector('.error').textContent = err.message; }
   });
   m.querySelectorAll('[data-desc]').forEach((b) => b.onclick = async () => { await api(`/panel/preguntas/${b.dataset.desc}/descartar`, { method: 'POST', body: '{}' }); preguntas(); });
-  m.querySelectorAll('[data-usar]').forEach((c) => c.onchange = async () => { await api(`/panel/preguntas/${c.dataset.usar}/usar`, { method: 'POST', body: JSON.stringify({ usar: c.checked }) }); });
+  m.querySelectorAll('[data-usar]').forEach((c) => c.onchange = async () => { try { await api(`/panel/preguntas/${c.dataset.usar}/usar`, { method: 'POST', body: JSON.stringify({ usar: c.checked }) }); } catch (e) { c.checked = !c.checked; throw e; } });
   m.querySelectorAll('[data-borrar]').forEach((b) => b.onclick = async () => { if (!confirm('¿Borrar esta pregunta y su respuesta? Sofía dejará de saberla.')) return; await api(`/panel/preguntas/${b.dataset.borrar}`, { method: 'DELETE' }); preguntas(); });
 }
 
@@ -1114,7 +1258,7 @@ const TIPOS_SEG = [
   ['largo-plazo', '🗓️ Cuando lo deja para más adelante', 'Cuando el lead dice que lo decidirá o se apuntará más adelante: en la fecha que dé (o a los días indicados), sustituyendo a los de silencio. Sofía comprueba antes si siguen teniendo sentido. Solo WhatsApp.'],
 ];
 const unidades = (min) => (min % 1440 === 0 ? [min / 1440, 'dias'] : min % 60 === 0 ? [min / 60, 'horas'] : [min, 'minutos']);
-const textoEspera = (r) => { const [n, u] = unidades(r.minutos); const t = `${n} ${u === 'dias' ? (n === 1 ? 'día' : 'días') : u === 'horas' ? (n === 1 ? 'hora' : 'horas') : 'min'}`;
+const textoEspera = (r) => { const [n, u] = unidades(r.minutos); const t = u === 'minutos' && n >= 120 ? `${Math.floor(n / 60)} h ${n % 60} min` : `${n} ${u === 'dias' ? (n === 1 ? 'día' : 'días') : u === 'horas' ? (n === 1 ? 'hora' : 'horas') : 'min'}`;
   return r.tipo === 'cita' ? `${t} antes` : r.tipo === 'tras-cita' ? `${t} después de la clase` : r.tipo === 'largo-plazo' ? (r.despuesDe ? `${t} después del anterior` : `fecha que dé el lead o ${t}`) : `${t} después`; };
 
 async function seguimientos() {
@@ -1128,8 +1272,8 @@ async function seguimientos() {
       ${r.etiqueta ? pill({ nombre: r.etiqueta.nombre, color: r.etiqueta.color }) : ''} ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')}
       <span class="chip ${r.modo === 'fijo' ? 'azul' : 'violeta'}">${r.modo === 'fijo' ? 'texto fijo' : 'lo escribe Sofía'}</span>${r.plantilla && r.canales.includes('whatsapp') ? ' <span class="chip">plantilla si &gt;24 h</span>' : ''}</div>
       <div class="acciones-f"><button class="mini" data-ed="${esc(r.id)}">Editar</button><label class="interruptor"><input type="checkbox" data-on="${esc(r.id)}" aria-label="${esc(r.nombre)} activo" ${r.activo ? 'checked' : ''}><span></span></label></div></div>
-      ${r.condicion ? `<p><b>Solo si:</b> ${esc(r.condicion)}</p>` : '<p><b>Siempre</b> (salvo que no tenga sentido con la conversación delante)</p>'}
-      <p><b>${r.modo === 'fijo' ? 'Texto' : 'Qué dice'}:</b> ${esc(r.modo === 'fijo' ? r.textoFijo : r.instrucciones)}</p>
+      ${r.condicion ? `<p class="largo"><b>Solo si:</b> ${esc(r.condicion)}</p>` : '<p><b>Siempre</b> (salvo que no tenga sentido con la conversación delante)</p>'}
+      <p class="largo"><b>${r.modo === 'fijo' ? 'Texto' : 'Qué dice'}:</b> ${esc(r.modo === 'fijo' ? r.textoFijo : r.instrucciones)}</p>
       <p class="ayuda">Últimos 7 días: ${r.enviado} enviados · ${r.omitido} no enviados · ${r.cancelado} cancelados${r.error ? ` · <span class="error">${r.error} con error</span>` : ''} · ${r.pendiente} programados</p></div>`;
   const lz = s.lanzamientos;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Seguimientos</h2><div class="acciones-f"><button id="nlanz">+ Lanzamiento</button><button class="primario" id="nregla">+ Nuevo seguimiento</button></div></div>
@@ -1148,8 +1292,13 @@ async function seguimientos() {
   $('#nlanz').onclick = () => { estado.nuevoLanz = true; seguimientos(); };
   m.querySelectorAll('[data-nt]').forEach((b) => b.onclick = () => { estado.editRegla = { nuevo: b.dataset.nt }; seguimientos(); });
   m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editRegla = { id: b.dataset.ed }; seguimientos(); });
-  m.querySelectorAll('[data-on]').forEach((i) => i.onchange = async () => { await api('/panel/reglas/' + encodeURIComponent(i.dataset.on), { method: 'PUT', body: JSON.stringify({ activo: i.checked }) }); i.closest('.regla').classList.toggle('apagada', !i.checked); });
-  m.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); seguimientos(); });
+  m.querySelectorAll('[data-on]').forEach((i) => i.onchange = async () => {
+    try { await api('/panel/reglas/' + encodeURIComponent(i.dataset.on), { method: 'PUT', body: JSON.stringify({ activo: i.checked }) }); } catch (e) { i.checked = !i.checked; throw e; }
+    i.closest('.regla').classList.toggle('apagada', !i.checked);
+  });
+  // Las instrucciones largas se ven recortadas; un toque las despliega
+  m.querySelectorAll('.regla p.largo').forEach((el) => { if (el.scrollHeight > el.clientHeight + 4) { el.classList.add('corta'); el.tabIndex = 0; el.setAttribute('role', 'button'); el.title = 'Ver entero'; const abrir = () => el.classList.toggle('abierta'); el.onclick = abrir; el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); abrir(); } }; } });
+  m.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/panel/seguimientos/${b.dataset.x}/cancelar`, { method: 'POST' }); b.closest('tr')?.remove(); });
   m.querySelectorAll('[data-lc]').forEach((b) => b.onclick = async () => {
     if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro?'; return; }
     await api(`/panel/lanzamientos/${b.dataset.lc}/cancelar`, { method: 'POST' }); seguimientos();
@@ -1161,8 +1310,8 @@ async function seguimientos() {
 }
 
 async function editorRegla() {
-  const { reglas: todas, etiquetas: etqs } = await api('/panel/reglas');
-  estado.recLista = await api('/panel/recursos').catch(() => []);
+  const [{ reglas: todas, etiquetas: etqs }, recLista] = await Promise.all([api('/panel/reglas'), api('/panel/recursos').catch(() => [])]);
+  estado.recLista = recLista;
   if (estado.seccion !== 'seguimientos') return;
   const original = estado.editRegla.id ? todas.find((r) => r.id === estado.editRegla.id) : null;
   const d = original ? JSON.parse(JSON.stringify(original)) : { nombre: '', tipo: estado.editRegla.nuevo, canales: ['whatsapp', 'instagram'], minutos: ['cita', 'tras-cita'].includes(estado.editRegla.nuevo) ? 180 : estado.editRegla.nuevo === 'largo-plazo' ? 30 * 1440 : 1440, modo: 'ia', instrucciones: '', textoFijo: '', condicion: '', excluir: { clientes: true, pausada: true, calladasHoras: 0 }, plantilla: true, activo: true, etiquetaId: etqs[0]?.id || null, ponerEtiqueta: null, despuesDe: null };
@@ -1356,10 +1505,9 @@ async function reportes() {
 }
 
 async function fichaReporte(id) {
-  const r = await api('/panel/reportes/' + id);
-  if (estado.seccion !== 'reportes' || location.hash !== `#reportes/${id}`) return;
-  const { estados } = estado.estadosRep ? { estados: estado.estadosRep } : await api('/panel/reportes?estado=__');
+  const [r, { estados }] = await Promise.all([api('/panel/reportes/' + id), estado.estadosRep ? { estados: estado.estadosRep } : api('/panel/reportes?estado=__')]);
   estado.estadosRep = estados;
+  if (estado.seccion !== 'reportes' || location.hash !== `#reportes/${id}`) return;
   const p = r.propuesta; const c = r.comprobacion;
   const AUT = { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' };
   const msgs = (r.contexto?.mensajes || []).slice(-8);
@@ -1425,8 +1573,7 @@ async function instrucciones(abrirId) {
     await api(`/panel/instrucciones/${b.dataset.act}/activar`, { method: 'POST' }); instrucciones();
   });
   m.querySelectorAll('[data-ver]').forEach((b) => b.onclick = async () => {
-    const v = await api('/panel/instrucciones/' + b.dataset.ver);
-    const p = await api('/panel/instrucciones/' + prod(v.doc).id);
+    const [v, p] = await Promise.all([api('/panel/instrucciones/' + b.dataset.ver), api('/panel/instrucciones/' + prod(b.closest('.doc').querySelector('[data-edit]').dataset.edit).id)]);
     const anterior = datos[v.doc].versiones.find((x) => x.version < v.version);
     const base = v.estado === 'produccion' && anterior ? await api('/panel/instrucciones/' + anterior.id) : p;
     const panelV = m.querySelector(`[data-panel="${v.doc}"]`);
@@ -1474,7 +1621,7 @@ async function bateriaPagina(pasadaId) {
         <p class="ayuda">Una pasada completa con 1 repetición tarda unos 5 minutos y cuesta alrededor de 2-2,5 € de IA (el doble con 2 repeticiones, que da un resultado más fiable). El coste real queda apuntado en cada pasada.</p><p class="error" id="berr"></p>`}
     </section>
     <section class="doc"><h3>Pasadas</h3>${d.pasadas.length ? `<div class="tabla"><table><tr><th>#</th><th>Versión</th><th>Resultado</th><th>Casos</th><th>Coste</th><th>Fecha</th><th></th></tr>${d.pasadas.map((p) => `<tr><td>${p.id}</td><td>Prompt v${p.prompt_v} · Base v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ''}${p.filtro.grupo ? ` <span class="chip">${esc(p.filtro.grupo)}</span>` : ''}${p.filtro.tema ? ` <span class="chip">${esc(p.filtro.tema)}</span>` : ''}</td>
-      <td>${p.estado === 'en_curso' ? `<span class="chip ambar">en marcha ${p.hechos}/${p.total}</span>` : p.estado !== 'terminada' ? `<span class="chip rojo">${esc(p.estado)}</span>` : `<b>${pctTxt(p.pasan, p.hechos)}</b>`}</td><td>${p.pasan}/${p.hechos}</td><td>${(p.usd * 0.92).toFixed(2)} €</td><td>${hora(p.created_at)}</td><td><a href="#reportes/bateria/${p.id}">Ver</a></td></tr>`).join('')}</table></div>` : '<p class="ayuda">Todavía no se ha lanzado ninguna.</p>'}</section>
+      <td>${p.estado === 'en_curso' ? `<span class="chip ambar">en marcha ${p.hechos}/${p.total}</span>` : p.estado !== 'terminada' ? `<span class="chip rojo">${esc(p.estado)}</span>` : `<b>${pctTxt(p.pasan, p.hechos)}</b>`}</td><td>${p.pasan}/${p.hechos}</td><td>${(p.usd * (estado.info.eur_por_usd || 0.92)).toFixed(2)} €</td><td>${hora(p.created_at)}</td><td><a href="#reportes/bateria/${p.id}">Ver</a></td></tr>`).join('')}</table></div>` : '<p class="ayuda">Todavía no se ha lanzado ninguna.</p>'}</section>
     <section class="doc"><h3>Casos <button class="mini" id="bnuevo">+ Nuevo caso</button></h3><div id="bform"></div>
       <div class="tabla"><table><tr><th>Caso</th><th>Tipo</th><th>Tema</th><th>Grupo</th><th>Criterios</th><th></th></tr>${d.casos.map((c) => `<tr class="${c.activo ? '' : 'apagada'}"><td>${esc(c.nombre)}<div class="ayuda">${ORIGEN[c.origen] || c.origen}</div></td><td>${c.tipo === 'escenario' ? `Lead simulado · ${c.turnos} turnos` : `Momento · ${c.mensajes} mensajes`}</td><td>${esc(c.tema || '')}</td><td>${c.grupo === 'reserva' ? '<span class="chip violeta">reserva</span>' : 'ajuste'}</td><td><details><summary>${c.criterios.length}</summary><ol class="crit">${c.criterios.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></details></td>
         <td class="acciones-f"><button class="mini" data-bed="${esc(c.id)}">Editar</button><button class="mini" data-bon="${esc(c.id)}" data-v="${c.activo ? 0 : 1}">${c.activo ? 'Desactivar' : 'Activar'}</button></td></tr>`).join('')}</table></div></section>`;
@@ -1527,7 +1674,7 @@ async function bateriaPasada(id) {
   const AUT = { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' };
   const barra = (g) => `<div class="eh"><span>${esc(g.nombre)}</span><div class="eh-barra"><i style="width:${g.total ? (g.pasan / g.total) * 100 : 0}%"></i></div><b>${pctTxt(g.pasan, g.total)}</b><span class="ayuda">${g.pasan} de ${g.total}</span></div>`;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Pasada #${p.id}</h2><a class="boton" href="#reportes/bateria">Volver</a></div>
-    <p class="intro">Prompt v${p.prompt_v} · Base de conocimiento v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ' <span class="chip verde">producción</span>'} · ${p.repeticiones} repeticion${p.repeticiones === 1 ? '' : 'es'} · ${hora(p.created_at)} · coste ${(p.usd * 0.92).toFixed(2)} €</p>
+    <p class="intro">Prompt v${p.prompt_v} · Base de conocimiento v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ' <span class="chip verde">producción</span>'} · ${p.repeticiones} repeticion${p.repeticiones === 1 ? '' : 'es'} · ${hora(p.created_at)} · coste ${(p.usd * (estado.info.eur_por_usd || 0.92)).toFixed(2)} €</p>
     ${p.estado === 'en_curso' ? `<p class="aviso-mini" role="status">En marcha: ${p.hechos} de ${p.total}. Se actualiza sola. <button class="mini" id="bcanp">Cancelar</button></p>` : p.estado !== 'terminada' ? `<p class="error">${esc(p.estado)}${p.error ? `: ${esc(p.error)}` : ''}</p>` : ''}
     <div class="tarjetas">${tarjeta(pctTxt(p.pasan, p.hechos), `Pasan (${p.pasan} de ${p.hechos})`, 'green')}${r.porGrupo.map((g) => tarjeta(pctTxt(g.pasan, g.total), `Casos de ${g.nombre}`)).join('')}${tarjeta(r.casos.filter((x) => x.pasan < x.total).length, 'Casos con algún fallo', 'red')}</div>
     ${c ? `<section class="doc"><h3>Comparada con la pasada #${c.antes.id} (prompt v${c.antes.prompt_v}, ${Math.round(c.antes.pct * 100)} %)</h3>
@@ -1767,13 +1914,16 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Palabras que paran a Sofía</div><div class="d">Si el lead o el equipo las escriben, Sofía se pausa en ese chat. Separadas por comas. Ej: stop ia, hablar con una persona</div></div><input id="ppar" value="${esc((a.palabrasParar || []).join(', '))}" style="width:280px" aria-label="Palabras que paran a Sofía"></div>
     <div class="ajuste"><div><div class="t">Palabras para que vuelva</div><div class="d">Si el equipo las escribe en un chat, Sofía vuelve a contestar ahí. Ej: #sofia</div></div><input id="prea" value="${esc((a.palabrasReanudar || []).join(', '))}" style="width:280px" aria-label="Palabras para reanudar a Sofía"></div>
     <div class="ajuste"><div><div class="t">Chats nuevos que empiezan en pausa</div><div class="d">Sofía no contesta los chats nuevos de ese canal hasta que alguien la active en el chat.</div></div><div class="fila-f"><label class="check"><input type="checkbox" id="pwa" ${a.canalesPausa?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="pig" ${a.canalesPausa?.instagram ? 'checked' : ''}> Instagram</label></div></div>
-    <div style="display:flex;gap:10px;align-items:center;margin:14px 0"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"></span></div>
+    <div class="guardar-aj" id="gaj"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"><span class="ayuda">Los cambios no se aplican hasta que pulses Guardar.</span></span></div>
     <h3>Sistema</h3>
     <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
     <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.credenciales_alta ? 'Integración por navegador' : 'Faltan las credenciales de AimHarder.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'Prueba' : 'Automática'}</span></div>
     <div class="ajuste"><div><div class="t">Modelo</div><div class="d">${i.modelo_configurado ? 'Redacta las respuestas de Sofía.' : 'Falta la clave de Anthropic.'}</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
   $('#main').querySelectorAll('[data-dmodo]').forEach((s) => s.onchange = () => { $(`[data-dfr="${s.dataset.dmodo}"]`).hidden = s.value !== 'franja'; });
+  const sinGuardar = () => { if (!$('#gaj') || $('#gaj').classList.contains('pendiente')) return; $('#gaj').classList.add('pendiente'); $('#ok').innerHTML = '<b style="color:var(--amber)">Tienes cambios sin guardar</b>'; };
+  $('#main').oninput = $('#main').onchange = sinGuardar;
   $('#bg').onclick = async () => {
+    $('#bg').disabled = true;
     const horarioDias = Object.fromEntries(DIAS_TXT.map(([k]) => { const m = $(`[data-dmodo="${k}"]`).value; return [k, m === 'cerrado' ? null : m === 'franja' ? { desde: Number($(`[data-ddesde="${k}"]`).value), hasta: Number($(`[data-dhasta="${k}"]`).value) } : 'normal']; }));
     try {
       estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({
@@ -1782,10 +1932,11 @@ async function ajustes() {
         pausarSiEquipoEscribe: $('#peq').checked, canaveralPlazasOcupadas: Number($('#pcan').value) || 0, palabrasParar: $('#ppar').value, palabrasReanudar: $('#prea').value,
         canalesPausa: { whatsapp: $('#pwa').checked, instagram: $('#pig').checked }, horarioDias,
       }) });
+      $('#gaj').classList.remove('pendiente');
       $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>';
-      $('#raiz .modo .rojo')?.remove();
-      if (!estado.info.ajustes.ia_activa) $('#raiz .modo').insertAdjacentHTML('beforeend', '<span class="chip rojo">IA pausada</span>');
+      pintarCabecera();
     } catch (e) { $('#ok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+    if ($('#bg')) $('#bg').disabled = false;
   };
 }
 
@@ -1809,8 +1960,12 @@ async function estadisticas() {
   $('#main').querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { f.dias = Number(b.dataset.ed); estadisticas(); });
   $('#esede').onchange = (e) => { f.sede = e.target.value; estadisticas(); };
   $('#ecanal').onchange = (e) => { f.canal = e.target.value; estadisticas(); };
-  const [e, c] = await Promise.all([api(`/panel/estadisticas?dias=${f.dias}&sede=${f.sede}&canal=${f.canal}`), api('/panel/consumo?meses=6')]);
-  if (estado.seccion !== 'estadisticas' || !$('#est')) return;
+  const pedido = estado.estPedido = (estado.estPedido || 0) + 1;
+  // El consumo no depende de los filtros: se pide una vez y vale un minuto
+  const consumo = () => (estado.consumo && Date.now() - estado.consumo.t < 60000 ? estado.consumo.p : (estado.consumo = { t: Date.now(), p: api('/panel/consumo?meses=6') }).p).catch((err) => { estado.consumo = null; throw err; });
+  const [e, c] = await Promise.all([api(`/panel/estadisticas?dias=${f.dias}&sede=${f.sede}&canal=${f.canal}`), consumo()]);
+  // Si mientras tanto se ha cambiado otro filtro, esta respuesta ya es vieja: se pinta solo la última pedida
+  if (estado.seccion !== 'estadisticas' || pedido !== estado.estPedido || !$('#est')) return;
   const hoyMadrid = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(new Date());
   const porFecha = Object.fromEntries(e.porDia.map((d) => [d.fecha, d]));
   const dias = Array.from({ length: e.dias }, (_, i) => { const f = new Date(Date.parse(hoyMadrid + 'T12:00:00Z') - (e.dias - 1 - i) * 864e5).toISOString().slice(0, 10); return porFecha[f] || { fecha: f }; });
@@ -1843,7 +1998,9 @@ async function estadisticas() {
 /** Pone al lado de cada día lo que factura Anthropic (si el VPS tiene la clave de administrador). */
 async function conciliarConsumo(dias) {
   let f;
-  try { f = await api('/panel/consumo/anthropic?dias=31'); } catch (e) { f = { disponible: false, motivo: e.message }; }
+  // La factura de Anthropic tarda (es una consulta fuera): se guarda diez minutos
+  const factura = () => (estado.factura && Date.now() - estado.factura.t < 600000 ? estado.factura.p : (estado.factura = { t: Date.now(), p: api('/panel/consumo/anthropic?dias=31') }).p);
+  try { f = await factura(); } catch (e) { estado.factura = null; f = { disponible: false, motivo: e.message }; }
   const nota = $('#c-ant-nota');
   if (!nota) return;
   if (!f.disponible) { nota.textContent = `Sin comparar con la factura de Anthropic. ${f.motivo || ''}`; $('#main').querySelectorAll('.c-ant').forEach((td) => { td.textContent = '–'; }); return; }
