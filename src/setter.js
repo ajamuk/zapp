@@ -35,6 +35,7 @@ export function textoComparable(t) {
 }
 // Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
 const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
+const MOTIVOS_DERIVAR = ['salud', 'gestion_socio', 'cobro', 'llamada', 'visita', 'no_documentado', 'otro'];
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
 /**
@@ -638,6 +639,10 @@ export class Setter {
         return { ok: true, nota: 'Se enviará justo después de tus mensajes. No pegues enlaces ni lo describas de más.' };
       }
       case 'derivar_a_equipo': {
+        // A veces la IA la llama vacía (sin motivo ni resumen): eso no es una derivación y no debe pausar el chat.
+        if (!MOTIVOS_DERIVAR.includes(input?.motivo) || !String(input?.resumen || '').trim()) {
+          return { ok: false, error: 'No se ha derivado: falta el motivo o el resumen. Solo deriva si de verdad lo tiene que llevar una persona (salud, gestión de socio, cobro, llamada, visita o algo que tú no puedes hacer); en ese caso vuelve a llamarla con motivo y resumen. Si no, sigue tú la conversación.' };
+        }
         efectos.derivado = true;
         const tarea = { salud: TAGS.tareas.derivado_salud, gestion_socio: TAGS.tareas.gestion_socio, cobro: TAGS.tareas.pago_por_verificar, llamada: TAGS.tareas.llamar, visita: TAGS.tareas.visita }[input.motivo] || TAGS.tareas.responder;
         efectos.tags.add(tarea);

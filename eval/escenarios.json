@@ -442,5 +442,47 @@
    "Hace una sola pregunta por turno"
   ],
   "turnos": 5
+ },
+ {
+  "id": "lo-pienso-getafe",
+  "nombre": "Getafe: «lo pienso» tras la cuota",
+  "tema": "objecion",
+  "perfil": "Te llamas Marta, 34 años, vives en Getafe. Nunca has hecho CrossFit. Quieres ponerte en forma después de dos años muy parada. Puedes ir 2 días por semana por la tarde. Cuando te digan el precio contesta solo «vale, lo pienso». Si te preguntan qué te hace dudar, di que te da algo de vergüenza no poder seguir al resto. Si te tranquilizan bien, te animas a apuntarte.",
+  "apertura": "hola, me gustaría información para empezar en getafe",
+  "criterios": [
+   "Cuando dice «lo pienso», no insiste ni presiona: hace una sola pregunta para saber qué le hace dudar",
+   "Ante el miedo a no poder seguir al resto, le da seguridad con datos reales (Academy, el coach adapta a su nivel) sin usar la palabra «lesión»",
+   "No le ofrece clase de prueba (en Getafe no hay)",
+   "No pide permiso con «te parece?», «te animas?» o parecidos: indica el siguiente paso"
+  ],
+  "turnos": 6
+ },
+ {
+  "id": "caro-menos-dias",
+  "nombre": "Las Rosas: le parece caro",
+  "tema": "objecion",
+  "perfil": "Te llamas Andrés, 29 años, vives cerca de Las Rosas. Has hecho CrossFit dos años y lo dejaste hace 4 meses. Quieres volver para recuperar la forma. Preguntas el precio para 4 días por semana y cuando te lo dicen respondes «uf, es más de lo que pensaba». Si te ofrecen una opción con menos días que tenga sentido, te interesa.",
+  "apertura": "buenas, cuánto cuesta entrenar en las rosas?",
+  "criterios": [
+   "Da el precio correcto de CrossFit en Las Rosas para lo que pide",
+   "Ante «es más de lo que pensaba», recoge lo que dice y le ofrece la alternativa real de menos días con su precio correcto, sin inventar descuentos ni promociones",
+   "Recuerda que no hay matrícula ni permanencia o que el primer recibo es solo la parte del mes que queda",
+   "Hace una sola pregunta por turno"
+  ],
+  "turnos": 5
+ },
+ {
+  "id": "cierre-revalida",
+  "nombre": "Parla: acepta y Sofía resume antes de pedir datos",
+  "tema": "alta",
+  "perfil": "Te llamas Lucía, 41 años, vives en Parla. Nunca has hecho CrossFit. Quieres empezar porque pasas todo el día sentada en la oficina y quieres sentirte fuerte y con energía. Puedes ir martes y jueves por la tarde. Cuando te den la cuota, di «sí, me apunto». No quieres clase de prueba.",
+  "apertura": "hola, quiero apuntarme a crossfit en parla",
+  "criterios": [
+   "Cuando acepta la cuota, hace un resumen corto de lo decidido (sede, Academy, días o franja) conectado con su motivo de sentirse fuerte",
+   "Explica el arranque como algo sencillo (sin permanencia, primer recibo prorrateado, pago desde la app) y pide los datos que faltan en el mismo turno",
+   "No le ofrece la clase de prueba, porque ya quiere apuntarse",
+   "No pide permiso con «te parece?», «te animas?» o parecidos"
+  ],
+  "turnos": 6
  }
 ]
