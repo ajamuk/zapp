@@ -24,3 +24,11 @@ test('las imágenes que salen junto al texto no cuentan como mensajes', () => {
   assert.deepEqual(comprobar(c, [...texto, '[imagen: parla-academy-horarios]', '[imagen: parla-academy-tarifas]']), []);
   assert.ok(comprobar(c, [...texto, 'otro', 'y otro más']).includes('más de 4 mensajes'));
 });
+
+test('horas que no son de clase: apertura de reservas, horas negadas y las que dice el lead', () => {
+  const c = (lead) => ({ contexto: [['lead', lead]], sede: 'parla' });
+  assert.deepEqual(comprobar(c('cuándo se reserva?'), ['las reservas abren 4 días antes a las 22:00']), []);
+  assert.deepEqual(comprobar(c('hay a las 19:00?'), ['a las 19:00 no hay clase de CrossFit, tienes las 18:30 y las 19:30']), []);
+  assert.deepEqual(comprobar(c('puedo a las 7 o desde las 20:00'), ['a partir de las 20:00 tienes la de 20:30']), []);
+  assert.ok(comprobar(c('por la tarde'), ['tienes clase a las 19:00']).some((f) => /19:00/.test(f)));
+});

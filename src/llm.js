@@ -157,6 +157,17 @@ export function revisarRespuesta(input) {
   return null;
 }
 
+/**
+ * Los mensajes de `responder` como lista de textos. A veces el modelo manda la lista como texto (un JSON entre
+ * comillas o burbujas separadas por saltos de línea) en vez de como lista: se convierte en lugar de fallar.
+ */
+export function comoLista(mensajes) {
+  if (Array.isArray(mensajes)) return mensajes.map((m) => (typeof m === 'string' ? m : String(m ?? ''))).filter((m) => m.trim());
+  if (typeof mensajes !== 'string' || !mensajes.trim()) return [];
+  try { const j = JSON.parse(mensajes); if (Array.isArray(j)) return comoLista(j); } catch { /* no es JSON: va por líneas */ }
+  return mensajes.split(/\n+/).map((m) => m.trim()).filter(Boolean);
+}
+
 /** Dos preguntas en un turno: dos «?» o una pregunta que engancha otra con «, y …» («cuántos días, y te va mejor mañana o tarde?»). */
 export function dosPreguntas(mensajes) {
   const ms = (Array.isArray(mensajes) ? mensajes : []).filter((m) => !/^\[(imagen|audio|video|documento): /.test(String(m).trim()));
@@ -200,6 +211,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
     const final = usos.find((u) => u.name === 'responder');
+    if (final?.input) final.input = { ...final.input, mensajes: comoLista(final.input.mensajes) };
     // Comprobación fija antes de enviar: si falla, se le devuelve al modelo una vez para que lo corrija
     const pega = final && usos.length === 1 && correcciones < 1 ? revisarRespuesta(final.input) : null;
     if (pega) {

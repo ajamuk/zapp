@@ -322,3 +322,14 @@ test('los seguimientos se redactan con el modelo de seguimientos', async () => {
   assert.equal(await setter.redactar('c9', '', { modelo: config.ai.modeloSeguimientos }), '¿Qué tal?');
   assert.equal(llamadas.requests[0].model, 'claude-haiku-5-5');
 });
+
+test('si el modelo manda los mensajes como texto en vez de lista, se convierten y Sofía contesta igual', async () => {
+  const { runTurn, comoLista } = await import('../src/llm.js');
+  assert.deepEqual(comoLista('["hola", "qué tal?"]'), ['hola', 'qué tal?']);
+  assert.deepEqual(comoLista('hola\nqué tal?'), ['hola', 'qué tal?']);
+  assert.deepEqual(comoLista(undefined), []);
+  assert.deepEqual(comoLista(['a', '', ' ']), ['a']);
+  const complete = async () => ({ content: [{ type: 'tool_use', id: 't', name: 'responder', input: { mensajes: '["vale", "cuántos días te ves?"]', fase: 'f5 cierre' } }], usage: { input_tokens: 10, output_tokens: 5 } });
+  const { respuesta } = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete });
+  assert.deepEqual(respuesta.mensajes, ['vale', 'cuántos días te ves?']);
+});
