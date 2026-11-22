@@ -41,6 +41,9 @@ export function textoComparable(t) {
     .join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
 }
 // Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
+// Resúmenes con los que la IA llama a derivar_a_equipo «para no hacer nada» (no son derivaciones)
+const RESUMEN_DE_RELLENO = /\b(no aplica|no procede|no hace falta|no es necesario|no necesita|nada que derivar|sin derivar|no derivar|no hay que derivar)\b/i;
+const VENTANA_SEG_MS = 24 * 3600e3;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
 const MOTIVOS_DERIVAR = ['salud', 'gestion_socio', 'cobro', 'llamada', 'visita', 'no_documentado', 'otro'];
@@ -809,9 +812,18 @@ export class Setter {
     if (String(conv.id).startsWith('prueba-')) return; // chat de pruebas: se fuerzan a mano desde Probar IA
     const base = this.now().getTime();
     this.repo.cancelScheduled(conv.id, 'Sofía volvió a responder', { soloCortos: true });
+    // Sin plantilla solo se puede escribir dentro de las 24 h desde el último mensaje del lead (no desde la respuesta
+    // de Sofía): el que caería fuera se adelanta a 15 min antes del cierre de esa ventana, o no se programa.
+    const ultimoLead = this.repo.getConv(conv.id)?.last_inbound_at;
+    const cierre = ultimoLead ? new Date(ultimoLead).getTime() + VENTANA_SEG_MS - 15 * 60000 : Infinity;
     for (const regla of reglasSeg.listar(this.catalogo)) {
       if (regla.tipo !== 'silencio' || !regla.canales.includes(conv.channel) || !regla.activo) continue;
-      this.repo.schedule(conv.id, regla.id, new Date(base + regla.minutos * 60000).toISOString(), null, 'silencio');
+      let due = base + regla.minutos * 60000;
+      if (!regla.plantilla && due > cierre) {
+        if (cierre - base < 60 * 60000) continue; // ya no queda ventana para él
+        due = cierre;
+      }
+      this.repo.schedule(conv.id, regla.id, new Date(due).toISOString(), null, 'silencio');
     }
   }
 
@@ -894,9 +906,10 @@ export class Setter {
         return { ok: true, nota: 'Se enviará justo después de tus mensajes. No pegues enlaces ni lo describas de más.' };
       }
       case 'derivar_a_equipo': {
-        // A veces la IA la llama vacía (sin motivo ni resumen): eso no es una derivación y no debe pausar el chat.
-        if (!MOTIVOS_DERIVAR.includes(input?.motivo) || !String(input?.resumen || '').trim()) {
-          return { ok: false, error: 'No se ha derivado: falta el motivo o el resumen. Solo deriva si de verdad lo tiene que llevar una persona (salud, gestión de socio, cobro, llamada, visita o algo que tú no puedes hacer); en ese caso vuelve a llamarla con motivo y resumen. Si no, sigue tú la conversación.' };
+        // A veces la IA la llama vacía o de relleno (sin motivo, o con un resumen como «no»): eso no es una derivación y no debe pausar el chat.
+        const resumen = String(input?.resumen || '').trim();
+        if (!MOTIVOS_DERIVAR.includes(input?.motivo) || resumen.split(/\s+/).filter((p) => p.length > 1).length < 3 || RESUMEN_DE_RELLENO.test(resumen)) {
+          return { ok: false, error: 'No se ha derivado: falta el motivo o un resumen de verdad (qué necesita el lead, en una o dos frases). Solo deriva si de verdad lo tiene que llevar una persona (salud, gestión de socio, cobro, llamada, visita o algo que tú no puedes hacer); en ese caso vuelve a llamarla con motivo y resumen. Si no, sigue tú la conversación.' };
         }
         efectos.derivado = true;
         const tarea = { salud: TAGS.tareas.derivado_salud, gestion_socio: TAGS.tareas.gestion_socio, cobro: TAGS.tareas.pago_por_verificar, llamada: TAGS.tareas.llamar, visita: TAGS.tareas.visita }[input.motivo] || TAGS.tareas.responder;

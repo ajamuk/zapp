@@ -1199,6 +1199,7 @@ async function editorRegla() {
         <label class="check"><input type="checkbox" id="rxcli" ${d.excluir.clientes ? 'checked' : ''}> A quien ya es socio o tiene el alta hecha</label>
         <label class="check"><input type="checkbox" id="rxpau" ${d.excluir.pausada ? 'checked' : ''}> A los chats con Sofía pausada o derivados ${['silencio', 'largo-plazo'].includes(d.tipo) ? '<span class="ayuda">(en este tipo, siempre)</span>' : ''}</label>
         <label class="check"><input type="checkbox" id="rxcal" ${d.excluir.calladasHoras ? 'checked' : ''}> Solo si lleva <input type="number" id="rxcalh" min="1" max="720" value="${d.excluir.calladasHoras || 24}" style="width:70px"> horas o más sin escribir</label>
+        <label class="check"><input type="checkbox" id="rxpru" ${d.excluir.soloConPrueba ? 'checked' : ''}> Solo a quien tiene una clase de prueba reservada</label>
       </section>
       <section><h3>Al enviarse</h3>
         <label class="fila-f">Adjuntar el recurso <select id="rrec"><option value="">Ninguno</option>${(estado.recLista || []).filter((x) => x.activo).map((x) => `<option value="${x.id}" ${d.recursoId === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select> <span class="ayuda">(solo dentro de las 24 h: la plantilla no lleva archivos)</span></label>
@@ -1214,7 +1215,7 @@ async function editorRegla() {
       if ($('#retq')) d.etiquetaId = Number($('#retq').value); if ($('#rdesp')) d.despuesDe = $('#rdesp').value || null;
       d.canales = [...m.querySelectorAll('[data-can]')].filter((x) => x.checked).map((x) => x.dataset.can);
       if ($('#rcondt')) d.condicion = $('#rcondt').value; if ($('#rins')) d.instrucciones = $('#rins').value; if ($('#rfijo')) d.textoFijo = $('#rfijo').value;
-      d.excluir = { clientes: $('#rxcli').checked, pausada: $('#rxpau').checked, calladasHoras: $('#rxcal').checked ? Number($('#rxcalh').value) : 0 };
+      d.excluir = { clientes: $('#rxcli').checked, pausada: $('#rxpau').checked, calladasHoras: $('#rxcal').checked ? Number($('#rxcalh').value) : 0, soloConPrueba: $('#rxpru').checked };
       d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; d.recursoId = $('#rrec').value ? Number($('#rrec').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
     };
     m.querySelectorAll('[name="rtipo"]').forEach((x) => x.onchange = () => { leer(); d.tipo = x.value; pintar(); });

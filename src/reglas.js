@@ -25,7 +25,7 @@ export function deFila(f) {
     dias: f.tipo === 'largo-plazo' ? Math.round(f.minutos / 1440) : undefined,
     despuesDe: f.despues_de || null, etiquetaId: f.etiqueta_id ?? null,
     condicion: f.condicion || '', instrucciones: f.instrucciones || '', modo: f.modo || 'ia', textoFijo: f.texto_fijo || '',
-    excluir: { clientes: excluir.clientes !== false, pausada: excluir.pausada !== false, calladasHoras: Number(excluir.calladas_horas) || 0 },
+    excluir: { clientes: excluir.clientes !== false, pausada: excluir.pausada !== false, calladasHoras: Number(excluir.calladas_horas) || 0, soloConPrueba: excluir.solo_con_prueba === true },
     ponerEtiqueta: f.poner_etiqueta ?? null, recursoId: f.recurso_id ?? null, plantilla: Boolean(f.plantilla), plantillaWhatsapp: f.plantilla ? {} : null,
     activo: Boolean(f.activo), orden: f.orden,
   };
@@ -76,7 +76,7 @@ export function sembrarReglas(db) {
   db.transaction(() => reglas.forEach((r, i) => ins.run({
     id: r.id, nombre: r.nombre, tipo: r.tipo || 'silencio', canales: JSON.stringify(r.canales || ['whatsapp', 'instagram']),
     minutos: r.tipo === 'largo-plazo' ? (r.dias || 21) * 1440 : r.minutos || 0, despues_de: r.despuesDe || null,
-    condicion: r.condicion || null, instrucciones: r.instrucciones || null, excluir: JSON.stringify({ clientes: true, pausada: true }),
+    condicion: r.condicion || null, instrucciones: r.instrucciones || null, excluir: JSON.stringify({ clientes: true, pausada: true, ...(r.soloConPrueba ? { solo_con_prueba: true } : {}) }),
     plantilla: r.plantillaWhatsapp ? 1 : 0, activo: toggles[r.id] === false ? 0 : 1, orden: i,
   })))();
   db.prepare("INSERT OR IGNORE INTO ajustes (clave, valor) VALUES ('semilla_tras_prueba', 'true')").run();
@@ -109,7 +109,7 @@ export function validar(d = {}, db, id = null) {
   return {
     nombre, tipo, canales: JSON.stringify(canales), minutos, despues_de: despuesDe, etiqueta_id: etiquetaId,
     condicion: String(d.condicion ?? '').trim().slice(0, 1500) || null, instrucciones: instrucciones || null, modo, texto_fijo: modo === 'fijo' ? textoFijo : null,
-    excluir: JSON.stringify({ clientes: e.clientes !== false, pausada: e.pausada !== false, calladas_horas: Math.max(0, Math.min(720, Number(e.calladasHoras) || 0)) }),
+    excluir: JSON.stringify({ clientes: e.clientes !== false, pausada: e.pausada !== false, calladas_horas: Math.max(0, Math.min(720, Number(e.calladasHoras) || 0)), ...(e.soloConPrueba ? { solo_con_prueba: true } : {}) }),
     poner_etiqueta: ponerEtiqueta, recurso_id: d.recursoId ? Number(d.recursoId) : null, plantilla: d.plantilla === false ? 0 : 1, activo: d.activo === false ? 0 : 1,
   };
 }

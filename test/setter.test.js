@@ -168,10 +168,10 @@ test('derivar a equipo pausa la IA, etiqueta y avisa', async () => {
   assert.equal(repo.db.prepare("SELECT count(*) n FROM scheduled WHERE estado='pendiente'").get().n, 0, 'sin seguimientos tras derivar');
 });
 
-test('derivar a equipo sin motivo ni resumen no pausa el chat y Sofía sigue', async () => {
+test('derivar a equipo sin motivo ni resumen (o con un resumen de relleno) no pausa el chat y Sofía sigue', async () => {
   const { setter, repo, llamadas, avanzar } = montar({
     respuestas: [
-      [{ name: 'derivar_a_equipo', input: {} }],
+      [{ name: 'derivar_a_equipo', input: {} }, { name: 'derivar_a_equipo', input: { motivo: 'otro', resumen: 'no' } }, { name: 'derivar_a_equipo', input: { motivo: 'otro', resumen: 'no aplica en este caso' } }],
       [{ name: 'responder', input: { mensajes: ['has hecho CrossFit alguna vez o sería empezar desde cero?'], fase: 'f2 diagnóstico' } }],
     ],
   });
