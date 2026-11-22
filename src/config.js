@@ -49,6 +49,7 @@ export const config = {
     minDelay: num('AI_MIN_DELAY', 15),
     maxDelay: num('AI_MAX_DELAY', 50),
     typingSpeed: num('AI_TYPING_SPEED', 4),
+    typingMax: num('AI_TYPING_MAX', 12), // tope de «escribiendo…» por burbuja, en segundos
     horaInicio: num('AI_HORA_INICIO', 8),
     horaFin: num('AI_HORA_FIN', 0),
   },
