@@ -27,9 +27,9 @@ GHL_TOKEN=...
 GHL_LOCATION_ID=ZzJQpaOb7hMdco1EsiiF
 WEBHOOK_SECRET=...          # openssl rand -hex 24
 ANTHROPIC_API_KEY=...
-GHL_USER_PARLA=...          # el paso 3 lista los ids
-GHL_USER_GETAFE=...
-GHL_USER_LAS_ROSAS=...
+GHL_USER_PARLA=sLgnrdRLAga2CGdokcDQ     # usuario «MPO Parla»
+GHL_USER_GETAFE=iMUgiA6Znf4twwLX7iT2    # «MPO Getafe»
+GHL_USER_LAS_ROSAS=qIS1fE7PimrcQ5IJiIFy
 ```
 
 ## 3. Comprobar
@@ -49,6 +49,7 @@ GHL → Automatización → Workflows → nuevo desde cero:
 
 - **Disparador:** *Customer Replied* → filtro *Reply channel* es WhatsApp **o** Instagram.
   Activar *Allow re-entry* (si no, solo salta con el primer mensaje de cada contacto).
+- Ya hay un borrador «Metro Setter · Eventos · Respuesta lead»: se puede reutilizar.
 - **Acción:** *Webhook* (o *Custom Webhook*), método `POST`, URL `https://<dominio-webhook>/webhooks/ghl`.
   - Cabecera: `x-setter-secret` = el `WEBHOOK_SECRET`.
   - No hace falta nada en *Custom Data*: el servicio lee `contact_id`, `full_name`, `phone`, `tags` y
