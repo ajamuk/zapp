@@ -302,11 +302,11 @@ export function validarLanzamiento(d = {}, ahora = new Date()) {
   const f = new Date(d.programado_at);
   if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
   if (f < ahora - 60000) throw new Error('La fecha ya pasó.');
-  const canales = (d.canales || []).filter((c) => ['whatsapp', 'instagram'].includes(c));
+  const canales = (Array.isArray(d.canales) ? d.canales : []).filter((c) => ['whatsapp', 'instagram'].includes(c));
   if (!canales.length) throw new Error('Elige al menos un canal.');
   const dias = Math.round(Number(d.dias_actividad));
   if (!(dias >= 1 && dias <= 365)) throw new Error('Los días de actividad van de 1 a 365.');
-  const ids = (l) => [...new Set((l || []).map(Number).filter(Number.isInteger))];
+  const ids = (l) => [...new Set((Array.isArray(l) ? l : []).map(Number).filter(Number.isInteger))];
   return { nombre, texto, programado_at: f.toISOString(), dias_actividad: dias, canales: JSON.stringify(canales), excluir_etiquetas: JSON.stringify(ids(d.excluir_etiquetas)), solo_etiquetas: JSON.stringify(ids(d.solo_etiquetas)) };
 }
 

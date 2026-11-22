@@ -26,7 +26,7 @@ test('descarga: reintenta con el token de GHL si pide autenticación', async () 
     if (!headers.Authorization) return { ok: false, status: 403, headers: new Headers() };
     return { ok: true, status: 200, headers: new Headers({ 'content-type': 'audio/ogg; codecs=opus' }), arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
   };
-  const r = await medios.descargar('https://x/a.ogg', { fetchImpl, token: 'tk' });
+  const r = await medios.descargar('https://services.leadconnectorhq.com/a.ogg', { fetchImpl, token: 'tk' });
   assert.deepEqual(pedidas, ['sin', 'Bearer tk']);
   assert.equal(r.mime, 'audio/ogg');
   assert.equal(r.buffer.length, 3);

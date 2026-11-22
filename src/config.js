@@ -102,3 +102,18 @@ export const config = {
 };
 
 export const isLive = () => config.mode === 'live';
+
+/**
+ * Claves del servicio que faltan o son fáciles de adivinar (menos de 24 caracteres). Devuelve los avisos en texto;
+ * no cambia nada: sin clave, el webhook y el panel ya rechazan todas las peticiones.
+ */
+export function clavesDebiles(c = config) {
+  const avisos = [];
+  const mirar = (valor, nombre, para) => {
+    if (!valor) avisos.push(`Falta ${nombre} en la configuración: ${para} rechaza todas las peticiones.`);
+    else if (valor.length < 24) avisos.push(`${nombre} tiene ${valor.length} caracteres: usa una clave aleatoria de al menos 24 (openssl rand -hex 24).`);
+  };
+  mirar(c.webhookSecret, 'WEBHOOK_SECRET', 'el webhook de GHL');
+  mirar(c.adminToken, 'ADMIN_TOKEN', 'el panel');
+  return avisos;
+}

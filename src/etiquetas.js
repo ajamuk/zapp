@@ -54,7 +54,7 @@ export function validar(datos = {}, db, id = null) {
   const reglas = (Array.isArray(datos.reglas) ? datos.reglas : []).map(validarRegla).filter(Boolean);
   const ids = (l) => [...new Set((Array.isArray(l) ? l : []).map(Number).filter((x) => Number.isInteger(x) && x !== id))];
   const solo = ids(datos.solo_si); const nunca = ids(datos.nunca_si).filter((x) => !solo.includes(x));
-  const a = datos.acciones || {};
+  const a = datos.acciones && typeof datos.acciones === 'object' ? datos.acciones : {};
   const acciones = {
     pausar_ia: Boolean(a.pausar_ia), reanudar_ia: Boolean(a.reanudar_ia) && !a.pausar_ia,
     forzar_respuesta: Boolean(a.forzar_respuesta) && !a.pausar_ia, derivar: Boolean(a.derivar),
@@ -65,6 +65,7 @@ export function validar(datos = {}, db, id = null) {
 }
 
 function validarRegla(r = {}) {
+  if (!r || typeof r !== 'object') return null;
   const quien = ['lead', 'nosotros', 'cualquiera'].includes(r.quien) ? r.quien : 'lead';
   switch (r.tipo) {
     case 'texto': {

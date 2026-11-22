@@ -61,6 +61,7 @@ const lista = (v) => (Array.isArray(v) ? v : v == null || v === '' ? [] : String
 
 /** Normaliza criterios que llegan del panel o de una vista guardada. */
 export function limpiarCriterios(c = {}) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) c = {};
   const ids = (v) => [...new Set(lista(v).map(Number).filter(Number.isInteger))];
   const out = {
     estado: lista(c.estado).filter((e) => ESTADOS[e]),
@@ -160,7 +161,10 @@ export function contadores(db) {
  * Lista de chats. Usa `criterios` (objeto o JSON) si llegan; si no, los de la `vista` (id de sistema o propia);
  * si no, el `filtro` antiguo. `q` se suma siempre.
  */
-export function conversaciones(db, { filtro, vista, criterios, q = '', limite = 100 } = {}) {
+const COLUMNAS_LISTA = ['id', 'contact_id', 'channel', 'nombre', 'telefono', 'sede', 'tipo', 'fase', 'ai_paused', 'pause_reason', 'derivado', 'alta_estado',
+  'prueba_reservada', 'prueba_fecha', 'last_inbound_at', 'respond_at', 'valoracion', 'retomar', 'created_at', 'updated_at'].map((c) => `c.${c}`).join(', ');
+
+export function conversaciones(db, { filtro, vista, criterios, q = '', limite = 100, completo = false } = {}) {
   let combinados = {};
   if (criterios) combinados = typeof criterios === 'string' ? (() => { try { return JSON.parse(criterios); } catch { return {}; } })() : criterios;
   else if (vista) {
@@ -170,14 +174,16 @@ export function conversaciones(db, { filtro, vista, criterios, q = '', limite = 
   } else if (filtro && ESTADOS[filtro]) combinados = { estado: [filtro] };
   if (q) combinados = { ...combinados, q };
   const f = filtrosSql(combinados);
-  const filas = db.prepare(`SELECT c.*,
-      (SELECT texto FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) ultimo_texto,
+  // La lista del panel solo lleva lo que pinta (lo demás —resumen, análisis, último turno— va en el detalle del
+  // chat): con 100 chats, la respuesta pesa varias veces menos. `completo` lo trae todo (exportar).
+  const filas = db.prepare(`SELECT ${completo ? 'c.*' : COLUMNAS_LISTA},
+      (SELECT ${completo ? 'texto' : 'substr(texto, 1, 200)'} FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) ultimo_texto,
       (SELECT autor FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) ultimo_autor,
       (SELECT created_at FROM messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) ultimo_at,
       (SELECT count(*) FROM scheduled s WHERE s.conversation_id = c.id AND s.estado = 'pendiente') seguimientos_pendientes
     FROM conversations c WHERE ${f.where}
     ORDER BY datetime(IFNULL(ultimo_at, c.updated_at)) DESC LIMIT @limite`)
-    .all({ ...f.params, limite: Math.min(500, Number(limite) || 100) });
+    .all({ ...f.params, limite: Math.max(1, Math.min(completo ? 5000 : 500, Math.floor(Number(limite)) || 100)) });
   const etq = deChats(db, filas.map((c) => c.id));
   return filas.map((c) => ({ ...c, etiquetas: etq[c.id] || [] }));
 }
@@ -327,12 +333,15 @@ export function consumo(db, { meses = 6, dias = 31, eurPorUsd = Number(process.e
 }
 
 // ---------- Exportar ----------
-const celda = (v) => { const t = v == null ? '' : String(v).replace(/\r?\n/g, ' '); return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+// Un nombre o un mensaje de un lead que empiece por = + - @ se abriría en Excel como fórmula: se le antepone un
+// apóstrofo para que quede como texto (los teléfonos y los números negativos se dejan como están).
+const sinFormula = (t) => (/^[=+\-@\t]/.test(t) && !/^[+-]?[\d\s.,]+$/.test(t) ? `'${t}` : t);
+const celda = (v) => { const t = sinFormula(v == null ? '' : String(v).replace(/\r?\n/g, ' ')); return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 const csv = (cab, filas) => `\uFEFF${[cab, ...filas].map((f) => f.map(celda).join(';')).join('\r\n')}\r\n`; // BOM + «;» para que Excel en español lo abra bien
 
 /** CSV de los chats que cumplen los criterios: uno por fila, o todos sus mensajes (formato «mensajes»). */
 export function exportar(db, { criterios, q = '', formato = 'chats' } = {}) {
-  const chats = conversaciones(db, { criterios: criterios || {}, q, limite: 5000 });
+  const chats = conversaciones(db, { criterios: criterios || {}, q, limite: 5000, completo: true });
   if (formato === 'mensajes') {
     const filas = [];
     const st = db.prepare("SELECT autor, texto, adjunto, transcripcion, enviado, created_at FROM messages WHERE conversation_id = ? AND autor != 'sistema' ORDER BY id");

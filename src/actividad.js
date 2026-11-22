@@ -8,7 +8,7 @@ const REGLAS = [
   [/^PUT \/panel\/etiquetas\/\d+$/, (b) => `Editó la etiqueta «${b.nombre || ''}»`],
   [/^DELETE \/panel\/etiquetas\/(\d+)$/, (b, m) => `Borró la etiqueta #${m[1]}`],
   [/^POST \/panel\/etiquetas\/(\d+)\/aplicar$/, (b, m) => `Aplicó la etiqueta #${m[1]} a chats anteriores`],
-  [/^POST \/panel\/etiquetas\/importar$/, (b) => `Importó de GHL: ${(b.nombres || []).join(', ')}`],
+  [/^POST \/panel\/etiquetas\/importar$/, (b) => `Importó de GHL: ${(Array.isArray(b.nombres) ? b.nombres : []).join(', ')}`],
   [/^POST \/panel\/conversaciones\/([^/]+)\/etiquetas$/, (b, m) => `Puso la etiqueta #${b.etiqueta} en el chat ${m[1]}`],
   [/^DELETE \/panel\/conversaciones\/([^/]+)\/etiquetas\/(\d+)$/, (b, m) => `Quitó la etiqueta #${m[2]} del chat ${m[1]}`],
   [/^POST \/panel\/conversaciones\/([^/]+)\/pausar$/, (b, m) => `Pausó a Sofía en el chat ${m[1]}`],
@@ -26,7 +26,7 @@ const REGLAS = [
   [/^POST \/panel\/seguimientos\/(\d+)\/cancelar$/, (b, m) => `Canceló el envío programado #${m[1]}`],
   [/^POST \/panel\/lanzamientos$/, (b) => `Programó el lanzamiento «${b.nombre}» para ${b.programado_at}`],
   [/^POST \/panel\/lanzamientos\/(\d+)\/cancelar$/, (b, m) => `Canceló el lanzamiento #${m[1]}`],
-  [/^PUT \/panel\/ajustes$/, (b) => `Cambió los ajustes: ${Object.keys(b).join(', ')}`],
+  [/^PUT \/panel\/ajustes$/, (b) => `Cambió los ajustes: ${Object.keys(b || {}).join(', ')}`],
   [/^POST \/panel\/instrucciones$/, (b) => `${b.produccion ? 'Puso en producción' : 'Guardó como borrador'} una versión nueva de ${b.doc === 'negocio' ? 'la base de conocimiento' : 'el prompt'}: ${b.nota || ''}`],
   [/^POST \/panel\/instrucciones\/(\d+)\/activar$/, (b, m) => `Puso en producción la versión #${m[1]} de las instrucciones`],
   [/^POST \/panel\/reportes$/, (b) => `Envió un reporte general: «${String(b.que_fallo || '').slice(0, 80)}»`],
@@ -57,7 +57,9 @@ export function middleware(db) {
     if (req.method === 'GET') return next();
     res.on('finish', () => {
       if (res.statusCode >= 400) return;
-      const texto = describir(req.method, req.path, req.body);
+      // Esto corre después de responder: un cuerpo raro no puede tumbar el servicio por apuntar la actividad
+      let texto = null;
+      try { texto = describir(req.method, req.path, req.body); } catch (e) { console.error('[actividad]', e.message); }
       if (!texto) return;
       const quien = req.get('x-cfmpo-user') || (req.get('x-metrotools-client') ? 'MetroTools' : 'clave de administración');
       try { db.prepare('INSERT INTO actividad (quien, accion, ruta) VALUES (?, ?, ?)').run(String(quien).slice(0, 80), texto.slice(0, 500), `${req.method} ${req.path}`); } catch (e) { console.error('[actividad]', e.message); }

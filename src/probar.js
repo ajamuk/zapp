@@ -388,11 +388,16 @@ export function exportar(d, conAnalisis = true) {
 }
 
 /** Envía un audio o imagen guardado (solo dentro de la carpeta de medios). */
+const TIPOS_VISIBLES = /^(image\/(jpeg|png|webp|gif|heic)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/;
 export function enviarMedio(res, m, base = carpetaMedios()) {
   if (!m?.media_ruta) return res.status(404).json({ error: 'Sin archivo.' });
   const abs = path.resolve(base, m.media_ruta);
   if (!abs.startsWith(path.resolve(base) + path.sep) || !fs.existsSync(abs)) return res.status(404).json({ error: 'El archivo ya no está.' });
   res.set('Cache-Control', 'private, max-age=3600');
-  if (m.media_mime) res.type(m.media_mime);
+  // Lo que manda un lead puede venir con cualquier tipo: solo se muestran en el navegador imágenes, audio, vídeo y
+  // PDF. Lo demás (HTML, SVG…) se entrega como descarga, para que nunca se ejecute con la sesión del panel.
+  const mime = String(m.media_mime || '').toLowerCase();
+  if (TIPOS_VISIBLES.test(mime)) res.type(mime);
+  else res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment' });
   return res.sendFile(abs);
 }

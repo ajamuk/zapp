@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { config } from './config.js';
+import { config, clavesDebiles } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
@@ -60,6 +60,9 @@ const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
 });
+// Claves que faltan o son cortas: se avisa en el registro y en las alertas del panel (sin enseñar la clave)
+const debiles = clavesDebiles();
+if (debiles.length) { debiles.forEach((a) => console.warn('[seguridad]', a)); registrarAlerta(repo.db, { clave: 'claves-debiles', tipo: 'servidor', titulo: 'Hay claves del servicio que faltan o son demasiado cortas', detalle: debiles.join('\n'), nivel: 'aviso' }); } else resolverAlerta(repo.db, 'claves-debiles');
 servidor.on('error', (e) => { console.error('No se puede abrir el puerto:', e.message); process.exit(1); });
 
 // Índice de socios desde AimHarder: cada 4 horas. Al arrancar solo se descargan las sedes con datos de más
