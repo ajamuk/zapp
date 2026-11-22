@@ -639,7 +639,7 @@ export class Setter {
         continue;
       }
       try {
-        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r) });
+        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
         this.repo.addMessage({ ...msg, external_id: out?.messageId || null });
       } catch (e) {
         console.error('[recursos]', e.message);

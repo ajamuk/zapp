@@ -59,6 +59,8 @@ test('recursos: Sofía los ve, los envía por URL pública en real y solo como b
   }
   assert.equal(enviados.length, 1);
   assert.equal(enviados[0].url, recursos.urlPublica(r));
+  assert.ok(enviados[0].texto, 'por WhatsApp el archivo siempre lleva texto (sin él, Twilio lo rechaza)');
+  assert.equal(recursos.pieDeArchivo({ nombre: 'parla-academy-tarifas' }), 'aquí tienes las tarifas');
   assert.match(notas.at(-1), /adjuntaría el archivo «Horario Parla»/);
   const m = db.prepare("SELECT * FROM messages WHERE conversation_id = 'ctrue' AND adjunto = 'imagen'").get();
   assert.equal(m.media_ruta, r.media_ruta);
