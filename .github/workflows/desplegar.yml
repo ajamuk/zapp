@@ -35,7 +35,6 @@ jobs:
     environment: produccion
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
       - name: Preparar SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -46,18 +45,16 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/clave && chmod 600 ~/.ssh/clave
           printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
-      - name: Enviar el código y desplegar
+      - name: Desplegar el commit de main
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           test -n "$VPS_HOST" && test -n "$VPS_USER" || { echo "::error::Faltan los secretos VPS_HOST o VPS_USER"; exit 1; }
-          OPC="-i $HOME/.ssh/clave -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20"
-          PAQUETE="/tmp/zapp-${GITHUB_SHA}.tgz"
-          git archive --format=tar.gz -o zapp.tgz HEAD
-          scp $OPC -P "${VPS_PORT:-22}" zapp.tgz "$VPS_USER@$VPS_HOST:$PAQUETE"
-          ssh $OPC -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" "bash -s -- '$PAQUETE' '$GITHUB_SHA'" < deploy/desplegar.sh
+          ssh -nT -i "$HOME/.ssh/clave" -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=20 \
+            -p "${VPS_PORT:-22}" -- "$VPS_USER@$VPS_HOST" "deploy $GITHUB_SHA"
       - name: Borrar la clave
         if: always()
         run: rm -f ~/.ssh/clave
