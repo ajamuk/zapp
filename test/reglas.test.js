@@ -226,3 +226,31 @@ test('lanzamientos: destinatarios filtrados, envío repartido con texto fijo, y 
   assert.equal(db.prepare('SELECT estado FROM lanzamientos WHERE id = 2').get().estado, 'cancelado');
   void vip;
 });
+
+test('«Información tras reserva» solo sale si tiene una clase de prueba reservada', async () => {
+  const { repo, db, setter, sal, avanzar } = montar({ respuestas: [responder({ mensajes: ['te dejo la dirección para el miércoles'] })] });
+  assert.equal(reglas.obtener(db, 'info-tras-reserva').excluir.soloConPrueba, true);
+  for (const r of reglas.listar(db)) if (r.id !== 'info-tras-reserva') reglas.actualizar(db, r.id, { activo: false });
+  repo.schedule('c1', 'info-tras-reserva', new Date(T0.getTime() + 3600e3).toISOString(), null, 'silencio');
+  avanzar(3600e3 + 1000);
+  await procesarSeguimientos(setter);
+  assert.match(db.prepare("SELECT detalle FROM scheduled WHERE regla_id = 'info-tras-reserva'").get().detalle, /sin clase de prueba/);
+  repo.updateConv('c1', { prueba_reservada: 1 });
+  repo.schedule('c1', 'info-tras-reserva', new Date(T0.getTime() + 2 * 3600e3).toISOString(), null, 'silencio');
+  avanzar(3600e3);
+  await procesarSeguimientos(setter);
+  assert.deepEqual(sal.enviados, ['te dejo la dirección para el miércoles']);
+  // Se puede quitar o poner desde el panel
+  reglas.actualizar(db, 'info-tras-reserva', { excluir: { soloConPrueba: false } });
+  assert.equal(reglas.obtener(db, 'info-tras-reserva').excluir.soloConPrueba, false);
+});
+
+test('los seguimientos sin plantilla se programan dentro de las 24 h desde el último mensaje del lead', () => {
+  const { repo, setter, avanzar } = montar();
+  avanzar(10 * 60000); // Sofía contesta 10 min después del lead
+  setter.programarSeguimientos({ ...repo.getConv('c1'), id: 'c1' });
+  const p = Object.fromEntries(pend(repo).map((x) => [x.regla_id, x.due_at]));
+  assert.equal(p['comercial-5h'], new Date(T0.getTime() + 10 * 60000 + 300 * 60000).toISOString());
+  assert.equal(p['ultimo-intento-24h'], new Date(T0.getTime() + 24 * 3600e3 - 15 * 60000).toISOString()); // no 23 h 58 después de Sofía
+  assert.equal(p['cierre-4-dias'], new Date(T0.getTime() + 10 * 60000 + 5760 * 60000).toISOString()); // va por plantilla
+});

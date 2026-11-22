@@ -89,7 +89,7 @@ export const TOOLS = [
   },
   {
     name: 'derivar_a_equipo',
-    description: 'Pasa la conversación a una persona del equipo y pausa la IA en este chat.',
+    description: 'Pasa la conversación a una persona del equipo y pausa la IA en este chat. Solo cuando una persona tiene que encargarse (ver «Cuándo pasar a una persona»). Si no hay nada que derivar, no la llames: no existe una llamada «vacía» ni «no aplica»; para contestar usa solo `responder`.',
     input_schema: {
       type: 'object',
       properties: {

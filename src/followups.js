@@ -50,6 +50,7 @@ export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() 
   const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
     futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
+    'Las fechas y los días que salen en la conversación eran correctos cuando se dijeron (aunque ponga «hoy», «mañana» o «estamos a…»): no los corrijas ni te disculpes por ellos. Si alguno ya ha pasado, propón directamente el siguiente que encaje.',
     contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla),
     regla.tipo === 'tras-cita' && s?.resultado ? `Resultado de la prueba (comprobado ahora): ${RESULTADOS[s.resultado] || s.resultado}.` : '',
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
@@ -118,6 +119,7 @@ function motivoParaNoEnviar(s, regla, conv, ajustes, ahora) {
   if ((deSofia || regla.excluir.pausada) && (conv.ai_paused || conv.derivado)) return 'IA pausada o derivada';
   if (deSofia && conv.alta_estado === 'pendiente') return 'alta pendiente';
   if (regla.excluir.clientes && (conv.tipo === 'socio' || conv.alta_estado === 'preparada')) return 'ya es cliente';
+  if (regla.excluir.soloConPrueba && !conv.prueba_reservada) return 'sin clase de prueba reservada';
   if (regla.excluir.calladasHoras && conv.last_inbound_at && ahora - new Date(conv.last_inbound_at) < regla.excluir.calladasHoras * 3600e3) return `escribió hace menos de ${regla.excluir.calladasHoras} h`;
   return null;
 }
