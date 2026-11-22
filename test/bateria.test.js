@@ -18,11 +18,11 @@ const lead = (frases) => { const cola = [...frases]; return async () => ({ conte
 
 test('casos: se cargan los reales de Zapp (anonimizados) y los escenarios, con reparto estable en reserva', () => {
   const db = openDb(':memory:');
-  assert.equal(bat.sembrarCasos(db), 61);
+  assert.equal(bat.sembrarCasos(db), 62);
   assert.equal(bat.sembrarCasos(db), 0); // no duplica
   const c = bat.listarCasos(db);
   assert.equal(c.filter((x) => x.origen === 'zapp').length, 32);
-  assert.equal(c.filter((x) => x.tipo === 'escenario').length, 29);
+  assert.equal(c.filter((x) => x.tipo === 'escenario').length, 30);
   const reserva = c.filter((x) => x.grupo === 'reserva').length;
   assert.ok(reserva >= 8 && reserva <= 22, `reserva: ${reserva}`);
   assert.ok(!c.some((x) => /\d{9}|@\w+\.\w+/.test(JSON.stringify(x.contexto)) && x.origen === 'zapp'));
@@ -151,4 +151,11 @@ test('el juez ve la base de conocimiento (la del borrador si se prueba uno) y la
   assert.deepEqual(sistema.at(-1).cache_control, { type: 'ephemeral' });
   await bat.ejecutarCaso(db, caso, { complete: sofia('es nuestro programa para empezar de cero'), completeJSON, borradores: { negocio: b.id } });
   assert.match(sistema.map((x) => x.text).join('\n'), /DATO-DEL-BORRADOR/);
+});
+
+test('en un momento, el juez distingue la conversación previa (no la escribió Sofía) de lo que contesta Sofía', () => {
+  const t = bat.textoConversacion([{ autor: 'lead', texto: 'hola' }, { autor: 'ia', texto: 'horarios de antes' }, { autor: 'lead', texto: 'tarde' }, { autor: 'ia', texto: 'respuesta nueva' }], 3);
+  assert.match(t, /IA ANTERIOR: horarios de antes/);
+  assert.match(t, /no se evalúa\)?.*\n?SOFÍA: respuesta nueva|Desde aquí contesta Sofía ---\nSOFÍA: respuesta nueva/);
+  assert.doesNotMatch(bat.textoConversacion([{ autor: 'ia', texto: 'x' }]), /IA ANTERIOR|---/);
 });

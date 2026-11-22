@@ -151,7 +151,19 @@ export function revisarRespuesta(input) {
   if (/parla/.test(t) && /getafe/.test(t) && /las rosas/.test(t) && !/ca[ñn]averal/.test(t)) {
     return 'No enviado: has enumerado las sedes sin El Cañaveral. Vuelve a llamar a `responder` con los mismos mensajes, nombrando las cuatro: Parla, Getafe, Las Rosas y El Cañaveral, que es nuestra próxima apertura el 1 de febrero de 2027.';
   }
+  if (dosPreguntas(input?.mensajes)) {
+    return 'No enviado: haces dos preguntas en el mismo turno. Vuelve a llamar a `responder` con una sola pregunta, la que más desbloquea, en la última burbuja; la otra, para el turno siguiente.';
+  }
   return null;
+}
+
+/** Dos preguntas en un turno: dos «?» o una pregunta que engancha otra con «, y …» («cuántos días, y te va mejor mañana o tarde?»). */
+export function dosPreguntas(mensajes) {
+  const ms = (Array.isArray(mensajes) ? mensajes : []).filter((m) => !/^\[(imagen|audio|video|documento): /.test(String(m).trim()));
+  const t = ms.join('\n');
+  if ((t.match(/\?/g) || []).length > 1) return true;
+  const ultima = t.split(/(?<=[.!\n])/).find((x) => x.includes('?')) || '';
+  return /,\s*y\s+(qu[eé]|cu[aá]l|cu[aá]nt[oa]s?|cu[aá]ndo|c[oó]mo|d[oó]nde|te\s+(va|viene|vendr[ií]a|encaja|parece)|prefieres|puedes)\b/i.test(ultima);
 }
 
 /** Respaldo en el servidor si el modelo se niega. Haiku no lo tiene: con él se llama sin `fallbacks`. */
