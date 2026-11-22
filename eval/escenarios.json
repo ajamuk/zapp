@@ -417,11 +417,11 @@
   "nombre": "Quiere apuntarse ya a El Cañaveral",
   "tema": "canaveral",
   "grupo": "reserva",
-  "perfil": "Te llamas Lucía Martín Ruiz, vives en El Cañaveral, nunca has hecho CrossFit. Has visto la oferta del 50 % y quieres apuntarte ya para asegurarte el descuento. Quieres ir 2 días por semana. Si te piden datos los das: lucia.martin@ejemplo.es, nacida el 14 de marzo de 1992. Aceptas pagar ahora la primera mensualidad.",
+  "perfil": "Te llamas Lucía Martín Ruiz, vives en El Cañaveral, nunca has hecho CrossFit. Has visto la oferta del 50 % y quieres apuntarte ya para asegurarte el descuento. Quieres ir 2 días por semana. Si te piden datos los das: lucia.martin@ejemplo.es, nacida el 14 de marzo de 1992. Aceptas pagar la primera mensualidad en cuanto se pueda.",
   "apertura": "hola! he visto lo del 50% en el cañaveral, quiero apuntarme ya, qué tengo que hacer?",
   "criterios": [
    "Da el precio de Academy 2 días en El Cañaveral con el descuento vigente (47,50 € al mes en febrero, marzo y abril) y la cuota habitual desde mayo (95 €)",
-   "Deja claro que empieza el 1 de febrero de 2027 y que la primera mensualidad se paga ahora, al hacer el alta, no en febrero",
+   "Deja claro que empieza el 1 de febrero de 2027, que el pago en la app aún no está habilitado (no le pide que pague ya) y que, cuando se habilite, pagar la primera mensualidad es lo que le reserva la plaza con el descuento",
    "Pide los datos del alta (nombre y apellidos, fecha de nacimiento, email) y la tramita cuando los tiene",
    "No dice cuántas plazas quedan ni pregunta qué día quiere empezar"
   ],
