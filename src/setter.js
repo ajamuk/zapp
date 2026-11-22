@@ -33,6 +33,8 @@ export function textoComparable(t) {
   return String(t || '').split('\n').filter((l) => !/^\s*(💬|☑️)|^\s*(sent from|received on|from other device)\b/i.test(l))
     .join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
 }
+// Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
+const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
 
 /**
@@ -56,6 +58,22 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
+    // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
+    // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
+    return this.enSerie(evt.conversationId, () => this.procesarEvento(evt));
+  }
+
+  /** Ejecuta `fn` cuando haya terminado lo anterior con la misma clave (los fallos no cortan la cola). */
+  enSerie(clave, fn) {
+    this.colas ??= new Map();
+    const p = (this.colas.get(clave) || Promise.resolve()).then(fn);
+    const guardada = p.catch(() => {});
+    this.colas.set(clave, guardada);
+    guardada.then(() => { if (this.colas.get(clave) === guardada) this.colas.delete(clave); });
+    return p;
+  }
+
+  async procesarEvento(evt) {
     const copia = !CANALES_NATIVOS.has(evt.canal);
     if (evt.evento === 'outbound') {
       // El mismo mensaje llega dos veces (nativo y copia del conector, en cualquier orden): solo cuenta el primero.
@@ -104,11 +122,12 @@ export class Setter {
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
     const ajustesC = leerAjustes(this.repo);
     if (nuevo && ajustesC.canalesPausa[conv.channel]) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `los chats de ${conv.channel} empiezan en pausa` });
-    const pararLead = contienePalabra(evt.texto, ajustesC.palabrasParar);
-    if (pararLead) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `el lead escribió «${pararLead}»`, respond_at: null });
     let adjunto = tipoAdjunto(evt.adjuntos);
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto });
+    // Un webhook repetido de GHL no cambia nada (tampoco vuelve a pausar un chat que el equipo ya reanudó)
     if (!ins) return { ignorado: 'duplicado' };
+    const pararLead = contienePalabra(evt.texto, ajustesC.palabrasParar);
+    if (pararLead) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `el lead escribió «${pararLead}»`, respond_at: null });
     // Audios e imágenes: se descargan y los audios se transcriben antes de que Sofía conteste
     let transcripcion = null;
     if (evt.adjuntos?.length || evt.subida) {
@@ -208,11 +227,14 @@ export class Setter {
     const reintentos = c.reintentos || 0;
     const ultimo = reintentos >= ESPERAS_REINTENTO.length;
     let reloj;
+    // Si salta el tope, la respuesta que siguiera en marcha queda anulada: no enviará nada cuando termine
+    // (si no, podría salir tarde y repetida con el reintento).
+    const control = { cancelado: false };
     try {
       // Tope de seguridad: ningún chat ocupa un hueco más de 5 minutos
       await Promise.race([
-        this.responder(c.id, { avisarFallo: ultimo }),
-        new Promise((_, mal) => { reloj = setTimeout(() => mal(new Error('la respuesta ha tardado más de 5 minutos')), 5 * 60000); reloj.unref?.(); }),
+        this.responder(c.id, { avisarFallo: ultimo, control }),
+        new Promise((_, mal) => { reloj = setTimeout(() => { control.cancelado = true; mal(new Error('la respuesta ha tardado más de 5 minutos')); }, this.topeRespuestaMs || 5 * 60000); reloj.unref?.(); }),
       ]);
       this.repo.updateConv(c.id, { respondiendo_desde: null, reintentos: 0 });
     } catch (e) {
@@ -312,9 +334,11 @@ export class Setter {
     return out.map((x) => (x.content.every((b) => b.type === 'text') ? { role: x.role, content: x.content.map((b) => b.text).join('\n') } : x));
   }
 
-  async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null, avisarFallo = true } = {}) {
+  async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null, avisarFallo = true, control = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
+    const ultimoDelLead = () => this.repo.db.prepare("SELECT max(id) m FROM messages WHERE conversation_id = ? AND autor = 'lead'").get(convId)?.m ?? 0;
+    const leadAlEmpezar = ultimoDelLead();
     const system = this.sistema(conv, extraContexto);
     const messages = await this.mensajesModelo(this.repo.history(convId));
     const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
@@ -336,6 +360,23 @@ export class Setter {
     // Mientras Sofía pensaba, alguien del equipo ha escrito o han pausado el chat: no se envía nada
     const ahoraConv = this.repo.getConv(convId);
     if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
+    const hechoFuera = efectos.derivado || efectos.herramientas.some((h) => NO_REPETIBLES.includes(h.nombre));
+    // El turno se anuló por tardar demasiado (ya hay un reintento en cola): esta respuesta no sale. Si en el turno
+    // se hizo algo que no se repite (alta, prueba, derivación), se quita el reintento y se avisa al equipo.
+    if (control?.cancelado) {
+      if (hechoFuera) {
+        this.repo.updateConv(convId, { respond_at: null, reintentos: 0 });
+        await this.safe(() => this.avisar?.(`Sofía tardó demasiado en un turno en el que ya había hecho una gestión (${efectos.herramientas.map((h) => h.nombre).join(', ')}) y no ha enviado su respuesta. Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
+      }
+      return null;
+    }
+    // El lead ha vuelto a escribir mientras Sofía pensaba y ya tiene otro turno en cola: esta respuesta contestaría
+    // a medias y luego saldría otra. Se descarta y contesta una sola vez con todo delante. No se descarta si en
+    // este turno se hizo una gestión que no se repite.
+    if (motivo === 'respuesta' && !hechoFuera && ahoraConv.respond_at && ultimoDelLead() > leadAlEmpezar) {
+      console.log(`[respuesta] ${convId}: el lead escribió mientras Sofía pensaba; se contesta con el mensaje nuevo incluido`);
+      return { ...respuesta, mensajes: [], descartada: true };
+    }
 
     if (conv.prompt_v == null) this.repo.updateConv(convId, { prompt_v: this.versiones().prompt_v });
     await this.aplicarRespuesta(conv, respuesta, efectos);
@@ -345,14 +386,15 @@ export class Setter {
       for (const r of this.imagenesInfo(conv, efectos.info, mensajes)) if (!(efectos.recursos ||= []).some((x) => x.id === r.id)) efectos.recursos.push(r);
     }
     try {
-      if (mensajes.length) await this.enviar(conv, mensajes, plantilla);
+      // null = el turno se anuló por tardar antes de que saliera nada: no se envía ni se programa nada más
+      if (mensajes.length && (await this.enviar(conv, mensajes, plantilla, control)) === null) return null;
       if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
     } catch (e) {
       // GHL ha fallado al enviar: queda registrado y el aviso del alta se intenta igualmente. Si en este turno
       // ya se hizo algo que no se debe repetir (alta, derivación), no se reintenta el turno: se avisa al equipo.
       this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: `envío: ${e.message}`, ...this.versiones() });
       if (efectos.avisoAlta) await this.enviarAvisoAlta(conv, efectos.avisoAlta);
-      e.noReintentar = Boolean(efectos.avisoAlta || efectos.derivado || efectos.herramientas.some((h) => ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'].includes(h.nombre)));
+      e.noReintentar = Boolean(efectos.avisoAlta || hechoFuera);
       if (e.noReintentar) await this.safe(() => this.avisar?.(`Sofía no ha podido enviar su respuesta por un fallo de GHL (${e.message}). Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
       throw e;
     }
@@ -425,7 +467,7 @@ export class Setter {
     return id;
   }
 
-  async enviar(conv, mensajes, plantilla = null) {
+  async enviar(conv, mensajes, plantilla = null, control = null) {
     const { escritura } = retardoHumano(mensajes, { random: this.random });
     if (!this.live) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
@@ -445,6 +487,9 @@ export class Setter {
       await this.sleep(escritura[i]);
       // Alguien del equipo ha escrito mientras Sofía «escribía»: no se mandan las burbujas que faltan
       if (i > 0 && !pausadaAlEmpezar && this.repo.getConv(conv.id)?.ai_paused) break;
+      // El turno se anuló por tardar mientras Sofía «escribía» la primera burbuja: no sale nada (ya hay un
+      // reintento en cola). Si ya había salido alguna, se termina de enviar para no dejar la respuesta a medias.
+      if (control?.cancelado && !ids.length) return null;
       const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto: mensajes[i] });
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[i] });
       ids.push(r?.messageId || null);

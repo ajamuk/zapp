@@ -4,6 +4,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns/promises';
 import { execFile } from 'node:child_process';
 import { config } from './config.js';
 
@@ -22,16 +24,86 @@ export function tipoDe(mime = '', url = '') {
   return 'documento';
 }
 
-/** Descarga un adjunto de GHL (si pide autenticación, se reintenta con el token de GHL). */
-export async function descargar(url, { fetchImpl = fetch, token = config.ghl.token } = {}) {
-  const pedir = (cab) => fetchImpl(url, { headers: cab, signal: AbortSignal.timeout(30000) });
-  let r = await pedir({});
-  if ((r.status === 401 || r.status === 403) && token) r = await pedir({ Authorization: `Bearer ${token}` });
+// Hosts de GoHighLevel a los que se puede enviar el token si la descarga pide autenticación. A cualquier otro
+// host nunca se le manda (un adjunto alojado fuera no debe recibir la clave de GHL). GHL_MEDIA_HOSTS añade más.
+const hostsGhl = () => {
+  let propio = '';
+  try { propio = new URL(config.ghl.baseUrl).hostname; } catch { /* sin base */ }
+  return [propio, 'leadconnectorhq.com', 'gohighlevel.com', 'msgsndr.com', 'highlevel.com', ...String(process.env.GHL_MEDIA_HOSTS || '').split(',')]
+    .map((h) => h.trim().toLowerCase()).filter(Boolean);
+};
+export const esHostGhl = (host) => { const h = String(host || '').toLowerCase(); return hostsGhl().some((x) => h === x || h.endsWith(`.${x}`)); };
+
+/** ¿Dirección interna (este servidor, red privada, enlace local)? A esas no se descarga nada. */
+export function ipPrivada(ip) {
+  const s = String(ip || '').toLowerCase().replace(/^\[|\]$/g, '');
+  let v4 = s.startsWith('::ffff:') ? s.slice(7) : s;
+  // IPv4 dentro de IPv6 escrita en hexadecimal (::ffff:7f00:1 es 127.0.0.1)
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v4);
+  if (s.startsWith('::ffff:') && hex) { const a = parseInt(hex[1], 16), b = parseInt(hex[2], 16); v4 = `${a >> 8}.${a & 255}.${b >> 8}.${b & 255}`; }
+  if (net.isIPv4(v4)) {
+    const [a, b] = v4.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  if (net.isIPv6(s)) return s === '::' || s === '::1' || /^f[cd]/.test(s) || /^fe[89ab]/.test(s);
+  return false;
+}
+
+/** Comprueba que la URL es https y no apunta al propio servidor ni a una red interna. Devuelve el objeto URL. */
+export async function urlSegura(url, { resolver = null } = {}) {
+  let u;
+  try { u = new URL(String(url)); } catch { throw new Error('dirección del adjunto no válida'); }
+  if (u.protocol !== 'https:') throw new Error('el adjunto no está en una dirección https');
+  const host = u.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || ipPrivada(host)) throw new Error('el adjunto apunta a una dirección interna');
+  if (resolver && !net.isIP(host.replace(/^\[|\]$/g, ''))) {
+    const dirs = await resolver(host);
+    if (!dirs.length || dirs.some((d) => ipPrivada(d.address))) throw new Error('el adjunto apunta a una dirección interna');
+  }
+  return u;
+}
+
+/** Lee el cuerpo sin pasar nunca del tamaño máximo (aunque el servidor no diga cuánto ocupa). */
+async function leerConTope(r, max = MAX_BYTES) {
+  if (Number(r.headers?.get?.('content-length') || 0) > max) throw new Error('archivo demasiado grande');
+  const lector = r.body?.getReader?.();
+  if (!lector) {
+    const buffer = Buffer.from(await r.arrayBuffer());
+    if (buffer.length > max) throw new Error('archivo demasiado grande');
+    return buffer;
+  }
+  const trozos = []; let total = 0;
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) { await lector.cancel().catch(() => {}); throw new Error('archivo demasiado grande'); }
+    trozos.push(Buffer.from(value));
+  }
+  return Buffer.concat(trozos);
+}
+
+/**
+ * Descarga un adjunto de GHL. Solo https y nunca de una dirección interna (ni siguiendo una redirección). Si pide
+ * autenticación, se reintenta con el token de GHL, pero solo cuando el archivo está en un host de GHL.
+ */
+export async function descargar(url, { fetchImpl = fetch, token = config.ghl.token, resolver } = {}) {
+  // Con el fetch real se resuelve el nombre para descartar redes internas; en los tests no hay red
+  const res = resolver !== undefined ? resolver : fetchImpl === fetch ? (h) => dns.lookup(h, { all: true }) : null;
+  const limite = AbortSignal.timeout(30000);
+  let actual = await urlSegura(url, { resolver: res });
+  let r;
+  for (let salto = 0; ; salto++) {
+    const pedir = (cab) => fetchImpl(actual.href, { headers: cab, signal: limite, redirect: 'manual' });
+    r = await pedir({});
+    if ((r.status === 401 || r.status === 403) && token && esHostGhl(actual.hostname)) r = await pedir({ Authorization: `Bearer ${token}` });
+    const destino = r.status >= 300 && r.status < 400 ? r.headers?.get?.('location') : null;
+    if (!destino) break;
+    if (salto >= 3) throw new Error('demasiadas redirecciones');
+    actual = await urlSegura(new URL(destino, actual).href, { resolver: res });
+  }
   if (!r.ok) throw new Error(`descarga ${r.status}`);
-  const largo = Number(r.headers.get('content-length') || 0);
-  if (largo > MAX_BYTES) throw new Error('archivo demasiado grande');
-  const buffer = Buffer.from(await r.arrayBuffer());
-  if (buffer.length > MAX_BYTES) throw new Error('archivo demasiado grande');
+  const buffer = await leerConTope(r);
   const mime = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   return { buffer, mime };
 }

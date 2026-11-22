@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
@@ -27,10 +28,39 @@ import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
-const metroPanel = readFileSync(panelPath, 'utf8').replace('<!-- metrotools-assets -->', `
+const htmlPanel = readFileSync(panelPath, 'utf8');
+const metroPanel = htmlPanel.replace('<!-- metrotools-assets -->', `
 <link rel="stylesheet" href="/metro-os/v4.4.0/metro-layout.css">
 <script defer src="/metro-os/v4.4.0/metro-model.js"></script>
 <script defer src="/metro-os/v4.4.0/metro-platform.js"></script>`);
+
+// Política de contenido del panel suelto (/panel): solo se ejecuta el script de la propia página (por su huella)
+// y solo habla con este servidor. Si alguna vez se colara HTML de un lead, no podría ejecutar nada ni sacar datos.
+const scriptPanel = /<script>([\s\S]*?)<\/script>/.exec(htmlPanel)?.[1] ?? '';
+const CSP_PANEL = [
+  "default-src 'none'", `script-src 'sha256-${crypto.createHash('sha256').update(scriptPanel, 'utf8').digest('base64')}'`,
+  "style-src 'unsafe-inline'", "img-src 'self' blob: data:", "media-src 'self' blob:", "connect-src 'self'",
+  "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'",
+].join('; ');
+
+/**
+ * Envía una página HTML que ya está en memoria, comprimida si el navegador lo admite (200 KB se quedan en unos 45).
+ * No lleva datos, así que el navegador la guarda y solo pregunta si ha cambiado (ETag → 304).
+ */
+const paginas = new Map();
+function enviarPagina(req, res, html) {
+  let p = paginas.get(html);
+  if (!p) { p = { gzip: zlib.gzipSync(html, { level: 9 }), etag: `"${crypto.createHash('sha1').update(html).digest('base64url')}"` }; paginas.set(html, p); }
+  const gzip = /\bgzip\b/i.test(req.get('accept-encoding') || '');
+  res.vary('Accept-Encoding');
+  res.set({ 'Cache-Control': 'private, no-cache', ETag: gzip ? p.etag.replace(/"$/, '-gz"') : p.etag });
+  if (req.fresh) return res.status(304).end();
+  res.type('html');
+  return gzip ? res.set('Content-Encoding', 'gzip').end(p.gzip) : res.end(html);
+}
+
+/** Lista que llega en una petición: si no es una lista, vacía (un cuerpo mal formado no debe dar un error interno). */
+const lista = (v) => (Array.isArray(v) ? v : []);
 
 const igual = (a, b) => {
   const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || ''));
@@ -39,13 +69,44 @@ const igual = (a, b) => {
 
 export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead }) {
   const app = express();
+  app.disable('x-powered-by');
+  // Cabeceras de seguridad en todas las respuestas: el navegador no adivina tipos de archivo, no se puede
+  // incrustar el panel en otra web y no se filtra la dirección al salir a un enlace.
+  app.use((_req, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'SAMEORIGIN', 'Referrer-Policy': 'no-referrer' });
+    next();
+  });
+  // Las respuestas JSON grandes (lista de chats, estadísticas, instrucciones) van comprimidas: en el móvil pesan
+  // entre 5 y 10 veces menos. Las pequeñas no compensan y salen tal cual.
+  app.use((req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = (obj) => {
+      let cuerpo;
+      try { cuerpo = JSON.stringify(obj); } catch { return json(obj); }
+      if (typeof cuerpo !== 'string' || cuerpo.length < 1500 || !/\bgzip\b/i.test(req.get('accept-encoding') || '')) return json(obj);
+      zlib.gzip(cuerpo, { level: 6 }, (err, buf) => {
+        if (err || res.headersSent) { if (!res.headersSent) json(obj); return; }
+        res.vary('Accept-Encoding');
+        res.set({ 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip' }).end(buf);
+      });
+      return res;
+    };
+    next();
+  });
+  // Un fallo de programación o de la base no se le enseña al navegador: se registra y sale un mensaje corto
+  const errorUsuario = (res, e) => {
+    const interno = e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError || String(e?.code || '').startsWith('SQLITE');
+    if (interno) console.error('[ruta] error interno:', e?.stack || e);
+    return interno ? res.status(500).json({ error: 'Ha habido un error interno. Inténtalo otra vez.' }) : res.status(400).json({ error: e.message });
+  };
   // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
   const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
   app.use((req, res, next) => (req.path.endsWith('/adjunto') ? jsonGrande : jsonNormal)(req, res, next));
   const pruebas = crearRepo(openDb(':memory:'), { espejo: { db: repo.db, campos: {} } }); // su gasto cuenta en Consumo
   const enCurso = new Set();
 
-  app.get('/panel', (_req, res) => res.sendFile(panelPath));
+  // El panel no lleva datos (los pide después con la clave): el navegador lo guarda y solo comprueba si ha cambiado
+  app.get('/panel', (req, res) => enviarPagina(req, res.set('Content-Security-Policy', CSP_PANEL), htmlPanel));
 
   // Salud real: comprueba que la base responde y que los bucles siguen dando vueltas (503 si no)
   app.get('/health', (_req, res) => {
@@ -126,6 +187,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.get('/costes', (req, res) => res.json(repo.costes(Number(req.query.dias) || 7)));
 
   admin.post('/conversaciones/:id/reanudar', (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
     repo.updateConv(req.params.id, { ai_paused: 0, derivado: 0, pause_reason: null });
     res.json({ ok: true });
   });
@@ -144,7 +206,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mes no válido.' });
     res.json(await embudo(mes, { repo, ...embudoOpciones }));
   });
-  admin.get('/panel/conversaciones', (req, res) => res.json(panel.conversaciones(db, req.query)));
+  admin.get('/panel/conversaciones', (req, res) => { const { filtro, vista, criterios, q, limite } = req.query; res.json(panel.conversaciones(db, { filtro, vista, criterios, q: typeof q === 'string' ? q : '', limite })); });
   // Audio o imagen de un mensaje (el panel lo pide con su cabecera de acceso y lo muestra)
   admin.get('/panel/conversaciones/:id/media/:msg', (req, res) => {
     const m = db.prepare('SELECT media_ruta, media_mime FROM messages WHERE id = ? AND conversation_id = ?').get(Number(req.params.msg), req.params.id);
@@ -355,7 +417,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   // ---------- Lanzamientos ----------
   admin.post('/panel/lanzamientos/previa', (req, res) => {
     const b = req.body || {};
-    const d = destinatarios(db, { dias_actividad: b.dias_actividad, canales: b.canales || [], excluir_etiquetas: b.excluir_etiquetas || [], solo_etiquetas: b.solo_etiquetas || [] });
+    const d = destinatarios(db, { dias_actividad: b.dias_actividad, canales: lista(b.canales), excluir_etiquetas: lista(b.excluir_etiquetas), solo_etiquetas: lista(b.solo_etiquetas) });
     const fuera = d.filter((c) => !c.last_inbound_at || Date.now() - new Date(c.last_inbound_at) > 24 * 3600e3).length;
     res.json({ total: d.length, por_plantilla: fuera, ejemplo: d.slice(0, 8).map((c) => c.nombre || c.id) });
   });
@@ -372,7 +434,6 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.json({ ok: r.changes > 0 });
   });
   // ---------- Etiquetas ----------
-  const errorUsuario = (res, e) => res.status(400).json({ error: e.message });
   admin.get('/panel/etiquetas', (_req, res) => res.json({ etiquetas: etq.listar(db, { conUso: true }).map((e) => ({ ...e, reglas_texto: e.reglas.map(etq.describirRegla) })), colores: etq.COLORES }));
   // Catálogo sincronizado con GHL: crear o renombrar aquí crea o renombra el tag allí
   const enGhl = async (fn) => { if (!etiquetas.ghl) return null; try { await fn(); return 'ok'; } catch (e) { console.error('[etiquetas] catálogo GHL:', e.message); return 'error'; } };
@@ -387,7 +448,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   });
   admin.post('/panel/etiquetas/importar', async (req, res) => {
     const creadas = [];
-    for (const n of (req.body?.nombres || []).slice(0, 100)) {
+    for (const n of lista(req.body?.nombres).filter((x) => typeof x === 'string' && x.trim()).slice(0, 100)) {
       try { creadas.push(etq.crear(db, { nombre: String(n).charAt(0).toUpperCase() + String(n).slice(1) }).nombre); } catch { /* ya existe o no válida */ }
     }
     const sync = creadas.length ? await etiquetas.sincronizarDesdeGhl({ dias: 90 }).catch(() => null) : null;
@@ -396,7 +457,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.post('/panel/etiquetas/sincronizar', async (_req, res) => {
     try { res.json(await etiquetas.sincronizarDesdeGhl({ dias: 90 })); } catch (e) { res.status(502).json({ error: 'No se ha podido sincronizar con GHL.' }); }
   });
-  admin.put('/panel/etiquetas/orden', (req, res) => { etq.reordenar(db, (req.body?.ids || []).map(Number)); res.json({ ok: true }); });
+  admin.put('/panel/etiquetas/orden', (req, res) => { etq.reordenar(db, lista(req.body?.ids).map(Number).filter(Number.isInteger)); res.json({ ok: true }); });
   admin.put('/panel/etiquetas/:id', async (req, res) => {
     const antes = etq.obtener(db, Number(req.params.id));
     if (!antes) return res.status(404).json({ error: 'La etiqueta no existe.' });
@@ -424,7 +485,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   // ---------- Vistas (filtros guardados) ----------
   admin.get('/panel/vistas', (_req, res) => res.json(panel.vistas(db)));
   admin.post('/panel/vistas', (req, res) => { try { res.status(201).json({ id: panel.guardarVista(db, req.body || {}) }); } catch (e) { errorUsuario(res, e); } });
-  admin.put('/panel/vistas/orden', (req, res) => { panel.reordenarVistas(db, (req.body?.ids || []).map(Number)); res.json({ ok: true }); });
+  admin.put('/panel/vistas/orden', (req, res) => { panel.reordenarVistas(db, lista(req.body?.ids).map(Number).filter(Number.isInteger)); res.json({ ok: true }); });
   admin.put('/panel/vistas/:id', (req, res) => { try { res.json({ id: panel.guardarVista(db, { ...req.body, id: Number(req.params.id) }) }); } catch (e) { errorUsuario(res, e); } });
   admin.delete('/panel/vistas/:id', (req, res) => res.json({ ok: panel.borrarVista(db, Number(req.params.id)) }));
   admin.get('/panel/opciones', (_req, res) => res.json({
@@ -450,7 +511,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     }
     next();
   });
-  metrotools.get('/', (_req, res) => res.type('html').send(metroPanel));
+  metrotools.get('/', (req, res) => enviarPagina(req, res, metroPanel));
   metrotools.use('/api', (req, res, next) => {
     if (req.get('x-metrotools-client') !== 'zapp') return res.status(403).json({ error: 'Petición fuera del panel de MetroTools.' });
     next();
