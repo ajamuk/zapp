@@ -34,7 +34,7 @@ function aplanar(raw) {
 
 export function parseWebhook(raw = {}) {
   const b = aplanar(raw || {});
-  const tipoEvento = b.type || b.event || '';
+  const tipoEvento = String(b.type || b.event || '');
   const direction = String(b.direction || (tipoEvento.includes('Outbound') ? 'outbound' : 'inbound')).toLowerCase();
   const msg = b.message || {};
   const esTags = /ContactTag|TagUpdate|ContactUpdate/i.test(tipoEvento);

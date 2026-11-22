@@ -416,7 +416,7 @@ export function repo(db, { espejo = null } = {}) {
       if (keys.length) db.prepare(`UPDATE messages SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @__id`).run({ ...Object.fromEntries(keys.map((k) => [k, patch[k]])), __id: id });
     },
     history: (convId, limit = 40) =>
-      db.prepare('SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? AND enviado = 1 ORDER BY id DESC LIMIT ?) ORDER BY id ASC').all(convId, limit),
+      db.prepare("SELECT * FROM (SELECT * FROM messages WHERE conversation_id = ? AND enviado = 1 AND autor != 'sistema' ORDER BY id DESC LIMIT ?) ORDER BY id ASC").all(convId, limit),
     schedule: (convId, reglaId, dueAt, contexto = null, tipo = null, texto = null) => {
       const t = tipo || (String(reglaId).startsWith('largo-plazo') ? 'largo-plazo' : 'silencio');
       return db.prepare('INSERT INTO scheduled (conversation_id, regla_id, due_at, contexto, tipo, texto_previsto) VALUES (?, ?, ?, ?, ?, ?)')

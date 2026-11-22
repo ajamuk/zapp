@@ -64,6 +64,7 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.contactId) return { ignorado: 'faltan ids' };
+    evt.recibido ??= this.now().toISOString(); // cuándo llegó el aviso (puede procesarse más tarde, detrás de otro)
     // Webhook de un workflow de GHL: no trae el id de la conversación. Si el contacto ya tiene chat, sale de la
     // base; si no, se pregunta a GHL.
     if (!evt.conversationId) evt.conversationId = this.repo.db.prepare('SELECT id FROM conversations WHERE contact_id = ? ORDER BY rowid DESC LIMIT 1').get(evt.contactId)?.id;
@@ -82,7 +83,11 @@ export class Setter {
       if (evt.evento === 'inbound' && (!evt.messageId || evt.canal === 'desconocido')) {
         if (this.ghl.mensajes) {
           const r = await this.sincronizar(evt.conversationId, evt);
-          if (r?.visto) return r;
+          if (r?.visto) {
+            // El texto coincidía con un mensaje que ya estaba: por si era otro igual que GHL aún no listaba
+            if (r.repasar && !r.entrantes) { const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId)).catch(() => {}); }, this.repasoMs ?? 8000); t.unref?.(); }
+            return r;
+          }
         }
         // GHL no contesta o aún no lista el mensaje: entra tal como vino (el disparador del workflow solo salta
         // con WhatsApp e Instagram). Cuando aparezca en GHL, `sincronizar` lo reconoce por el texto y no lo repite.
@@ -109,7 +114,10 @@ export class Setter {
     const db = this.repo.db;
     const cursor = this.repo.getConv(convId)?.ghl_sync_at;
     // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
-    const desde = new Date(cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : this.now().getTime() - VENTANA_SYNC).toISOString();
+    // Chat que ya existe pero sin cursor (GHL no listó nada las veces anteriores): desde su primer mensaje aquí
+    const primero = cursor ? null : db.prepare('SELECT min(created_at) c FROM messages WHERE conversation_id = ?').get(convId)?.c;
+    const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity) - VENTANA_SYNC;
+    const desde = new Date(base).toISOString();
     const iso = (fecha, ms) => new Date(new Date(fecha).getTime() + ms).toISOString();
     const conocido = (id) => Boolean(db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(id));
     const buscado = textoComparable(evt?.texto);
@@ -119,8 +127,7 @@ export class Setter {
       if (!(m.fecha > desde)) continue;
       const t = textoComparable(m.texto);
       if (m.direccion === 'inbound' && CANALES_NATIVOS.has(m.canal)) {
-        // El del webhook: tiene que ser reciente (si no, podría ser otro mensaje anterior con el mismo texto)
-        if (evt && (!buscado || buscado === t) && m.fecha > iso(this.now(), -VENTANA_SYNC)) out.visto = true;
+        const esElDelWebhook = Boolean(evt) && (!buscado || buscado === t);
         if (!conocido(m.id)) {
           // Entró antes sin id (GHL aún no lo listaba): se le pone el id y no se repite
           const gemelo = t && db.prepare("SELECT id, texto FROM messages WHERE conversation_id = ? AND autor = 'lead' AND external_id IS NULL AND created_at >= ? AND created_at <= ?")
@@ -132,17 +139,32 @@ export class Setter {
               adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar });
             out.entrantes++;
           }
+          // Recién registrado: es el del webhook aunque este se haya procesado con retraso
+          if (esElDelWebhook) out.visto = true;
+        } else if (esElDelWebhook && m.fecha > iso(evt.recibido || this.now(), -VENTANA_SYNC)) {
+          // Ya estaba: cuenta como «el del webhook» si es reciente respecto a cuando llegó el aviso. Puede ser otro
+          // mensaje anterior con el mismo texto («hola», «hola») y que GHL aún no liste el nuevo: se repasa luego.
+          out.visto = true; out.repasar = true;
         }
-      } else if (m.direccion === 'outbound' && (CANALES_NATIVOS.has(m.canal) || m.tipo === 'TYPE_CUSTOM_SMS') && m.source !== 'workflow' && t && !conocido(m.id)) {
-        // Sofía está enviando ahora mismo: su burbuja puede verse en GHL antes de quedar registrada aquí.
-        // Se deja para la próxima vez (el cursor no pasa de aquí).
-        if (enMarcha) pendiente = true;
-        else if (this.repo.getConv(convId)) {
-          const nuestro = db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
-            .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
-          if (!nuestro) {
-            await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto, messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha });
-            out.salientes++;
+      } else if (m.direccion === 'outbound' && m.source !== 'workflow' && !conocido(m.id)) {
+        const nativo = CANALES_NATIVOS.has(m.canal); const delConector = m.tipo === 'TYPE_CUSTOM_SMS';
+        // Sin texto solo cuenta por el canal nativo (una foto o un audio del equipo); el conector no se puede cotejar
+        const cuenta = (nativo && (t || m.adjuntos.length)) || (delConector && t);
+        // Copia del conector de un saliente nativo que está en la lista (de Sofía, de un workflow de GHL o del
+        // equipo): lo que vale es el nativo, que se trata por su cuenta. Solo sin nativo es alguien desde el móvil.
+        const esCopia = delConector && lista.some((x) => x !== m && x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal)
+          && Math.abs(new Date(x.fecha) - new Date(m.fecha)) < 2 * 60000 && (textoComparable(x.texto) === t || (!textoComparable(x.texto) && x.adjuntos.length)));
+        if (cuenta && !esCopia) {
+          // Sofía está enviando ahora mismo: su burbuja puede verse en GHL antes de quedar registrada aquí.
+          // Se deja para la próxima vez (el cursor no pasa de aquí).
+          if (enMarcha) pendiente = true;
+          else if (this.repo.getConv(convId) && !this.adoptarSinConfirmar(convId, m)) {
+            const nuestro = t && db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
+              .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
+            if (!nuestro) {
+              await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha });
+              out.salientes++;
+            }
           }
         }
       }
@@ -151,6 +173,35 @@ export class Setter {
     if (nuevoCursor && nuevoCursor !== cursor && this.repo.getConv(convId)) this.repo.updateConv(convId, { ghl_sync_at: nuevoCursor });
     if (out.entrantes > 1 || out.salientes) console.log(`[sync] ${convId}: ${out.entrantes} entrantes y ${out.salientes} del equipo recuperados de GHL`);
     return out;
+  }
+
+  /**
+   * Envíos que GHL no confirmó (tiempo agotado o error) y que pueden haber salido igualmente. Si luego aparecen en
+   * la conversación, son de Sofía: sin esto se tomarían por un mensaje del equipo y el chat se pausaría.
+   */
+  anotarSinConfirmar(convId, { texto, url = null, extra = {} }) {
+    this.sinConfirmar ??= new Map();
+    const lista = (this.sinConfirmar.get(convId) || []).filter((x) => x.at > Date.now() - 30 * 60000);
+    lista.push({ texto, t: textoComparable(texto), url, extra, at: Date.now() });
+    this.sinConfirmar.set(convId, lista);
+  }
+
+  adoptarSinConfirmar(convId, m) {
+    const lista = this.sinConfirmar?.get(convId);
+    if (!lista?.length) return false;
+    const t = textoComparable(m.texto);
+    const i = lista.findIndex((x) => x.at > Date.now() - 30 * 60000 && ((x.url && m.adjuntos.includes(x.url)) || (!x.url && x.t && x.t === t)));
+    if (i < 0) return false;
+    const [x] = lista.splice(i, 1);
+    this.repo.addMessage({ conversation_id: convId, external_id: m.id, autor: 'ia', texto: x.texto, ...x.extra, created_at: m.fecha });
+    console.log(`[envío] ${convId}: un mensaje que GHL no confirmó sí había salido; queda registrado como de Sofía`);
+    return true;
+  }
+
+  /** ¿Ha salido ya algo de Sofía después del último mensaje del lead? */
+  yaContestado(convId) {
+    return Boolean(this.repo.db.prepare(`SELECT 1 FROM messages WHERE conversation_id = ? AND autor = 'ia'
+      AND id > IFNULL((SELECT max(id) FROM messages WHERE conversation_id = ? AND autor = 'lead'), 0) LIMIT 1`).get(convId, convId));
   }
 
   /** Ejecuta `fn` cuando haya terminado lo anterior con la misma clave (los fallos no cortan la cola). */
@@ -213,6 +264,8 @@ export class Setter {
   async onInbound(evt, { programar = true } = {}) {
     const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
+    // Se contesta por donde ha escrito la última vez (el mismo contacto puede escribir por Instagram y luego por WhatsApp)
+    if (!nuevo && CANALES_NATIVOS.has(evt.canal) && conv.channel !== evt.canal) { this.repo.updateConv(conv.id, { channel: evt.canal }); conv.channel = evt.canal; }
     const ajustesC = leerAjustes(this.repo);
     if (nuevo && ajustesC.canalesPausa[conv.channel]) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `los chats de ${conv.channel} empiezan en pausa` });
     let adjunto = tipoAdjunto(evt.adjuntos);
@@ -312,7 +365,14 @@ export class Setter {
     const ahora = this.now();
     this.ultimoTick = Date.now();
     const ajustes = leerAjustes(this.repo);
-    const tanda = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id)).slice(0, libres);
+    const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id));
+    // Fuera de horario no se contesta, venga de donde venga la respuesta pendiente (un reintento, un reinicio del
+    // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel no tienen horario.
+    if (pendientes.length && !dentroDeHorario(ahora)) {
+      const apertura = siguienteApertura(ahora).toISOString();
+      for (const c of pendientes) if (!String(c.id).startsWith('prueba-')) this.repo.updateConv(c.id, { respond_at: apertura });
+    }
+    const tanda = pendientes.filter((c) => dentroDeHorario(ahora) || String(c.id).startsWith('prueba-')).slice(0, libres);
     await Promise.all(tanda.map((c) => this.atender(c, ajustes)));
   }
 
@@ -320,19 +380,26 @@ export class Setter {
     // Sofía apagada (o el canal) desde el panel: contesta el equipo en GHL
     if (!ajustes.ia_activa || !ajustes.canales[c.channel]) { this.repo.updateConv(c.id, { respond_at: null }); return; }
     this.enCurso.add(c.id);
-    this.repo.updateConv(c.id, { respond_at: null, respondiendo_desde: this.now().toISOString() });
     const reintentos = c.reintentos || 0;
     const ultimo = reintentos >= ESPERAS_REINTENTO.length;
     let reloj;
-    // Antes de contestar se repasa la conversación en GHL: mensajes del lead que no avisó el workflow (entran en
-    // esta misma respuesta) y si alguien del equipo ha contestado ya (entonces Sofía no escribe).
-    if (this.ghl.mensajes && !String(c.id).startsWith('prueba-')) {
-      await this.safe(() => this.enSerie(c.id, () => this.sincronizar(c.id, null, { programar: false, enMarcha: false })));
-    }
     // Si salta el tope, la respuesta que siguiera en marcha queda anulada: no enviará nada cuando termine
     // (si no, podría salir tarde y repetida con el reintento).
     const control = { cancelado: false };
     try {
+      this.repo.updateConv(c.id, { respond_at: null, respondiendo_desde: this.now().toISOString() });
+      // Antes de contestar se repasa la conversación en GHL: mensajes del lead que no avisó el workflow (entran en
+      // esta misma respuesta) y si alguien del equipo ha contestado ya (entonces Sofía no escribe). Va en la cola
+      // del chat: si había un webhook a medias, se espera a que termine y esta respuesta ya lo incluye; por eso
+      // al acabar se quita la respuesta que ese webhook hubiera dejado programada (si no, saldrían dos).
+      if (this.ghl.mensajes && !String(c.id).startsWith('prueba-')) {
+        await this.safe(() => this.enSerie(c.id, async () => {
+          await this.sincronizar(c.id, null, { programar: false, enMarcha: false });
+          this.repo.updateConv(c.id, { respond_at: null });
+        }));
+      }
+      // Reintento de un turno cuyo envío no se confirmó: si al repasar resulta que sí salió, no se contesta otra vez
+      if (reintentos > 0 && this.yaContestado(c.id)) { this.repo.updateConv(c.id, { respondiendo_desde: null, reintentos: 0 }); return; }
       // Tope de seguridad: ningún chat ocupa un hueco más de 5 minutos
       await Promise.race([
         this.responder(c.id, { avisarFallo: ultimo, control }),
@@ -344,8 +411,7 @@ export class Setter {
       const actual = this.repo.getConv(c.id);
       const patch = { respondiendo_desde: null };
       // Se reintenta solo si no ha salido ya nada de este turno y el lead no ha vuelto a escribir (eso ya lo reprograma)
-      const yaSalio = Boolean(this.repo.db.prepare(`SELECT 1 FROM messages WHERE conversation_id = ? AND autor = 'ia'
-        AND id > IFNULL((SELECT max(id) FROM messages WHERE conversation_id = ? AND autor = 'lead'), 0) LIMIT 1`).get(c.id, c.id));
+      const yaSalio = this.yaContestado(c.id);
       if (!ultimo && !e.noReintentar && actual && !actual.respond_at && !actual.ai_paused && !actual.derivado && !yaSalio) {
         patch.respond_at = new Date(this.now().getTime() + ESPERAS_REINTENTO[reintentos]).toISOString();
         patch.reintentos = reintentos + 1;
@@ -391,8 +457,10 @@ export class Setter {
     const p = ultimaPrueba(this.repo.db, conv.id);
     if (p) return describirPrueba(p, this.now());
     const t = String(conv.id).startsWith('prueba-') ? null : pruebaTrialOps(conv.contact_id);
-    if (t) return describirTrialOps(t, this.now());
-    return `Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`;
+    const parla = `Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`;
+    // Una cita por venir manda; una antigua solo es un dato más y el resto del contexto queda igual que sin ella
+    if (t) return new Date(t.start_time) > this.now() ? describirTrialOps(t, this.now()) : `${parla} ${describirTrialOps(t, this.now())}`;
+    return parla;
   }
 
   /**
@@ -456,6 +524,11 @@ export class Setter {
       throw e;
     }
 
+    // Mientras Sofía pensaba pueden haber escrito el equipo o el lead, y GHL no avisa de lo primero: se repasa la
+    // conversación justo antes de enviar (todavía no ha salido nada de este turno).
+    if (this.ghl.mensajes && !String(convId).startsWith('prueba-') && !control?.cancelado) {
+      await this.safe(() => this.enSerie(convId, () => this.sincronizar(convId, null, { enMarcha: false })));
+    }
     // Mientras Sofía pensaba, alguien del equipo ha escrito o han pausado el chat: no se envía nada
     const ahoraConv = this.repo.getConv(convId);
     if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
@@ -568,6 +641,9 @@ export class Setter {
     return id;
   }
 
+  /** ¿Es un teléfono de prueba del equipo (TEST_PHONES)? Se trata siempre como lead, aunque sea socio. */
+  esDePrueba(conv) { return Boolean(conv?.telefono && esTelefonoPrueba(conv.telefono, this.telefonosPrueba)); }
+
   /** ¿Salen de verdad los mensajes a este chat? En modo live, siempre; en shadow, solo a los TEST_PHONES. */
   enviaDeVerdad(conv) {
     return Boolean(this.live || (conv?.telefono && esTelefonoPrueba(conv.telefono, this.telefonosPrueba)));
@@ -603,7 +679,7 @@ export class Setter {
         // GHL a veces tarda más de 20 s en confirmar un mensaje que sí ha salido: se comprueba en la conversación.
         // Si está, el turno sigue; si no, falla como antes.
         r = await this.confirmarEnvio(conv, mensajes[i]);
-        if (!r) throw e;
+        if (!r) { this.anotarSinConfirmar(conv.id, { texto: mensajes[i] }); throw e; }
         console.log(`[envío] ${conv.id}: GHL no confirmó a tiempo, pero el mensaje sí salió`);
       }
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[i] });
@@ -663,6 +739,8 @@ export class Setter {
         const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
         this.repo.addMessage({ ...msg, external_id: out?.messageId || null });
       } catch (e) {
+        // GHL puede dejar el mensaje creado aunque devuelva un error: si aparece luego, es de Sofía
+        this.anotarSinConfirmar(conv.id, { texto: msg.texto, url: recursos.urlPublica(r), extra: { adjunto: msg.adjunto, media_ruta: msg.media_ruta, media_mime: msg.media_mime } });
         console.error('[recursos]', e.message);
         await this.avisar?.(`Sofía quiso enviar «${r.nombre}» y GHL no lo aceptó: ${e.message}`, { sede: conv.sede });
       }
@@ -841,7 +919,7 @@ export class Setter {
     const p = ultimaPrueba(db, conv.id);
     let resultado = null; let fuente = null;
     if (conv.alta_estado === 'preparada' || conv.tipo === 'socio') { resultado = 'alta'; fuente = 'sofia'; }
-    if (!resultado && conv.telefono && this.aimharder?.buscarSocioPorTelefono) {
+    if (!resultado && conv.telefono && !this.esDePrueba(conv) && this.aimharder?.buscarSocioPorTelefono) {
       const socio = await this.safe(() => this.aimharder.buscarSocioPorTelefono(conv.telefono));
       if (socio?.esSocio) { resultado = 'alta'; fuente = 'socios-aimharder'; }
     }
@@ -925,6 +1003,8 @@ export class Setter {
     if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
     const sede = normalizarSede(datos.sede);
     if (sede === 'el_canaveral') return this.altaCanaveral(conv, datos, efectos);
+    // Ya pasada al equipo: no se vuelve a tramitar ni a avisar en cada turno
+    if (this.repo.getConv(conv.id)?.alta_estado === 'pendiente') return { ok: true, estado: 'ya_en_tramite', nota: 'El alta de este lead ya está pasada al equipo: no la repitas ni vuelvas a pedir los datos.' };
     if (!knowledge.tarifas[sede]?.[datos.tarifa]) return { ok: false, error: `La tarifa ${datos.tarifa} no existe en ${SEDE_NOMBRE[sede] || 'esa sede'}.` };
     const telefono = datos.telefono || conv.telefono || '';
     const d = { ...datos, sede, telefono, canal: conv.channel };
@@ -934,7 +1014,8 @@ export class Setter {
     if (ficha?.aimharder_id) d.aimharder_id = ficha.aimharder_id;
     const recibo = calcularPrimerRecibo({ sede, tarifa: d.tarifa, fecha_inicio: d.fecha_inicio });
     if (recibo.ok) d.primer_recibo = recibo.primer_recibo;
-    const res = await this.aimharder.prepararAlta(d);
+    // Donde Sofía no escribe de verdad (modo prueba), el alta tampoco: se ensaya sin guardar, diga lo que diga la configuración
+    const res = await this.aimharder.prepararAlta(d, this.enviaDeVerdad(conv) ? undefined : { dryRun: true });
     this.repo.addAlta(conv.id, d, res.estado, res.detalle);
     if (res.estado === 'rechazada') return { ok: false, error: res.detalle, nota: 'Pide solo el dato que falta o corrige el que está mal. Si es menor de 16 años, explícale con cariño que la edad mínima para entrenar es 16.' };
     if (res.estado === 'preparada') {

@@ -65,7 +65,7 @@ export async function vigilar(db, { ghl, avisar, ahora = new Date(), tokenStore 
   });
 
   await comprobar('seguimientos-error', 'seguimientos', 'Hay seguimientos que fallan al enviarse', async () => {
-    const e = n("SELECT count(*) n FROM scheduled WHERE estado = 'error' AND datetime(created_at) >= datetime('now', '-6 hours')");
+    const e = n("SELECT count(*) n FROM scheduled WHERE estado = 'error' AND datetime(due_at) >= datetime('now', '-6 hours')");
     const d = db.prepare("SELECT detalle FROM scheduled WHERE estado = 'error' ORDER BY id DESC LIMIT 1").get()?.detalle;
     return e ? `${e} en las últimas 6 horas. Último: ${d}` : null;
   }, 'aviso');

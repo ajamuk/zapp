@@ -36,6 +36,12 @@ function ghlFalso() {
     e.mensajes.push({ id, direction: 'outbound', messageType: 'TYPE_WHATSAPP', body: texto, source: 'app', userId: 'u-equipo', dateAdded: ahora() });
     e.mensajes.push({ id: `${id}c`, direction: 'outbound', messageType: 'TYPE_CUSTOM_SMS', body: `${texto} \n \n💬Sent from 34600000000`, source: 'api', userId: 'u-equipo', dateAdded: ahora(900) });
   };
+  // Mensaje automático de otro workflow de GHL (recordatorio, plantilla…), con su copia del conector
+  e.workflow = (texto) => {
+    const id = `wf${++e.n}`;
+    e.mensajes.push({ id, direction: 'outbound', messageType: 'TYPE_WHATSAPP', body: texto, source: 'workflow', dateAdded: ahora() });
+    e.mensajes.push({ id: `${id}c`, direction: 'outbound', messageType: 'TYPE_CUSTOM_SMS', body: `${texto} \n \n💬Sent from 34600000000`, source: 'api', userId: 'u-api', dateAdded: ahora(900) });
+  };
   const srv = http.createServer((req, res) => {
     let cuerpo = '';
     req.on('data', (d) => { cuerpo += d; });
@@ -150,6 +156,15 @@ await escenario('1. Modo live: ráfaga con copias del conector, webhook repetido
   await dormir(9000);
   comprobar(leads().length === 2 && e.enviados.length === antes, 'un webhook repetido no duplica el mensaje ni provoca otra respuesta');
 
+  // Otro workflow de GHL le manda un mensaje automático y el lead sigue: Sofía no se aparta
+  e.workflow('Recordatorio automático: tienes pendiente confirmar tu cita');
+  e.entra('y qué horarios hay por la tarde?');
+  await webhook('y qué horarios hay por la tarde?');
+  comprobar(await hastaQueTermine({ desde: antes }), 'tras un mensaje automático de otro workflow, Sofía sigue contestando');
+  comprobar(!conv().ai_paused && consulta("SELECT count(*) n FROM messages WHERE conversation_id = ? AND autor = 'humano'", CONV)[0].n === 0, 'el mensaje automático y su copia no se toman por el equipo');
+  comprobar(e.enviados.filter((m) => m.attachments?.length).every((m) => m.message), 'los archivos (tarifas, horarios) llevan texto');
+  const antes2 = e.enviados.length;
+
   // El equipo contesta desde GHL y el lead sigue: Sofía se aparta
   e.equipo('Hola Ana, soy Carlos, te llamo en 5 minutos');
   e.entra('vale, perfecto');
@@ -157,7 +172,7 @@ await escenario('1. Modo live: ráfaga con copias del conector, webhook repetido
   await dormir(12000);
   const humanos = consulta("SELECT texto FROM messages WHERE conversation_id = ? AND autor = 'humano'", CONV);
   comprobar(humanos.length === 1, 'el mensaje del equipo queda registrado una sola vez (sin su copia)', JSON.stringify(humanos));
-  comprobar(conv().ai_paused === 1 && e.enviados.length === antes, 'Sofía se aparta y no escribe después de que conteste el equipo', `pausa=${conv().ai_paused} enviados=${e.enviados.length - antes}`);
+  comprobar(conv().ai_paused === 1 && e.enviados.length === antes2, 'Sofía se aparta y no escribe después de que conteste el equipo', `pausa=${conv().ai_paused} enviados=${e.enviados.length - antes2}`);
 });
 
 // ---------- 2. Modo prueba: nada sale hacia el lead ----------

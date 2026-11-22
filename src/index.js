@@ -35,14 +35,31 @@ const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefon
   cancelarPrueba: async (p) => { await apiSede(p.sede).cancelarReserva({ booking_id: Number(p.booking_id), booking_date: p.fecha_hora.slice(0, 10), reason: 'El lead la cambió a otra hora' }); return true; },
   resultadoPrueba: (p) => resultadoAimHarder(apiSede(p.sede), p.booking_id) };
 
+/**
+ * Aviso al equipo. Si no llega por Telegram (sin configurar, bot fuera del chat…), no se pierde: queda como alerta
+ * en el panel con los últimos avisos sin entregar.
+ */
+const avisar = async (texto, opciones = {}) => {
+  const ok = await avisarEquipo(texto, opciones);
+  if (!ok) {
+    try {
+      const clave = 'avisos-sin-entregar';
+      const antes = repo.db.prepare('SELECT detalle FROM alertas WHERE clave = ? AND resuelta_at IS NULL').get(clave)?.detalle || '';
+      const hora = new Date().toLocaleString('es-ES', { timeZone: config.tz, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      registrarAlerta(repo.db, { clave, tipo: 'servidor', titulo: 'Hay avisos al equipo que no han llegado por Telegram', detalle: `${hora} · ${String(texto).slice(0, 300)}\n${antes}`, nivel: 'aviso' });
+    } catch (e) { console.error('Aviso sin entregar:', e.message); }
+  }
+  return ok;
+};
+
 const ghl = new Ghl();
 const etiquetas = new Etiquetador({
-  repo, ghl, avisar: avisarEquipo,
+  repo, ghl, avisar,
   // Seguimientos que dispara una etiqueta: se programan al ponerla y se cancelan al quitarla
   alPoner: (convId, etiquetaId) => programarPorEtiqueta(repo, repo.db, convId, etiquetaId),
   alQuitar: (convId, etiquetaId) => cancelarPorEtiqueta(repo, repo.db, convId, etiquetaId),
 });
-const setter = new Setter({ repo, ghl, aimharder, avisar: avisarEquipo, etiquetas });
+const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas });
 
 // ---------- Bucles (ninguno se solapa consigo mismo; los errores se registran y no paran el servicio) ----------
 const registro = {};
@@ -52,7 +69,11 @@ const cada = (nombre, ms, fn, alArrancarMs = null) => bucles.push(bucle(nombre, 
 /** Estado para /health: bucles parados y trabajo en curso. */
 const salud = () => {
   const parados = buclesParados(registro, Date.now(), Date.now() - arrancado);
-  return { ok: parados.length === 0, bucles_parados: parados, respondiendo: setter.enCurso?.size || 0, arrancado: new Date(arrancado).toISOString() };
+  // La vuelta de «respuestas» no espera a los chats, así que su bucle siempre parece vivo: se mira la cola de verdad.
+  // Una respuesta que tocaba hace más de 5 minutos y que nadie está atendiendo es que algo se ha atascado.
+  const atrasadas = repo.db.prepare('SELECT id FROM conversations WHERE respond_at IS NOT NULL AND respond_at < ? AND ai_paused = 0 AND derivado = 0')
+    .all(new Date(Date.now() - 5 * 60000).toISOString()).filter((c) => !setter.enCurso?.has(c.id)).length;
+  return { ok: parados.length === 0 && atrasadas === 0, bucles_parados: parados, respuestas_atrasadas: atrasadas, respondiendo: setter.enCurso?.size || 0, arrancado: new Date(arrancado).toISOString() };
 };
 
 const app = crearApp({ setter, repo, etiquetas, ghl, salud });

@@ -12,6 +12,7 @@ export async function avisarEquipo(texto, { sede, fetchImpl = fetch } = {}) {
       body: JSON.stringify({ chat_id: chat, text: texto, disable_web_page_preview: true }),
       signal: AbortSignal.timeout(10000), // un aviso nunca debe frenar a Sofía
     });
+    if (!r.ok) console.error(`Telegram no aceptó el aviso (${r.status}):`, texto);
     return r.ok;
   } catch (e) {
     console.error('Telegram falló:', e.message);

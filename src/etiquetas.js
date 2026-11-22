@@ -13,6 +13,7 @@
 //   nunca_si: ids → nunca si lleva alguna de esas
 
 import { validarAccion as validarMeta, enviarEvento } from './meta.js';
+import { dentroDeHorario, siguienteApertura } from './horario.js';
 
 export const COLORES = ['#386b36', '#2f5a77', '#805003', '#a13030', '#6a4882', '#0f766e', '#be185d', '#4b5563'];
 export const MEDIA = ['imagen', 'audio', 'video', 'documento'];
@@ -214,7 +215,7 @@ export class Etiquetador {
     // Forzar respuesta: Sofía contesta en el siguiente ciclo (respeta horario y pausa). No con inactividad.
     const despuesPausa = { ...conv, ...patch };
     if (a.forzar_respuesta && !porInactividad && !despuesPausa.ai_paused && !despuesPausa.derivado && !conv.respond_at) {
-      patch.respond_at = this.now().toISOString();
+      patch.respond_at = (dentroDeHorario(this.now()) ? this.now() : siguienteApertura(this.now())).toISOString();
     }
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
     if (origen !== 'ghl') await this.subirAGhl(conv, etq);
@@ -328,7 +329,7 @@ export class Etiquetador {
       // Solo chats recientes (hasta 7 días después de cumplir el plazo): una regla nueva no etiqueta el histórico entero
       const antiguo = new Date(this.now().getTime() - horas * 3600e3 - 7 * 864e5).toISOString();
       const chats = this.db.prepare(`SELECT c.id FROM conversations c
-        JOIN messages m ON m.id = (SELECT max(id) FROM messages WHERE conversation_id = c.id)
+        JOIN messages m ON m.id = (SELECT max(id) FROM messages WHERE conversation_id = c.id AND enviado = 1)
         WHERE m.autor IN ('ia', 'humano') AND m.created_at <= ? AND m.created_at >= ? AND c.id NOT LIKE 'prueba-%'
           AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id = ?)`).all(limite, antiguo, e.id);
       for (const c of chats) if ((await this.poner(c.id, e.id, 'regla', { porInactividad: true })).puesta) n++;

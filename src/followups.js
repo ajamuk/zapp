@@ -135,15 +135,30 @@ export async function procesarSeguimientos(setter) {
   const tomar = repo.db.prepare("UPDATE scheduled SET estado = 'enviando' WHERE id = ? AND estado = 'pendiente'");
   const sigueEnMarcha = repo.db.prepare("SELECT 1 FROM scheduled WHERE id = ? AND estado = 'enviando'");
   for (const s of repo.dueScheduled(ahora.toISOString())) {
+   let mio = false;
    try { // un fallo en un envío nunca corta los demás
     if (setter.enCurso?.has(s.conversation_id)) continue; // Sofía está contestando en ese chat: al siguiente minuto
     // Se «toma» el envío: si otro proceso o una vuelta anterior ya lo tiene, o se canceló, se salta (nunca sale dos veces)
     if (!tomar.run(s.id).changes) continue;
     const regla = reglaDelPendiente(setter.catalogo, s);
-    const conv = repo.getConv(s.conversation_id);
+    let conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    // Antes de escribirle se repasa el chat en GHL: si el lead ha contestado (y GHL no avisó) o el equipo ya le
+    // ha escrito, el seguimiento no debe salir encima. Mientras dura, el chat cuenta como «en curso».
+    if (setter.ghl?.mensajes && !String(conv.id).startsWith('prueba-')) {
+      await setter.safe(() => setter.enSerie(conv.id, () => setter.sincronizar(conv.id, null, { enMarcha: false })));
+      if (!sigueEnMarcha.get(s.id)) continue;
+      conv = repo.getConv(conv.id);
+    }
+    (setter.enCurso ??= new Set()).add(conv.id); mio = true;
+    // Seguimientos de Sofía programados sobre borradores (modo prueba) que vencen cuando ya se envía de verdad:
+    // si a este lead solo le dejó borradores y nunca le escribió, no sale un «¿sigues ahí?» de alguien con quien no ha hablado.
+    const deSofia = (enviado) => repo.db.prepare("SELECT 1 FROM messages WHERE conversation_id = ? AND autor = 'ia' AND enviado = ? LIMIT 1").get(conv.id, enviado);
+    if (QUIEN_DEPENDE_DE_SOFIA.includes(s.tipo) && setter.enviaDeVerdad(conv) && deSofia(0) && !deSofia(1)) {
+      repo.finishScheduled(s.id, 'omitido', 'Sofía no ha llegado a escribir a este lead (programado en modo prueba)'); continue;
+    }
     // ¿Se ha hecho socio desde que empezó el chat (alta en recepción)? Se mira el índice de AimHarder antes de escribirle
-    if (s.tipo !== 'manual' && conv.tipo !== 'socio' && conv.telefono && setter.aimharder?.buscarSocioPorTelefono) {
+    if (s.tipo !== 'manual' && conv.tipo !== 'socio' && conv.telefono && !setter.esDePrueba?.(conv) && setter.aimharder?.buscarSocioPorTelefono) {
       const socio = await setter.safe(() => setter.aimharder.buscarSocioPorTelefono(conv.telefono));
       if (socio?.esSocio) {
         repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: 'socio' });
@@ -189,7 +204,9 @@ export async function procesarSeguimientos(setter) {
       const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now()) : 'el chat ya no existe';
       if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
-      await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null);
+      // Si el lead escribe mientras Sofía «escribe» la primera burbuja, el seguimiento ya no sale
+      const control = { get cancelado() { return !sigueEnMarcha.get(s.id); } };
+      if ((await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null, control)) === null) continue;
       repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
       if (regla.recursoId && !plantilla) { const rec = recursosMod.obtener(setter.catalogo, regla.recursoId); if (rec?.activo) await setter.enviarRecursos(conv, [rec]); }
       if (regla.ponerEtiqueta) await setter.safe(() => setter.etiquetas?.poner(conv.id, regla.ponerEtiqueta, 'regla'));
@@ -199,6 +216,8 @@ export async function procesarSeguimientos(setter) {
    } catch (e) {
     console.error(`Seguimiento ${s.id}:`, e.message);
     try { repo.finishScheduled(s.id, 'error', e.message); } catch { /* la base no responde: se verá en las alertas */ }
+   } finally {
+    if (mio) setter.enCurso?.delete(s.conversation_id);
    }
   }
   marcarLanzamientosTerminados(repo.db);
