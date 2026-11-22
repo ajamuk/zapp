@@ -52,8 +52,10 @@ GHL → Automatización → Workflows → nuevo desde cero:
 - Ya hay un borrador «Metro Setter · Eventos · Respuesta lead»: se puede reutilizar.
 - **Acción:** *Webhook* (o *Custom Webhook*), método `POST`, URL `https://<dominio-webhook>/webhooks/ghl`.
   - Cabecera: `x-setter-secret` = el `WEBHOOK_SECRET`.
-  - No hace falta nada en *Custom Data*: el servicio lee `contact_id`, `full_name`, `phone`, `tags` y
-    `message.body` del formato de GHL, y pregunta a GHL el id de la conversación y el canal.
+  - No hace falta nada en *Custom Data*: el servicio lee `contact_id`, `full_name`, `phone` y `tags` del formato de
+    GHL y, con cada aviso, lee los mensajes nuevos de la conversación en GHL (id, canal y adjuntos). Así no se pierde
+    ninguno aunque GHL se salte el aviso de un mensaje que llega mientras procesa el anterior.
+  - Dos disparadores *Customer Replied* (uno por canal): el filtro *Reply channel* solo admite un valor.
 - Guardar y **publicar**.
 
 ## 5. Probar con un número propio
@@ -67,8 +69,9 @@ Dejarlo unos días en prueba y comparar las notas de Sofía con lo que contesta 
 
 ## 6. Enviar de verdad (con el visto bueno de Carlos)
 
-- Que el equipo sepa que, antes de escribir a mano en un chat, pone la etiqueta `parar ia`
-  (y `continuar ia` para devolvérselo a Sofía), salvo que esté suscrito el evento `OutboundMessage`.
+- Antes de contestar, Sofía repasa la conversación en GHL: si alguien del equipo ya ha escrito (desde GHL o desde
+  el móvil), se aparta de ese chat. Para pararla antes de escribir, etiqueta `parar ia`; para devolvérselo,
+  `continuar ia`. Los mensajes de otros workflows de GHL no la apartan.
 - Desactivar Zapp (ScaleX) en el mismo número para que no contesten los dos.
 - `MODE=live` en `zapp.env` y `systemctl restart codex-zapp`.
 - Plantilla de WhatsApp fuera de las 24 h: ver `docs/seguimientos.md`.

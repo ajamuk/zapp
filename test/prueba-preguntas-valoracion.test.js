@@ -4,7 +4,7 @@ import { openDb, repo as crearRepo } from '../src/db.js';
 import { Setter } from '../src/setter.js';
 import { config } from '../src/config.js';
 import { procesarSeguimientos } from '../src/followups.js';
-import { reservarEnAimHarder, buscarSesion, ultimaPrueba, resultadoTrialOps, partirNombre } from '../src/clase-prueba.js';
+import { reservarEnAimHarder, buscarSesion, ultimaPrueba, resultadoTrialOps, describirTrialOps, partirNombre } from '../src/clase-prueba.js';
 import * as preguntas from '../src/preguntas.js';
 
 const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
@@ -230,4 +230,15 @@ test('si la nota se borró en GHL, se crea otra', async () => {
   setter.ghl.updateNote = async () => { throw new Error('GHL PUT → 404: not found'); };
   await setter.responder('c1');
   assert.deepEqual([sal.notas.at(-1)[0], repo.getConv('c1').nota_ghl_id], ['nueva', 'n1']);
+});
+
+test('prueba del calendario de GHL: la que ya pasó no se cuenta como pendiente', () => {
+  const ahora = new Date('2026-11-22T12:00:00Z');
+  const vieja = describirTrialOps({ center: 'Las Rosas', class_type: 'Academy', start_time: '2026-08-24T18:00:00+02:00', lifecycle: 'awaiting_outcome', outcome: 'confirmed' }, ahora);
+  assert.match(vieja, /antigua \(Las Rosas, Academy\) del 24 de agosto de 2026 \(no consta si vino\)\. Ya pasó/);
+  assert.doesNotMatch(vieja, /^Tiene una clase/);
+  assert.match(describirTrialOps({ center: 'Parla', class_type: 'CrossFit', start_time: '2026-10-01T19:00:00+02:00', lifecycle: 'no_show', outcome: 'no_show' }, ahora), /y no vino\. Ya pasó/);
+  const futura = describirTrialOps({ center: 'Parla', class_type: 'Academy', start_time: '2026-11-25T19:30:00+01:00', lifecycle: 'confirmed', outcome: 'confirmed' }, ahora);
+  assert.match(futura, /^Tiene una clase de prueba en el calendario \(Parla, Academy\) el miércoles, 25 de noviembre, 19:30\. No le reserves otra/);
+  assert.match(describirTrialOps({ center: 'Parla', class_type: 'Academy', start_time: '2026-11-25T19:30:00+01:00', lifecycle: 'cancelled', appointment_status: 'cancelled' }, ahora), /pero está anulada/);
 });

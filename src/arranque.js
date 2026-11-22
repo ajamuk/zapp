@@ -7,8 +7,19 @@
  *  - reportes a medio analizar → error, con botón «Volver a analizar» en el panel.
  */
 export function recuperar(db, ahora = new Date()) {
-  const chats = db.prepare(`UPDATE conversations SET respond_at = ?, respondiendo_desde = NULL
-    WHERE respondiendo_desde IS NOT NULL AND ai_paused = 0 AND derivado = 0`).run(ahora.toISOString()).changes;
+  // Solo vuelven a la cola si de ese turno no había salido nada: con una burbuja ya enviada, repetir el turno
+  // mandaría una segunda respuesta. Ese chat se deja como está (el equipo lo ve en GHL).
+  const SIN_CONTESTAR = `NOT EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = conversations.id AND m.autor = 'ia'
+    AND m.id > IFNULL((SELECT max(id) FROM messages WHERE conversation_id = conversations.id AND autor = 'lead'), 0))`;
+  let chats = db.prepare(`UPDATE conversations SET respond_at = ?, respondiendo_desde = NULL
+    WHERE respondiendo_desde IS NOT NULL AND ai_paused = 0 AND derivado = 0 AND ${SIN_CONTESTAR}`).run(ahora.toISOString()).changes;
+  // Mensajes que entraron justo antes del reinicio y se quedaron sin programar (el servicio se paró mientras
+  // se procesaba el aviso: transcribiendo un audio, consultando GHL…). Solo los de los últimos 15 minutos.
+  chats += db.prepare(`UPDATE conversations SET respond_at = ?
+    WHERE respond_at IS NULL AND respondiendo_desde IS NULL AND ai_paused = 0 AND derivado = 0 AND IFNULL(tipo, '') != 'socio' AND id NOT LIKE 'prueba-%'
+      AND (SELECT autor FROM messages WHERE conversation_id = conversations.id ORDER BY id DESC LIMIT 1) = 'lead'
+      AND (SELECT created_at FROM messages WHERE conversation_id = conversations.id ORDER BY id DESC LIMIT 1) >= ?`)
+    .run(ahora.toISOString(), new Date(ahora.getTime() - 15 * 60000).toISOString()).changes;
   db.prepare('UPDATE conversations SET respondiendo_desde = NULL WHERE respondiendo_desde IS NOT NULL').run();
   const seguimientos = db.prepare("UPDATE scheduled SET estado = 'error', detalle = 'interrumpido por un reinicio del servicio' WHERE estado = 'enviando'").run().changes;
   const reportes = db.prepare("UPDATE reportes SET estado = 'error', error = 'El análisis se interrumpió por un reinicio del servicio. Pulsa «Volver a analizar».' WHERE estado = 'analizando'").run().changes;
@@ -45,10 +56,10 @@ export function buclesParados(registro, ahora = Date.now(), desdeArranque = Infi
 }
 
 /**
- * Apagado ordenado (SIGTERM de systemd al reiniciar o desplegar): deja de aceptar trabajo, espera hasta 25 s a
+ * Apagado ordenado (SIGTERM de systemd al reiniciar o desplegar): deja de aceptar trabajo, espera hasta 60 s a
  * que terminen las respuestas en curso, vuelca la base a disco y sale. Lo que no termine se recupera al arrancar.
  */
-export function apagadoOrdenado({ bucles, servidor, setter, dbs, esperaMs = 25000 }) {
+export function apagadoOrdenado({ bucles, servidor, setter, dbs, esperaMs = 60000 }) {
   let saliendo = false;
   const salir = async (senal) => {
     if (saliendo) return; saliendo = true;
@@ -56,7 +67,9 @@ export function apagadoOrdenado({ bucles, servidor, setter, dbs, esperaMs = 2500
     bucles.forEach((b) => b.parar());
     servidor?.close?.();
     const fin = Date.now() + esperaMs;
-    while (setter?.enCurso?.size && Date.now() < fin) await new Promise((ok) => setTimeout(ok, 250));
+    // Respuestas a medio enviar, avisos de GHL a medio procesar y audios transcribiéndose
+    const ocupado = () => setter?.enCurso?.size || setter?.colas?.size || setter?.mediosEnCurso?.size;
+    while (ocupado() && Date.now() < fin) await new Promise((ok) => setTimeout(ok, 250));
     for (const db of dbs) { try { db.pragma('wal_checkpoint(TRUNCATE)'); db.close(); } catch (e) { console.error('Cierre de la base:', e.message); } }
     process.exit(0);
   };

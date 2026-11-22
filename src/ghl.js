@@ -34,7 +34,7 @@ function aplanar(raw) {
 
 export function parseWebhook(raw = {}) {
   const b = aplanar(raw || {});
-  const tipoEvento = b.type || b.event || '';
+  const tipoEvento = String(b.type || b.event || '');
   const direction = String(b.direction || (tipoEvento.includes('Outbound') ? 'outbound' : 'inbound')).toLowerCase();
   const msg = b.message || {};
   const esTags = /ContactTag|TagUpdate|ContactUpdate/i.test(tipoEvento);
@@ -153,6 +153,19 @@ export class Ghl {
     const r = await this.req('GET', `/conversations/search?${q}`);
     const c = (r?.conversations || [])[0];
     return c ? { id: c.id, canal: canalDesdeTipo(c.lastMessageType || c.type) } : null;
+  }
+
+  /**
+   * Últimos mensajes de una conversación, del más antiguo al más nuevo, ya normalizados. Es la fuente fiable de
+   * lo que ha entrado y salido: el webhook de workflow no trae el id del mensaje, ni el canal, ni los adjuntos.
+   */
+  async mensajes(conversationId, limit = 30) {
+    const r = await this.req('GET', `/conversations/${conversationId}/messages?limit=${limit}`);
+    const lista = r?.messages?.messages || (Array.isArray(r?.messages) ? r.messages : []);
+    return lista.map((m) => ({
+      id: m.id, direccion: String(m.direction || '').toLowerCase(), tipo: String(m.messageType || ''), canal: canalDesdeTipo(m.messageType),
+      texto: m.body || '', adjuntos: Array.isArray(m.attachments) ? m.attachments : [], userId: m.userId || null, source: m.source || null, fecha: m.dateAdded,
+    })).filter((m) => m.id && m.fecha).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }

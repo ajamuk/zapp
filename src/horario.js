@@ -45,8 +45,8 @@ export function hoyLocal(date = new Date(), tz = config.tz) {
 export const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Retardo humano: espera aleatoria + tiempo de escritura según longitud. */
-export function retardoHumano(textos, { min = config.ai.minDelay, max = config.ai.maxDelay, velocidad = config.ai.typingSpeed, random = Math.random } = {}) {
+export function retardoHumano(textos, { min = config.ai.minDelay, max = config.ai.maxDelay, velocidad = config.ai.typingSpeed, tope = config.ai.typingMax, random = Math.random } = {}) {
   const lectura = (min + random() * (max - min)) * 1000;
-  const escritura = textos.map((t) => Math.min(12000, (t.length / Math.max(1, velocidad)) * 1000));
+  const escritura = textos.map((t) => Math.min(tope * 1000, (t.length / Math.max(1, velocidad)) * 1000));
   return { lectura, escritura };
 }

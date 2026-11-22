@@ -3,6 +3,7 @@ import zlib from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
+import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { parseWebhook } from './ghl.js';
 import { Setter } from './setter.js';
 import path from 'node:path';
@@ -131,7 +132,11 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     if (!config.ghlWebhookEnabled) return res.status(503).json({ error: 'entrada de GHL desactivada' });
     const evt = parseWebhook(req.body);
     res.json({ recibido: true });
-    try { await setter.handleWebhook(evt); } catch (e) { console.error('Webhook:', e); }
+    try {
+      const r = await setter.handleWebhook(evt);
+      // Un aviso que no se puede atribuir a ningún chat no debe perderse en silencio
+      if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));
+    } catch (e) { console.error('Webhook:', e); }
   });
 
   const admin = express.Router();
@@ -222,7 +227,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     if (!c) return res.status(404).json({ error: 'no existe' });
     if (c.ai_paused || c.derivado) return res.status(409).json({ error: 'Sofía está pausada en este chat: reactívala primero.' });
     if (!config.ghlWebhookEnabled) return res.status(409).json({ error: 'La entrada de GHL está apagada: Sofía no está atendiendo chats.' });
-    repo.updateConv(c.id, { respond_at: new Date().toISOString() });
+    const ya = new Date();
+    repo.updateConv(c.id, { respond_at: (dentroDeHorario(ya) ? ya : siguienteApertura(ya)).toISOString() });
     res.json({ ok: true });
   });
   admin.post('/panel/conversaciones/:id/pausar', (req, res) => {

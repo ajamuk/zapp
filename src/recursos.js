@@ -72,6 +72,16 @@ export function nombreImagenInfo(tipo, sede, familia) {
   return `${s}-${familia === 'academy' ? 'academy' : 'crossfit-hyrox'}-${tipo}`;
 }
 
+/**
+ * Texto que acompaña al archivo. WhatsApp (Twilio) rechaza con un 400 los adjuntos que van sin texto, así que
+ * por ese canal siempre llevan uno corto, con el tono de Sofía.
+ */
+export function pieDeArchivo(r) {
+  if (/-tarifas$/i.test(r.nombre)) return 'aquí tienes las tarifas';
+  if (/-horarios$/i.test(r.nombre)) return 'y aquí los horarios';
+  return 'te lo dejo por aquí';
+}
+
 /** Bloque de contexto para Sofía con los recursos que puede enviar (las imágenes de tarifas/horarios van solas). */
 export function contextoIA(db) {
   const todos = listar(db, { activos: true });
