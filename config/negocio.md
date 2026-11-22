@@ -20,6 +20,7 @@ Copiado de Zapp el 19 nov 2026; tarifas y horarios comprobados en AimHarder el m
 - Grupos de máximo 10 personas.
 - Dura uno o dos meses; después pasa a las clases de CrossFit con toda la comunidad.
 - Quien ya tiene experiencia entra directamente a CrossFit/HYROX.
+- Excepción en Parla: si a quien empieza desde cero no le encaja ningún horario de Academy, puede empezar directamente en las clases normales de CrossFit y HYROX. El coach estará pendiente de él y le enseñará todo exactamente igual que en Academy.
 - Precio: a igualdad de días, Academy cuesta lo mismo que CrossFit/HYROX (Academy 2 días = Tarifa M, Academy 3 días = Tarifa L).
 
 ## Tarifas mensuales

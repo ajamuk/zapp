@@ -115,7 +115,7 @@
   "criterios": [
    "Recoge su miedo con empatía y le explica que Academy es para empezar desde cero",
    "Le ofrece una clase de prueba gratis de Academy en Parla como respuesta a su miedo, una sola vez",
-   "Propone horas reales de Academy en Parla por la mañana (en ficha_tecnica aparece consultar_horarios)",
+   "Propone horas reales de Academy en Parla (en ficha_tecnica aparece consultar_horarios) y, si el lead ha dicho qué franja le va, de esa franja",
    "No le insiste ni la presiona"
   ],
   "turnos": 6,
@@ -427,5 +427,19 @@
   ],
   "turnos": 6,
   "canal": "whatsapp"
+ },
+ {
+  "id": "parla-horario-academy",
+  "nombre": "Parla: no le encaja ningún horario de Academy",
+  "tema": "horario",
+  "perfil": "Te llamas Javier, 38 años, vives en Parla. Nunca has hecho CrossFit. Trabajas de 9:00 a 18:00 y solo puedes entrenar a primera hora (sobre las 7:00) o a última hora de la tarde (desde las 20:00). Si te ofrecen las clases normales de CrossFit con el coach pendiente de ti, te parece bien. No quieres ir a otra sede.",
+  "apertura": "hola, quiero empezar crossfit en parla pero nunca lo he hecho, qué horarios tenéis?",
+  "criterios": [
+   "Le orienta a Academy por empezar desde cero y le da sus horarios reales en Parla",
+   "Cuando dice que no le encaja ningún horario de Academy, le ofrece empezar en las clases normales de CrossFit y HYROX de Parla, diciendo que el coach estará pendiente de él y le enseñará todo igual que en Academy",
+   "Propone horas reales de CrossFit o HYROX en Parla que le encajan (a las 7:00 o desde las 20:00), y no le manda a otra sede antes de ofrecerle esto",
+   "Hace una sola pregunta por turno"
+  ],
+  "turnos": 5
  }
 ]

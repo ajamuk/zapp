@@ -256,6 +256,12 @@ test('si Sofía enumera las sedes sin El Cañaveral, se le devuelve una vez para
   const { runTurn, revisarRespuesta } = await import('../src/llm.js');
   assert.ok(revisarRespuesta({ mensajes: ['en qué sede te viene mejor, Parla, Getafe o Las Rosas?'] }));
   assert.equal(revisarRespuesta({ mensajes: ['Parla, Getafe, Las Rosas o El Cañaveral, que abre el 1 de febrero de 2027?'] }), null);
+  // Dos preguntas en un turno: se devuelve para que deje una
+  assert.ok(revisarRespuesta({ mensajes: ['son 85 € con 2 días', 'cuántos días te ves entrenando, y te va mejor mañana o tarde?'] }));
+  assert.ok(revisarRespuesta({ mensajes: ['no te he entendido, me lo puedes repetir? y cuántos días te ves entrenando?'] }));
+  assert.ok(revisarRespuesta({ mensajes: ['qué horas te vendrían bien por el trabajo, y te viene mejor Getafe o Las Rosas?'] }));
+  assert.equal(revisarRespuesta({ mensajes: ['en Parla son lunes, miércoles y viernes', 'te encaja alguna de esas horas?', '[imagen: parla-academy-horarios]'] }), null);
+  assert.equal(revisarRespuesta({ mensajes: ['por la mañana y por la tarde hay clases', 'cuál te viene mejor?'] }), null);
   assert.equal(revisarRespuesta({ mensajes: ['en Getafe y Las Rosas no hay clase de prueba'] }), null); // no es una lista de sedes
   const resp = (id, mensajes) => ({ content: [{ type: 'tool_use', id, name: 'responder', input: { mensajes, fase: 'f1 apertura' } }] });
   const guion = [resp('a', ['tenemos Parla, Getafe y Las Rosas, cuál te viene mejor?']), resp('b', ['tenemos Parla, Getafe, Las Rosas y El Cañaveral, nuestra próxima apertura el 1 de febrero de 2027, cuál te viene mejor?'])];

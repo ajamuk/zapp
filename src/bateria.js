@@ -126,12 +126,12 @@ Cómo escribes: como un cliente normal por chat, en español de España, mensaje
 Cuando ya tengas lo que querías, cuando te digan que te escribirá una persona del equipo, o si la conversación ya no da más de sí, contesta solo con: [FIN]`;
 
 const SISTEMA_JUEZ = `Evalúas una conversación entre Sofía (la setter por chat de CrossFit MetroPolitano, una IA) y un lead. Para cada criterio, decide si SE CUMPLE (true) o NO (false) mirando solo lo que hizo Sofía en la conversación y en la ficha técnica (herramientas que usó, etiquetas, estado del chat).
-Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Para saber si un dato es cierto, mira la base de conocimiento y las tarifas que tienes abajo: lo que está ahí no es inventado, aunque Sofía no haya usado una herramienta (si el criterio pide expresamente usar una herramienta, eso sí se comprueba en la ficha técnica). Es inventado lo que no está ni ahí ni en lo que devolvieron sus herramientas, o lo que lo contradice. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
+Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. Si la conversación trae mensajes de «IA ANTERIOR», son de antes de Sofía: evalúa solo lo que escribe Sofía después de la línea que lo separa. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Para saber si un dato o una pauta es correcta, mira las instrucciones de Sofía, la base de conocimiento y las tarifas que tienes abajo: lo que está ahí no es inventado, aunque Sofía no haya usado una herramienta (si el criterio pide expresamente usar una herramienta, eso sí se comprueba en la ficha técnica). Es inventado lo que no está ni ahí ni en lo que devolvieron sus herramientas, o lo que lo contradice. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
 
 /** Sistema del juez: sus reglas y, en un bloque cacheado, la base de conocimiento y las tarifas con las que contesta Sofía. */
-export const sistemaJuez = (negocio) => [
+export const sistemaJuez = (negocio, prompt = null) => [
   { type: 'text', text: SISTEMA_JUEZ },
-  { type: 'text', text: `<base_de_conocimiento>\n${negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
+  { type: 'text', text: `${prompt ? `<instrucciones_de_sofia>\n${prompt}\n</instrucciones_de_sofia>\n\n` : ''}<base_de_conocimiento>\n${negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
 ];
 
 const ESQUEMA_JUEZ = {
@@ -142,6 +142,12 @@ const ESQUEMA_JUEZ = {
 // Comprobaciones del script antiguo que dan falsos fallos (dependen del contexto): eso lo valora el juez
 const NO_AUTOMATICOS = /preguntó el precio|habla de prueba fuera de Parla/;
 const QUIEN = { lead: 'LEAD', ia: 'SOFÍA', humano: 'EQUIPO' };
+/** En un «momento», lo anterior es de la conversación real (otra IA o el equipo): solo se evalúa lo que contesta Sofía al final. */
+const QUIEN_ANTES = { lead: 'LEAD', ia: 'IA ANTERIOR', humano: 'EQUIPO' };
+export function textoConversacion(conversacion, previos = 0) {
+  return conversacion.map((m, i) => `${(i < previos ? QUIEN_ANTES : QUIEN)[m.autor] || m.autor}: ${m.texto}`
+    + (previos && i === previos - 1 ? '\n--- Hasta aquí, la conversación previa (no la escribió Sofía y no se evalúa). Desde aquí contesta Sofía ---' : '')).join('\n');
+}
 
 /**
  * Pasa un caso una vez. Devuelve { pasa, fallosAuto, criterios, conversacion, estado, usd }.
@@ -161,7 +167,8 @@ export async function ejecutarCaso(db, caso, { complete, completeLead, completeJ
     repo: tmp, catalogo: db, borradores, complete, ghl, etiquetas, live: true, sleep: async () => {}, avisar: async (t) => avisos.push(t),
     aimharder: {
       buscarSocioPorTelefono: async () => ({ esSocio: caso.socio, sede: caso.socio ? 'Getafe' : null }),
-      prepararAlta: async (d) => ({ estado: 'preparada', pendiente: 22.67, tarifa: d.tarifa, detalle: 'alta simulada (batería de pruebas)' }),
+      // El pendiente simulado es el mismo prorrateo que calcula Sofía (como haría AimHarder), no un importe fijo
+      prepararAlta: async (d) => ({ estado: 'preparada', pendiente: d.primer_recibo ?? 22.67, tarifa: d.tarifa, detalle: 'alta simulada (batería de pruebas)' }),
       fichaEnSede: async () => null,
     },
   });
@@ -220,8 +227,8 @@ export async function ejecutarCaso(db, caso, { complete, completeLead, completeJ
 
   // Juez
   const j = await pedirJSON({
-    system: sistemaJuez(docs.textosActivos(db, borradores || {}).negocio), schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: sumar,
-    contenido: `<conversacion canal="${caso.canal}">\n${conversacion.map((m) => `${QUIEN[m.autor] || m.autor}: ${m.texto}`).join('\n')}${caso.tipo === 'escenario' && c.tipo === 'socio' ? '\n(Sofía no contestó: el sistema detectó que es socio, la pausó y avisó al equipo)' : ''}\n</conversacion>\n\n<ficha_tecnica>\n${JSON.stringify(estado, null, 1)}\n</ficha_tecnica>${caso.referencia ? `\n\n<referencia>\n${caso.referencia}\n</referencia>` : ''}\n\n<criterios>\n${caso.criterios.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n</criterios>`,
+    system: (() => { const t = docs.textosActivos(db, borradores || {}); return sistemaJuez(t.negocio, t.prompt); })(), schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: sumar,
+    contenido: `<conversacion canal="${caso.canal}">\n${textoConversacion(conversacion, caso.tipo === 'momento' ? caso.contexto.length : 0)}${caso.tipo === 'escenario' && c.tipo === 'socio' ? '\n(Sofía no contestó: el sistema detectó que es socio, la pausó y avisó al equipo)' : ''}\n</conversacion>\n\n<ficha_tecnica>\n${JSON.stringify(estado, null, 1)}\n</ficha_tecnica>${caso.referencia ? `\n\n<referencia>\n${caso.referencia}\n</referencia>` : ''}\n\n<criterios>\n${caso.criterios.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n</criterios>`,
   });
   const criterios = caso.criterios.map((t, i) => { const r = (j.criterios || []).find((x) => x.n === i + 1); return { criterio: t, cumple: Boolean(r?.cumple), motivo: r?.motivo || 'el juez no lo valoró' }; });
   return { pasa: fallosAuto.size === 0 && criterios.every((x) => x.cumple), fallosAuto: [...fallosAuto], criterios, conversacion, estado, usd };
