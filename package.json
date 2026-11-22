@@ -15,7 +15,8 @@
     "sync-aimharder": "node scripts/sync-aimharder.js",
     "evaluar": "node scripts/evaluar.js",
     "build-simulador": "node scripts/build-simulador.js",
-    "verificar-ghl": "node scripts/verificar-ghl.js"
+    "verificar-ghl": "node scripts/verificar-ghl.js",
+    "prueba-extremo": "node scripts/prueba-extremo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.11.0",

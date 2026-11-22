@@ -148,6 +148,26 @@ export function resultadoTrialOps(t) {
   return null;
 }
 
+/**
+ * Línea de contexto para Sofía con la prueba del calendario de GHL. Distingue la que está por venir de la que ya
+ * pasó: casi todas las del calendario son de hace meses y, contadas como «tiene una clase el lunes 24 de agosto»,
+ * Sofía las trataba como pendientes y abría la conversación hablando de ellas.
+ */
+export function describirTrialOps(t, ahora = new Date()) {
+  const inicio = new Date(t.start_time);
+  const r = resultadoTrialOps(t);
+  const donde = `${t.center}, ${t.class_type}`;
+  const f = (o) => inicio.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', ...o });
+  if (Number.isFinite(inicio.getTime()) && inicio > ahora) {
+    const cuando = f({ weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+    if (r === 'cancelada') return `Tenía una clase de prueba en el calendario (${donde}) para el ${cuando}, pero está anulada.`;
+    return `Tiene una clase de prueba en el calendario (${donde}) el ${cuando}. No le reserves otra salvo que la quiera cambiar.`;
+  }
+  const cuando = f({ day: 'numeric', month: 'long', year: 'numeric' });
+  const fin = { asistio: 'y vino', no_vino: 'y no vino', cancelada: 'que se anuló', alta: 'y después se dio de alta' }[r] || '(no consta si vino)';
+  return `En el calendario hay una clase de prueba antigua (${donde}) del ${cuando} ${fin}. Ya pasó: no la trates como pendiente ni la saques tú; tenla en cuenta solo si el lead habla de ella.`;
+}
+
 /** Texto corto de una prueba para el contexto de Sofía. */
 export function describir(p, ahora = new Date()) {
   const cuando = fechaLegible(p.fecha_hora);

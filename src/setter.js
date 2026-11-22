@@ -10,7 +10,7 @@ import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita, horaMadrid, fueraDeVentana } from './followups.js';
-import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps } from './clase-prueba.js';
+import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps, describirTrialOps } from './clase-prueba.js';
 import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
@@ -391,11 +391,7 @@ export class Setter {
     const p = ultimaPrueba(this.repo.db, conv.id);
     if (p) return describirPrueba(p, this.now());
     const t = String(conv.id).startsWith('prueba-') ? null : pruebaTrialOps(conv.contact_id);
-    if (t) {
-      const r = resultadoTrialOps(t);
-      const cuando = new Date(t.start_time).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-      return `Tiene una clase de prueba en el calendario (${t.center}, ${t.class_type}) el ${cuando}${r ? `; resultado: ${{ asistio: 'vino', no_vino: 'no vino', cancelada: 'anulada', alta: 'ya se dio de alta' }[r]}` : ''}. No le reserves otra salvo que la quiera cambiar.`;
-    }
+    if (t) return describirTrialOps(t, this.now());
     return `Prueba de Parla solicitada: ${conv.prueba_reservada ? 'sí' : 'no'}.`;
   }
 
@@ -516,7 +512,9 @@ export class Setter {
   async aplicarRespuesta(conv, r, efectos) {
     const patch = {};
     if (r.fase) patch.fase = r.fase;
-    const sede = r.sede && r.sede !== 'desconocida' ? normalizarSede(r.sede) : null;
+    // Si Sofía no dice la sede pero en este turno ha consultado precios, horarios o recibo de una sola, es esa
+    const consultadas = [...new Set((efectos.herramientas || []).map((h) => h.entrada?.sede && normalizarSede(h.entrada.sede)).filter(Boolean))];
+    const sede = r.sede && r.sede !== 'desconocida' ? normalizarSede(r.sede) : (!conv.sede && consultadas.length === 1 ? consultadas[0] : null);
     if (sede && sede !== conv.sede) {
       patch.sede = sede;
       efectos.tags.add(TAGS.sedes[sede].tag);

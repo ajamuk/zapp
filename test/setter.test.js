@@ -414,3 +414,17 @@ test('un punto en medio de una burbuja se devuelve para que lo parta; abreviatur
     assert.equal(puntoEnMedio([ok]), false, ok);
   }
 });
+
+test('si Sofía no indica la sede pero ha consultado las tarifas de una, el chat queda con esa sede', async () => {
+  const { setter, repo, llamadas, avanzar } = montar({
+    respuestas: [
+      [{ name: 'consultar_tarifas', input: { sede: 'las_rosas', familia: 'academy' } }],
+      [{ name: 'responder', input: { mensajes: ['Academy en Las Rosas va desde 95 € al mes'], sede: 'desconocida', fase: 'f3 presentación', etiquetas: [] } }],
+    ],
+  });
+  await setter.handleWebhook(entrante('cuánto cuesta en las rosas?'));
+  avanzar(60000);
+  await setter.tick();
+  assert.equal(repo.getConv('c1').sede, 'las_rosas');
+  assert.ok(llamadas.tags.includes('las rosas') || llamadas.tags.some((t) => /rosas/.test(t)));
+});

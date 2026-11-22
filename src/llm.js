@@ -140,7 +140,9 @@ export const TOOLS = [
           },
         },
       },
-      required: ['mensajes', 'fase'],
+      // `sede` es obligatoria (con «desconocida» si aún no se sabe): si se deja opcional, el modelo a veces no la
+      // manda aunque lleve toda la conversación hablando de una sede, y el contacto se queda sin etiquetar ni asignar.
+      required: ['mensajes', 'fase', 'sede'],
     },
   },
 ];
