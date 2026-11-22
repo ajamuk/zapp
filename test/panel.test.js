@@ -45,7 +45,11 @@ test('MetroTools exige sesión administrativa del proxy y petición del panel', 
     assert.equal((await fetch(page, { headers: { 'x-cfmpo-admin': '1' } })).status, 403);
     const ok = await fetch(page, { headers: admin });
     assert.equal(ok.status, 200);
-    assert.match(await ok.text(), /metro-os\/v4.4.0\/metro-platform.js/);
+    const html = await ok.text();
+    assert.match(html, /metro-os\/v4.4.0\/metro-platform.js/);
+    const csp = ok.headers.get('content-security-policy');
+    const scriptSrc = csp.split('; ').find((directive) => directive.startsWith('script-src '));
+    assert.match(scriptSrc, /^script-src 'sha256-[\w+/=]+' https:\/\/apps\.crossfitmpo\.com\/metro-os\/v4\.4\.0\/metro-model\.js https:\/\/apps\.crossfitmpo\.com\/metro-os\/v4\.4\.0\/metro-platform\.js$/);
     assert.equal((await fetch(route, { headers: admin })).status, 403);
     const data = await fetch(route, { headers: { ...admin, ...browser } });
     assert.equal(data.status, 200);
