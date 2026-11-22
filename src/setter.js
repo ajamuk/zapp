@@ -27,6 +27,9 @@ const ESPERAS_REINTENTO = [2 * 60000, 5 * 60000]; // si falla la IA o GHL: reint
 const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 // Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
 // externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
+const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
+
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
 /** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
 export function textoComparable(t) {
@@ -48,9 +51,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba });
   }
 
   // ---------- Entrada ----------
@@ -193,7 +196,9 @@ export class Setter {
       if (telefono) this.repo.updateConv(conv.id, { telefono });
     }
     let socio = { esSocio: false };
-    if (telefono) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
+    // TEST_PHONES: números del equipo que se tratan siempre como lead (para probar a Sofía desde el CRM)
+    const prueba = telefono && esTelefonoPrueba(telefono, this.telefonosPrueba);
+    if (telefono && !prueba) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
     if (socio.esSocio) {
       const sede = normalizarSede(socio.sede);
       this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: 'socio' });

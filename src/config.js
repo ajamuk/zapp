@@ -25,6 +25,8 @@ export const config = {
   tz: env('BUSINESS_TZ', 'Europe/Madrid'),
   ghlWebhookEnabled: env('GHL_WEBHOOK_ENABLED', 'true') === 'true',
   webhookSecret: env('WEBHOOK_SECRET'),
+  // Teléfonos del equipo que Sofía trata siempre como lead, aunque sean socios (separados por comas)
+  telefonosPrueba: env('TEST_PHONES').split(',').map((x) => x.trim()).filter(Boolean),
   adminToken: env('ADMIN_TOKEN'),
   ai: {
     apiKey: env('ANTHROPIC_API_KEY'),
