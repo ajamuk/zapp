@@ -363,16 +363,25 @@
   .pie-b { margin-bottom: 14px; } .pie-b:last-child { margin-bottom: 0; }
   @media (min-width: 1041px) {
     /* Solo la zona de chats se ensancha en pantallas grandes: la cabecera y el menú no se mueven al cambiar de sección */
-    #main:has(.chats) { margin-inline: min(0px, calc((1200px - min(1640px, 100vw - 96px)) / 2)); }
     #main:has(.chats) > h2 { display: none; }
+    /* Menos aire arriba: en un portátil cada línea que se ahorra es una línea más de conversación */
+    .sofia { padding-top: 18px; padding-bottom: 20px; }
+    .sofia-cabecera { margin-bottom: 10px; } .sofia-cabecera h1 { font-size: 24px; }
+    #raiz #bsalir { min-height: 36px; padding: 4px 12px; }
+    .secciones { margin-bottom: 12px; } .secciones a { min-height: 38px; }
+    #main:has(.chats) .vistas { padding-bottom: 6px; margin-bottom: 0; }
+    #main:has(.chats) .barra-filtros { margin-bottom: 8px; }
+    #main:has(.chats) :is(.barra-filtros input, .barra-filtros select, .barra-filtros button) { min-height: 38px; }
+    .chats { scroll-margin-top: 12px; }
     .hilo .etq-hilo { padding-block: 6px; }
-    .chats { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+    .chats { grid-template-columns: clamp(250px, 26%, 360px) minmax(0, 1fr); }
     .burbuja { max-width: min(75%, 620px); }
     .hilo .msgs { background: color-mix(in srgb, var(--panel2) 45%, var(--panel)); }
     .b-lead { background: var(--panel); border: 1px solid var(--line); }
   }
-  @media (min-width: 1280px) {
-    .hilo:has(.pie) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 26%, 360px); grid-template-rows: auto auto minmax(0, 1fr); }
+  @media (min-width: 1500px) { #main:has(.chats) { margin-inline: min(0px, calc((1200px - min(1640px, 100vw - 96px)) / 2)); } }
+  @media (min-width: 1041px) {
+    .hilo:has(.pie) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(230px, 28%, 360px); grid-template-rows: auto auto minmax(0, 1fr); }
     .hilo:has(.pie) > .cab, .hilo:has(.pie) > .etq-hilo { grid-column: 1 / -1; }
     .hilo:has(.pie) > .pie { max-height: none; border-top: 0; border-left: 1px solid var(--line); padding: 14px; font-size: 13px; }
   }
@@ -943,7 +952,9 @@ function ajustarAltoChats() {
   const ch = $('#ch'); if (!ch) return;
   if (matchMedia('(max-width: 1040px)').matches) { ch.style.removeProperty('--alto-chats'); return; }
   const arriba = ch.getBoundingClientRect().top + window.scrollY;
-  ch.style.setProperty('--alto-chats', `${Math.max(420, window.innerHeight - arriba - 25)}px`);
+  // Si la ventana es baja (portátil pequeño), la zona ocupa la ventana entera: se baja la página una vez y cabe todo
+  const libre = window.innerHeight - arriba - 21;
+  ch.style.setProperty('--alto-chats', `${libre >= 480 ? libre : Math.max(420, window.innerHeight - 32)}px`);
 }
 window.addEventListener('resize', ajustarAltoChats);
 
@@ -1031,6 +1042,8 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
   if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
+  // Ventana baja en escritorio: al abrir un chat, la zona de chats sube sola hasta ocupar la ventana
+  else if (!mantener && $('#ch').getBoundingClientRect().bottom > window.innerHeight + 2) $('#ch').scrollIntoView({ block: 'start' });
   cargarMedios($('#msgs'));
   $('#msgs').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/panel/conversaciones/${encodeURIComponent(id)}`, Number(b.dataset.rep)));
   $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); recargar(); });

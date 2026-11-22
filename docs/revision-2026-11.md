@@ -105,7 +105,7 @@ Importa más de lo que parece: mientras el servidor calcula, Sofía no atiende n
 - Con un chat largo, la conversación **se salía de la ventana**: lista y chat crecían hasta los 1.700 px, la página
   entera hacía scroll y el chat se abría por el primer mensaje. Ahora la zona de chats llega justo hasta abajo de la
   ventana, cada columna tiene su desplazamiento y el chat se abre por el último mensaje.
-- En pantallas de 1280 px o más, la **ficha del lead** (lo que ha entendido Sofía, altas, clase de prueba, mensaje
+- En escritorio (más de 1040 px), la **ficha del lead** (lo que ha entendido Sofía, altas, clase de prueba, mensaje
   programado, follow-ups) va en una tercera columna a la derecha en vez de quitarle sitio a los mensajes.
 - En monitores grandes la zona de chats se ensancha (hasta 1.640 px); la cabecera y el menú no se mueven.
 - Los mensajes llevan un separador por día («Hoy», «Ayer», «viernes, 20 de noviembre») y cada burbuja solo la hora.
