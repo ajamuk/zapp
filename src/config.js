@@ -28,6 +28,8 @@ export const config = {
   // Teléfonos del equipo para probar: Sofía los trata como lead aunque sean socios y les contesta de verdad
   // también en modo shadow (separados por comas)
   telefonosPrueba: env('TEST_PHONES').split(',').map((x) => x.trim()).filter(Boolean),
+  // Mensaje con el que un teléfono de prueba reinicia su conversación desde WhatsApp (solo funciona para TEST_PHONES)
+  palabraReinicio: env('TEST_RESET_WORD', '#reset'),
   adminToken: env('ADMIN_TOKEN'),
   ai: {
     apiKey: env('ANTHROPIC_API_KEY'),

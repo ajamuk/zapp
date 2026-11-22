@@ -191,11 +191,25 @@ await escenario('2. Modo shadow: solo deja notas', { modo: 'shadow' }, async ({ 
 });
 
 // ---------- 3. Modo prueba con teléfono de prueba: a ese sí se le contesta ----------
-await escenario('3. Modo shadow con TEST_PHONES: al teléfono de prueba se le contesta de verdad', { modo: 'shadow', telefonosPrueba: TELEFONO }, async ({ e, webhook, hastaQueTermine }) => {
+await escenario('3. Modo shadow con TEST_PHONES: al teléfono de prueba se le contesta de verdad', { modo: 'shadow', telefonosPrueba: TELEFONO }, async ({ e, webhook, consulta, conv, hastaQueTermine }) => {
   e.entra('hola');
   await webhook('hola');
   comprobar(await hastaQueTermine(), 'Sofía contesta al teléfono de prueba');
   comprobar(e.enviados.length >= 1 && !e.notas.some((x) => x.startsWith('[Borrador IA')), 'la respuesta sale como mensaje y no como borrador');
+
+  // #reset desde el teléfono de prueba: borra la conversación y avisa
+  const antes = e.enviados.length;
+  e.entra('#reset');
+  await webhook('#reset');
+  await dormir(6000);
+  const leads = () => consulta("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('lead', 'ia', 'humano') ORDER BY id", CONV);
+  comprobar(e.enviados.length === antes + 1 && /reiniciada/.test(e.enviados.at(-1).message), '#reset contesta con la confirmación (un solo mensaje)', JSON.stringify(e.enviados.slice(antes).map((m) => m.message)));
+  comprobar(leads().length === 0 && conv() && !conv().ai_paused && !conv().respond_at, 'la conversación queda vacía, sin pausa y sin respuesta pendiente', JSON.stringify(leads()));
+  e.entra('hola otra vez');
+  await webhook('hola otra vez');
+  comprobar(await hastaQueTermine({ desde: antes + 1 }), 'tras el reinicio, Sofía contesta al siguiente mensaje');
+  const h = leads().map((m) => m.texto);
+  comprobar(h[0] === 'hola otra vez' && !h.includes('hola') && !conv().ai_paused, 'empieza de cero: lo anterior no vuelve a entrar y no se pausa', JSON.stringify(h));
 });
 
 console.log(`\n${hechos.length} comprobaciones correctas, ${fallos.length} fallidas.`);

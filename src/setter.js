@@ -28,6 +28,8 @@ const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 // Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
 // externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
 const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+/** ¿Es el mensaje de reinicio? Tiene que ser el mensaje entero (sin distinguir mayúsculas ni espacios de más). */
+export const esReinicio = (texto, palabra) => Boolean(palabra) && String(texto || '').trim().toLowerCase() === String(palabra).trim().toLowerCase();
 export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
 
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
@@ -53,9 +55,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio });
   }
 
   // ---------- Entrada ----------
@@ -117,14 +119,15 @@ export class Setter {
     // Chat que ya existe pero sin cursor (GHL no listó nada las veces anteriores): desde su primer mensaje aquí
     const primero = cursor ? null : db.prepare('SELECT min(created_at) c FROM messages WHERE conversation_id = ?').get(convId)?.c;
     const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity) - VENTANA_SYNC;
-    const desde = new Date(base).toISOString();
+    const suelo = this.repo.getConv(convId)?.ghl_sync_suelo;
+    const desde = [new Date(base).toISOString(), suelo].filter(Boolean).sort().pop();
     const iso = (fecha, ms) => new Date(new Date(fecha).getTime() + ms).toISOString();
     const conocido = (id) => Boolean(db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(id));
     const buscado = textoComparable(evt?.texto);
     const out = { visto: false, entrantes: 0, salientes: 0 };
     let nuevoCursor = cursor || null; let pendiente = false;
     for (const m of lista) {
-      if (!(m.fecha > desde)) continue;
+      if (!(m.fecha >= desde)) continue;
       const t = textoComparable(m.texto);
       if (m.direccion === 'inbound' && CANALES_NATIVOS.has(m.canal)) {
         const esElDelWebhook = Boolean(evt) && (!buscado || buscado === t);
@@ -262,6 +265,14 @@ export class Setter {
   }
 
   async onInbound(evt, { programar = true } = {}) {
+    // Un teléfono de prueba reinicia su conversación escribiendo la palabra de reinicio (para los leads es un texto más)
+    const previa = this.repo.getConv(evt.conversationId);
+    if (esReinicio(evt.texto, this.palabraReinicio) && esTelefonoPrueba(evt.telefono || previa?.telefono, this.telefonosPrueba)) {
+      // Aviso repetido del mismo reinicio (llega sin id de mensaje): no se borra otra vez lo que se haya escrito después
+      const reciente = previa?.ghl_sync_suelo && this.now().getTime() - new Date(previa.ghl_sync_suelo).getTime() < 5 * 60000;
+      if (!evt.messageId && reciente) return { ignorado: 'reinicio ya hecho' };
+      return this.reiniciarPrueba(evt, previa);
+    }
     const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
     // Se contesta por donde ha escrito la última vez (el mismo contacto puede escribir por Instagram y luego por WhatsApp)
@@ -505,6 +516,7 @@ export class Setter {
     if (!conv || conv.ai_paused || conv.derivado) return null;
     const ultimoDelLead = () => this.repo.db.prepare("SELECT max(id) m FROM messages WHERE conversation_id = ? AND autor = 'lead'").get(convId)?.m ?? 0;
     const leadAlEmpezar = ultimoDelLead();
+    const reinicioAlEmpezar = this.reinicios?.get(convId) || 0;
     const system = this.sistema(conv, extraContexto);
     const messages = await this.mensajesModelo(this.repo.history(convId));
     const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
@@ -529,6 +541,8 @@ export class Setter {
     if (this.ghl.mensajes && !String(convId).startsWith('prueba-') && !control?.cancelado) {
       await this.safe(() => this.enSerie(convId, () => this.sincronizar(convId, null, { enMarcha: false })));
     }
+    // La conversación de prueba se ha reiniciado mientras Sofía pensaba: esta respuesta era de la anterior
+    if ((this.reinicios?.get(convId) || 0) !== reinicioAlEmpezar) return null;
     // Mientras Sofía pensaba, alguien del equipo ha escrito o han pausado el chat: no se envía nada
     const ahoraConv = this.repo.getConv(convId);
     if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
@@ -639,6 +653,39 @@ export class Setter {
     }
     this.repo.updateConv(convId, { nota_ghl_id: id, nota_ghl_texto: cuerpo });
     return id;
+  }
+
+  /**
+   * Borra la conversación de un teléfono de prueba y la deja como recién creada. Quedan dos marcas de sistema (que
+   * Sofía no ve) con los ids de GHL del mensaje de reinicio y de la confirmación, y un «suelo»: al repasar GHL no
+   * se mira nada anterior, así que los mensajes viejos no vuelven a entrar.
+   */
+  async reiniciarPrueba(evt, previa) {
+    const id = evt.conversationId;
+    const base = {
+      id, contact_id: evt.contactId || previa?.contact_id, channel: CANALES_NATIVOS.has(evt.canal) ? evt.canal : (previa?.channel || 'whatsapp'),
+      nombre: evt.nombre || previa?.nombre || null, telefono: evt.telefono || previa?.telefono || null,
+    };
+    const marca = evt.fecha && !Number.isNaN(Date.parse(evt.fecha)) ? new Date(evt.fecha).toISOString() : this.now().toISOString();
+    this.repo.borrarConversacion(id);
+    this.repo.upsertConv(base);
+    this.repo.updateConv(id, { ghl_sync_at: marca, ghl_sync_suelo: marca });
+    this.repo.addMessage({ conversation_id: id, external_id: evt.messageId || null, autor: 'sistema', texto: '[conversación de prueba reiniciada desde WhatsApp]' });
+    // Una respuesta que estuviera en marcha para la conversación anterior ya no debe salir
+    (this.reinicios ??= new Map()).set(id, (this.reinicios.get(id) || 0) + 1);
+    this.sinConfirmar?.delete(id);
+    const texto = 'conversación de prueba reiniciada ✅ tu siguiente mensaje empieza de cero';
+    const marcaEnvio = { conversation_id: id, autor: 'sistema', texto: `[enviado al teléfono de prueba] ${texto}` };
+    try {
+      const r = await this.ghl.sendMessage({ contactId: base.contact_id, canal: base.channel, texto });
+      this.repo.addMessage({ ...marcaEnvio, external_id: r?.messageId || null });
+    } catch (e) {
+      // Si GHL no confirma pero el aviso sale, que no se tome por un mensaje del equipo
+      this.anotarSinConfirmar(id, { texto, extra: { autor: 'sistema', texto: marcaEnvio.texto } });
+      console.error('[reinicio]', e.message);
+    }
+    console.log(`[reinicio] ${id}: conversación de prueba reiniciada desde WhatsApp`);
+    return { reiniciada: true };
   }
 
   /** ¿Es un teléfono de prueba del equipo (TEST_PHONES)? Se trata siempre como lead, aunque sea socio. */

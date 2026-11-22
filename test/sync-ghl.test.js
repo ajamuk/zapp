@@ -163,3 +163,57 @@ test('si GHL no confirma a tiempo un envío que sí salió, se da por enviado y 
   assert.equal(repo.getConv('cv1').ai_paused, 0);
   assert.equal(repo.history('cv1').filter((m) => m.autor === 'humano').length, 0);
 });
+
+test('#reset desde un teléfono de prueba borra su conversación y lo anterior no vuelve a entrar', async () => {
+  const repo = crearRepo(openDb(':memory:'));
+  const en = { lista: [], enviados: [] }; let n = 0; let reloj = new Date(T0);
+  const ghl = {
+    buscarConversacion: async () => ({ id: 'cv1', canal: 'whatsapp' }),
+    mensajes: async () => [...en.lista],
+    sendMessage: async ({ texto }) => { const id = `s${++n}`; en.enviados.push(texto); en.lista.push(msg(id, 'outbound', 'TYPE_WHATSAPP', texto, new Date(reloj).toISOString(), { userId: 'u-api', source: 'app' })); return { messageId: id }; },
+    addTags: async () => {}, removeTags: async () => {}, assign: async () => {}, addNote: async () => ({ id: 'n1' }), updateNote: async () => {},
+    getContact: async () => ({ contact: { phone: '+34611111111' } }),
+  };
+  const cola = [['hola! qué sede te pilla mejor?'], ['hola de nuevo! en qué te ayudo?']];
+  const peticiones = [];
+  const complete = async (req) => { peticiones.push(req); return { content: [{ type: 'tool_use', id: 't', name: 'responder', input: { mensajes: cola.shift(), fase: 'f1 apertura', sede: 'desconocida', etiquetas: [] } }], usage: { input_tokens: 1, output_tokens: 1 } }; };
+  const setter = new Setter({
+    repo, ghl, complete, live: false, telefonosPrueba: ['+34 611 11 11 11'], sleep: async () => {}, now: () => reloj, random: () => 0, avisar: async () => {},
+    aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: true, sede: 'Parla' }), prepararAlta: async () => ({}) },
+  });
+  const avanzar = (ms) => { reloj = new Date(reloj.getTime() + ms); };
+  const entra = (id, texto) => { en.lista.push(msg(id, 'inbound', 'TYPE_WHATSAPP', texto, new Date(reloj.getTime() - 1000).toISOString())); return setter.handleWebhook(webhook(texto)); };
+  await entra('g1', 'hola');
+  avanzar(60000); await setter.tick();
+  assert.deepEqual(en.enviados, ['hola! qué sede te pilla mejor?']);
+  avanzar(30000);
+  const r = await entra('g2', ' #RESET ');
+  assert.equal(r.entrantes, 1);
+  assert.equal(en.enviados.length, 2);
+  assert.match(en.enviados[1], /reiniciada/);
+  assert.deepEqual(repo.history('cv1'), [], 'Sofía no ve nada de lo anterior, ni el reinicio ni su confirmación');
+  assert.equal(repo.db.prepare("SELECT count(*) n FROM scheduled WHERE conversation_id = 'cv1'").get().n, 0);
+  const c = repo.getConv('cv1');
+  assert.deepEqual([c.tipo, c.ai_paused, c.respond_at, c.fase], [null, 0, null, null]);
+  // Nuevo mensaje: empieza de cero, sin que lo viejo (ni el aviso de reinicio) vuelva a entrar ni la pause
+  avanzar(30000);
+  await entra('g3', 'buenas');
+  avanzar(60000); await setter.tick();
+  assert.deepEqual(repo.history('cv1').map((m) => `${m.autor}: ${m.texto}`), ['lead: buenas', 'ia: hola de nuevo! en qué te ayudo?']);
+  assert.deepEqual(peticiones.at(-1).messages, [{ role: 'user', content: 'buenas' }]);
+  assert.equal(repo.getConv('cv1').ai_paused, 0);
+  // Repasar GHL otra vez (webhook repetido del reinicio) no vuelve a borrar la conversación
+  await setter.handleWebhook(webhook('#reset'));
+  assert.equal(repo.history('cv1').length, 2);
+});
+
+test('#reset de un lead normal no borra nada: es un mensaje más', async () => {
+  const { setter, repo, en, leads } = montar();
+  en.lista = [msg('g1', 'inbound', 'TYPE_WHATSAPP', 'hola', hace(20))];
+  await setter.handleWebhook(webhook('hola'));
+  en.lista.push(msg('g2', 'inbound', 'TYPE_WHATSAPP', '#reset', hace(5)));
+  await setter.handleWebhook(webhook('#reset'));
+  assert.deepEqual(leads(), ['hola', '#reset']);
+  assert.equal(en.enviados.length, 0);
+  assert.ok(repo.getConv('cv1'));
+});

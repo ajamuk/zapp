@@ -320,6 +320,7 @@ export function openDb(dbPath) {
 const COLUMNAS_NUEVAS = {
   conversations: {
     ghl_sync_at: 'TEXT',           // fecha del último mensaje de GHL ya revisado (Setter.sincronizar)
+    ghl_sync_suelo: 'TEXT',        // no se mira GHL antes de esta fecha (conversación de prueba reiniciada)
     analisis: 'TEXT',             // lo que Sofía ha entendido del lead (último turno)
     siguiente_paso: 'TEXT',       // qué busca conseguir en el siguiente mensaje
     ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno
@@ -395,6 +396,13 @@ export function repo(db, { espejo = null } = {}) {
       }
       return this.getConv(c.id);
     },
+    /** Borra un chat entero (mensajes, seguimientos, etiquetas, altas…). El consumo de IA (ai_runs) se conserva. */
+    borrarConversacion: db.transaction((id) => {
+      const tablas = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name)
+        .filter((t) => t !== 'conversations' && t !== 'ai_runs' && db.prepare(`PRAGMA table_info(${t})`).all().some((c) => c.name === 'conversation_id'));
+      for (const t of tablas) db.prepare(`DELETE FROM ${t} WHERE conversation_id = ?`).run(id);
+      return db.prepare('DELETE FROM conversations WHERE id = ?').run(id).changes;
+    }),
     updateConv(id, patch) {
       const keys = Object.keys(patch);
       if (!keys.length) return;
