@@ -292,3 +292,27 @@ test('copias del conector de WhatsApp: no cuentan dos veces ni pausan a Sofía',
   // Un reintento del mismo webhook sigue siendo un duplicado normal
   assert.equal((await setter.handleWebhook(saliente('te llamo ahora', 'x4', 'type_custom_sms'))).ignorado, 'duplicado');
 });
+
+test('costes de IA: esfuerzo y modelo en cada llamada, caché de 1 h y Haiku sin respaldo', async () => {
+  const { runTurn, systemBlocks, opcionesRespaldo } = await import('../src/llm.js');
+  const reqs = [];
+  const fin = { content: [{ type: 'tool_use', id: 't1', name: 'responder', input: { mensajes: ['hola'], fase: 'f1 apertura' } }], stop_reason: 'tool_use' };
+  await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete: async (req) => { reqs.push(req); return fin; } });
+  assert.equal(reqs[0].model, 'claude-sonnet-5-5');
+  assert.deepEqual(reqs[0].output_config, { effort: 'medium' });
+  await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], modelo: 'claude-haiku-5-5', effort: '', ejecutarHerramienta: async () => ({}), complete: async (req) => { reqs.push(req); return fin; } });
+  assert.equal(reqs[1].model, 'claude-haiku-5-5');
+  assert.equal(reqs[1].output_config, undefined);
+  assert.deepEqual(opcionesRespaldo('claude-haiku-5-5'), {});
+  assert.equal(opcionesRespaldo('claude-sonnet-5-5').fallbacks, 'default');
+  assert.deepEqual(systemBlocks('p', 'n', 'c')[1].cache_control, { type: 'ephemeral', ttl: '1h' });
+  assert.deepEqual(systemBlocks('p', 'n', 'c', '5m')[1].cache_control, { type: 'ephemeral' });
+});
+
+test('los seguimientos se redactan con el modelo de seguimientos', async () => {
+  const { config } = await import('../src/config.js');
+  const { repo, setter, llamadas } = montar({ respuestas: [[{ name: 'responder', input: { mensajes: ['¿Qué tal?'], fase: 'f1 apertura' } }]] });
+  repo.upsertConv({ id: 'c9', contact_id: 'k9', channel: 'whatsapp' });
+  assert.equal(await setter.redactar('c9', '', { modelo: config.ai.modeloSeguimientos }), '¿Qué tal?');
+  assert.equal(llamadas.requests[0].model, 'claude-haiku-5-5');
+});

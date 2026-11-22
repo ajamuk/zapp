@@ -591,14 +591,14 @@ export class Setter {
    * Redacta un mensaje sin enviarlo ni cambiar nada (para preparar el texto de un seguimiento).
    * Solo puede usar herramientas de consulta. Devuelve el texto ('' si Sofía decide no enviar nada).
    */
-  async redactar(convId, extraContexto = '', { docs = null } = {}) {
+  async redactar(convId, extraContexto = '', { docs = null, modelo } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv) return '';
     const system = this.sistema(conv, extraContexto, docs);
     const messages = await this.mensajesModelo(this.repo.history(convId));
     const consulta = { consultar_horarios: consultarHorarios, consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
     const { respuesta } = await runTurn({
-      system, messages, complete: this.complete,
+      system, messages, complete: this.complete, ...(modelo ? { modelo } : {}),
       ejecutarHerramienta: async (n, i) => (consulta[n] ? consulta[n](i) : { ok: false, error: 'Ahora solo estás redactando un mensaje: no uses esta herramienta.' }),
       onUsage: (uso, ms) => this.repo.logRun({ conversation_id: convId, motivo: 'redactar-seguimiento', ms, ...uso }),
     });
