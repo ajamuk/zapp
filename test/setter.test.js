@@ -71,6 +71,20 @@ test('un teléfono de prueba se trata como lead aunque sea socio', async () => {
   assert.ok(c.respond_at, 'queda programada la respuesta');
 });
 
+test('en modo shadow, a un teléfono de prueba se le contesta de verdad y al resto solo con nota', async () => {
+  const respuesta = () => [[{ name: 'responder', input: { mensajes: ['hola!'], fase: 'f1', etiquetas: [] } }]];
+  const prueba = montar({ live: false, telefonosPrueba: ['+34600000000'], respuestas: respuesta() });
+  await prueba.setter.handleWebhook(entrante('hola'));
+  prueba.avanzar(60000); await prueba.setter.tick();
+  assert.deepEqual(prueba.llamadas.enviados, ['hola!']);
+  assert.ok(!prueba.llamadas.notas.some((n) => n.startsWith('[Borrador IA')));
+  const otro = montar({ live: false, respuestas: respuesta() });
+  await otro.setter.handleWebhook(entrante('hola'));
+  otro.avanzar(60000); await otro.setter.tick();
+  assert.equal(otro.llamadas.enviados.length, 0);
+  assert.ok(otro.llamadas.notas.some((n) => n.startsWith('[Borrador IA')));
+});
+
 test('lead: espera, contesta con las burbujas y etiqueta la sede', async () => {
   const { setter, repo, llamadas, avanzar } = montar({
     respuestas: [

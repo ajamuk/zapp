@@ -480,9 +480,14 @@ export class Setter {
     return id;
   }
 
+  /** ¿Salen de verdad los mensajes a este chat? En modo live, siempre; en shadow, solo a los TEST_PHONES. */
+  enviaDeVerdad(conv) {
+    return Boolean(this.live || (conv?.telefono && esTelefonoPrueba(conv.telefono, this.telefonosPrueba)));
+  }
+
   async enviar(conv, mensajes, plantilla = null, control = null) {
     const { escritura } = retardoHumano(mensajes, { random: this.random });
-    if (!this.live) {
+    if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
       await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado${plantilla ? ', plantilla' : ''}]\n${mensajes.join('\n')}`));
       for (const m of mensajes) this.repo.addMessage({ conversation_id: conv.id, autor: 'ia', texto: m, enviado: 0 });
@@ -537,7 +542,7 @@ export class Setter {
   async enviarRecursos(conv, lista) {
     for (const r of lista) {
       const msg = { conversation_id: conv.id, autor: 'ia', texto: `[${r.tipo}: ${r.nombre}]`, adjunto: r.tipo, media_ruta: r.media_ruta, media_mime: r.mime };
-      if (!this.live) {
+      if (!this.enviaDeVerdad(conv)) {
         await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado] adjuntaría el archivo «${r.nombre}»`));
         this.repo.addMessage({ ...msg, enviado: 0 });
         continue;
@@ -556,7 +561,7 @@ export class Setter {
   async enviarAvisoAlta(conv, mensajes) {
     try {
       const ids = await this.enviar(conv, mensajes);
-      if (this.live && (!ids || ids.length < mensajes.length || ids.some((x) => !x))) throw new Error('GHL no devolvió el id de algún mensaje');
+      if (this.enviaDeVerdad(conv) && (!ids || ids.length < mensajes.length || ids.some((x) => !x))) throw new Error('GHL no devolvió el id de algún mensaje');
     } catch (e) {
       await this.avisar?.(`El alta está hecha pero el aviso al lead no se ha podido comprobar en el chat: ${e.message}. Revisar la conversación.`, { sede: conv.sede });
     }
@@ -756,7 +761,7 @@ export class Setter {
     const r = await this.responder(conv.id, { extraContexto: preguntas.contextoRespuesta(p), motivo: 'pregunta-respondida', avisarFallo: false });
     if (!r) return 'no se ha enviado (chat pausado)';
     if (!r.mensajes.length) return 'Sofía vio que ya estaba contestada';
-    return this.live ? 'enviada al lead' : 'borrador (modo prueba)';
+    return this.enviaDeVerdad(conv) ? 'enviada al lead' : 'borrador (modo prueba)';
   }
 
   /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */
