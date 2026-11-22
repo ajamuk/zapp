@@ -79,9 +79,9 @@ test('Sofía reserva la prueba en AimHarder (live + AIMHARDER_RESERVA_PRUEBA) y 
     aimharder: { reservarPrueba: (d, o) => reservarEnAimHarder(api, d, o), cancelarPrueba: async (p) => { anuladas.push(p.booking_id); return true; } },
     respuestas: [
       [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana' } }],
-      [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López' } }],
+      [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
       responder({ mensajes: ['listo, jueves a las 19:30'] }),
-      [{ name: 'reservar_prueba_parla', input: { modalidad: 'hyrox', fecha_hora: '2026-11-19 20:30', nombre_completo: 'Ana López' } }],
+      [{ name: 'reservar_prueba_parla', input: { modalidad: 'hyrox', fecha_hora: '2026-11-19 20:30', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
       responder({ mensajes: ['cambiada'] }),
     ],
   });
@@ -100,11 +100,34 @@ test('Sofía reserva la prueba en AimHarder (live + AIMHARDER_RESERVA_PRUEBA) y 
   assert.match(setter.contexto(repo.getConv('c1')), /Clase de prueba de hyrox en Parla el jueves, 19 de noviembre a las 20:30: reservada en AimHarder/);
 });
 
+test('la prueba no se reserva sin email, ni sin teléfono si no escribe por WhatsApp', async () => {
+  const reservas = [];
+  const { repo, db, setter, sal } = montar({
+    aimharder: { reservarPrueba: async (d) => { reservas.push(d); return { estado: 'simulada' }; } },
+    respuestas: [
+      [{ name: 'reservar_prueba_parla', input: { modalidad: 'academy', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López' } }],
+      [{ name: 'reservar_prueba_parla', input: { modalidad: 'academy', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana' } }],
+      responder({ mensajes: ['pásame tu email y te la reservo'] }),
+    ],
+  });
+  await setter.responder('c1');
+  assert.match(resultadoHerramienta(sal.requests[1], 'reservar_prueba_parla').error, /email/);
+  assert.equal(reservas.length, 0);
+  assert.ok(!ultimaPrueba(db, 'c1'));
+  // Instagram: sin teléfono en la conversación hace falta que lo dé
+  repo.upsertConv({ id: 'c1', telefono: null }); repo.db.prepare("UPDATE conversations SET telefono = NULL, channel = 'instagram' WHERE id = 'c1'").run();
+  const r = await setter.reservarPrueba(repo.getConv('c1'), { modalidad: 'academy', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com' }, { tags: new Set() });
+  assert.match(r.error, /teléfono/);
+  const ok = await setter.reservarPrueba(repo.getConv('c1'), { modalidad: 'academy', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com', telefono: '600111333' }, { tags: new Set() });
+  assert.equal(ok.ok, true);
+  assert.deepEqual([reservas[0].email, reservas[0].telefono], ['ana@example.com', '600111333']);
+});
+
 test('sin reserva directa (modo prueba) se comprueba la clase y se avisa al equipo como antes', async () => {
   const api = apiFalsa();
   const { db, setter, sal } = montar({ live: false, aimharder: { reservarPrueba: (d, o) => reservarEnAimHarder(api, d, o) }, respuestas: [
-    [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:00', nombre_completo: 'Ana López' } }],
-    [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López' } }],
+    [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:00', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
+    [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
     responder({ mensajes: ['te la dejo apuntada'] }),
   ] });
   await setter.responder('c1');
@@ -131,7 +154,7 @@ async function trasPrueba(resultado, { socio = false } = {}) {
       buscarSocioPorTelefono: async () => ({ esSocio: false }),
     },
     respuestas: [
-      [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López' } }],
+      [{ name: 'reservar_prueba_parla', input: { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
       responder({ mensajes: ['listo'] }),
       responder({ mensajes: ['qué tal fue?'] }),
     ],

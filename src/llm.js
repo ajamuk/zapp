@@ -63,16 +63,17 @@ export const TOOLS = [
   },
   {
     name: 'reservar_prueba_parla',
-    description: 'Reserva la clase de prueba gratuita en Parla directamente en AimHarder, cuando el lead la pide o acepta la que le ofreces, con día y hora elegidos. Necesita su nombre y apellido. Si esa hora no existe ese día, devuelve las horas que sí hay para que le propongas otra. Si ya tenía una prueba, la cambia a la nueva.',
+    description: 'Reserva la clase de prueba gratuita en Parla directamente en AimHarder, cuando el lead la pide o acepta la que le ofreces, con día y hora elegidos. Necesita su nombre y apellidos, su email y, si no escribe por WhatsApp, su teléfono. Si esa hora no existe ese día, devuelve las horas que sí hay para que le propongas otra. Si ya tenía una prueba, la cambia a la nueva.',
     input_schema: {
       type: 'object',
       properties: {
         modalidad: { type: 'string', enum: ['academy', 'crossfit', 'hyrox'] },
         fecha_hora: { type: 'string', description: 'AAAA-MM-DD HH:MM de una clase de esa modalidad en Parla' },
         nombre_completo: { type: 'string', description: 'Nombre y al menos un apellido del lead (el que te haya dicho; si no lo sabes, pídeselo antes)' },
-        email: { type: 'string', description: 'Solo si te lo ha dado' },
+        email: { type: 'string', description: 'El email del lead (si no lo tienes, pídeselo antes)' },
+        telefono: { type: 'string', description: 'Solo si no es el de esta conversación (por ejemplo, en Instagram)' },
       },
-      required: ['modalidad', 'fecha_hora', 'nombre_completo'],
+      required: ['modalidad', 'fecha_hora', 'nombre_completo', 'email'],
     },
   },
   {
