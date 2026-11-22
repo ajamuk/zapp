@@ -43,7 +43,12 @@ echo "$COMMIT" > "$NUEVA/.commit"
 cd "$NUEVA"
 
 echo "→ Dependencias"
-npm ci --omit=optional --no-audit --no-fund
+npm ci --include=optional --no-audit --no-fund
+if [ -n "$(valor AIMHARDER_ADMIN_USER)" ] && [ -n "$(valor AIMHARDER_ADMIN_PASSWORD)" ]; then
+  echo '→ Chromium para las altas de AimHarder'
+  ./node_modules/.bin/playwright install chromium
+  node --input-type=module -e "import { chromium } from 'playwright'; const browser = await chromium.launch(); await browser.close();"
+fi
 echo "→ Pruebas"
 npm test > pruebas.log 2>&1 || { tail -40 pruebas.log; echo "✘ Las pruebas fallan en el VPS."; false; }
 grep -E '^# (tests|pass|fail)' pruebas.log || true

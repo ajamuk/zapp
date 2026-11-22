@@ -12,6 +12,7 @@ pública del VPS obtenida por un acceso administrativo ya verificado.
 El script crea una release bajo `/opt/codex-hosting/apps/zapp/releases`, instala dependencias y
 ejecuta los tests. Conserva los horarios del VPS y usa la clave de Anthropic del servidor para una
 prueba de extremo a extremo con GHL simulado y base temporal. Esa prueba consume API de Anthropic.
+Cuando están configuradas las altas de AimHarder, verifica que Chromium arranca antes de activar la release.
 La configuración real se carga desde `/etc/codex-hosting/zapp.env`, propiedad de root. `DB_PATH`
 debe ser absoluto y apuntar fuera de las releases. Las credenciales de aplicación y la base de
 producción se quedan en el servidor.

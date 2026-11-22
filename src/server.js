@@ -30,19 +30,22 @@ import * as etq from './etiquetas.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const htmlPanel = readFileSync(panelPath, 'utf8');
+const metroAssets = '/metro-os/v4.4.0';
+const metroScripts = ['metro-model.js', 'metro-platform.js'].map((file) => `${metroAssets}/${file}`);
 const metroPanel = htmlPanel.replace('<!-- metrotools-assets -->', `
-<link rel="stylesheet" href="/metro-os/v4.4.0/metro-layout.css">
-<script defer src="/metro-os/v4.4.0/metro-model.js"></script>
-<script defer src="/metro-os/v4.4.0/metro-platform.js"></script>`);
+<link rel="stylesheet" href="${metroAssets}/metro-layout.css">
+${metroScripts.map((src) => `<script defer src="${src}"></script>`).join('\n')}`);
 
-// Política de contenido del panel suelto (/panel): solo se ejecuta el script de la propia página (por su huella)
-// y solo habla con este servidor. Si alguna vez se colara HTML de un lead, no podría ejecutar nada ni sacar datos.
+// La huella autoriza únicamente el script en línea del panel. MetroTools también carga dos scripts compartidos.
 const scriptPanel = /<script>([\s\S]*?)<\/script>/.exec(htmlPanel)?.[1] ?? '';
-const CSP_PANEL = [
-  "default-src 'none'", `script-src 'sha256-${crypto.createHash('sha256').update(scriptPanel, 'utf8').digest('base64')}'`,
-  "style-src 'unsafe-inline'", "img-src 'self' blob: data:", "media-src 'self' blob:", "connect-src 'self'",
+const panelScriptHash = `'sha256-${crypto.createHash('sha256').update(scriptPanel, 'utf8').digest('base64')}'`;
+const politicaPanel = (scripts, estilos) => [
+  "default-src 'none'", `script-src ${[panelScriptHash, ...scripts].join(' ')}`,
+  `style-src ${estilos}`, "img-src 'self' blob: data:", "media-src 'self' blob:", "connect-src 'self'",
   "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'",
 ].join('; ');
+const CSP_PANEL = politicaPanel([], "'unsafe-inline'");
+const CSP_METRO = politicaPanel(metroScripts.map((src) => `https://apps.crossfitmpo.com${src}`), "'self' 'unsafe-inline'");
 
 /**
  * Envía una página HTML que ya está en memoria, comprimida si el navegador lo admite (200 KB se quedan en unos 45).
@@ -519,7 +522,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     }
     next();
   });
-  metrotools.get('/', (req, res) => enviarPagina(req, res, metroPanel));
+  metrotools.get('/', (req, res) => enviarPagina(req, res.set('Content-Security-Policy', CSP_METRO), metroPanel));
   metrotools.use('/api', (req, res, next) => {
     if (req.get('x-metrotools-client') !== 'zapp') return res.status(403).json({ error: 'Petición fuera del panel de MetroTools.' });
     next();

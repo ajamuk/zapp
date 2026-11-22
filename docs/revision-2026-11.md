@@ -121,5 +121,5 @@ Importa más de lo que parece: mientras el servidor calcula, Sofía no atiende n
 
 - El servicio corre sin `User=` en `deploy/codex-zapp.service` (como root). Conviene un usuario propio, pero hay que
   comprobar antes sus permisos sobre los datos, el almacén de tokens de AimHarder, rclone y el transcriptor.
-- No hay política de contenido en el panel integrado en MetroTools (`/zapp/`): depende de los scripts de
-  `metro-os`, que no están en este repositorio.
+- El panel integrado en MetroTools (`/zapp/`) aplica una política de contenido que permite su script por huella
+  y los dos scripts publicados de `metro-os`. Al actualizar la versión de esos recursos, se actualiza la política.
