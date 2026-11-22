@@ -48,7 +48,8 @@ El simulador HTML independiente se puede regenerar con `npm run build-simulador`
 - Configuración: `/etc/codex-hosting/zapp.env`. La base SQLite se conserva en el `DB_PATH` de la instalación anterior.
 - Proxy: `deploy/nginx-metrotools.conf` usa la sesión de MetroTools. Nginx añade la credencial de administración desde el servidor.
   El dominio del webhook expone únicamente el webhook y `/health`.
-- Para actualizar: instalar en una release nueva con `npm ci --omit=optional`, validar con `npm test` y con
+- Despliegue automático al fusionar en `main` (GitHub Actions, apagado hasta configurarlo): [`docs/despliegue.md`](docs/despliegue.md).
+- Para actualizar a mano: instalar en una release nueva con `npm ci --omit=optional`, validar con `npm test` y con
   `npm run prueba-extremo` (arranca el servicio contra un GHL de mentira, con el modelo real: no toca producción),
   conservar los horarios específicos del VPS y cambiar `current` antes de reiniciar `codex-zapp`.
 
