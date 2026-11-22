@@ -327,6 +327,14 @@ test('si el modelo manda los mensajes como texto en vez de lista, se convierten 
   const { runTurn, comoLista } = await import('../src/llm.js');
   assert.deepEqual(comoLista('["hola", "qué tal?"]'), ['hola', 'qué tal?']);
   assert.deepEqual(comoLista('hola\nqué tal?'), ['hola', 'qué tal?']);
+  // Lista mal formada que llegó de verdad (Probar IA, prueba-e8539306)
+  assert.deepEqual(comoLista('["no, el primer recibo es solo la parte proporcional",["la cuota completa se renueva el día 1"][0],"qué día te gustaría empezar?"]'),
+    ['no, el primer recibo es solo la parte proporcional', 'la cuota completa se renueva el día 1', 'qué día te gustaría empezar?']);
+  const { TOOLS } = await import('../src/llm.js');
+  const r = TOOLS.find((x) => x.name === 'responder');
+  assert.equal(r.strict, true);
+  const sinFalse = (o) => (o.type === 'object' && o.additionalProperties !== false) || Object.values(o.properties || {}).some(sinFalse) || (o.items ? sinFalse(o.items) : false);
+  assert.equal(sinFalse(r.input_schema), false);
   assert.deepEqual(comoLista(undefined), []);
   assert.deepEqual(comoLista(['a', '', ' ']), ['a']);
   const complete = async () => ({ content: [{ type: 'tool_use', id: 't', name: 'responder', input: { mensajes: '["vale", "cuántos días te ves?"]', fase: 'f5 cierre' } }], usage: { input_tokens: 10, output_tokens: 5 } });
@@ -357,6 +365,8 @@ test('un punto en medio de una burbuja se devuelve para que lo parta; abreviatur
   const { puntoEnMedio, revisarRespuesta } = await import('../src/llm.js');
   assert.ok(puntoEnMedio(['el teléfono ya lo tengo de este chat. los documentos los firmas en la app']));
   assert.ok(revisarRespuesta({ mensajes: ['vale. te lo miro'] }));
+  assert.match(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd', 'e'] }), /máximo es 4/);
+  assert.equal(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd'] }), null);
   for (const ok of ['bueno... ya me dices', 'en Av. de la Paz 35', 'por ejemplo, p. ej. el lunes', 'mira https://maps.app.goo.gl/XK2R. hola', 'son 2,83 €', 'perfecto 💪']) {
     if (ok.includes('https')) continue;
     assert.equal(puntoEnMedio([ok]), false, ok);

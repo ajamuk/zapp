@@ -106,10 +106,14 @@ export const TOOLS = [
   {
     name: 'responder',
     description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 a 4 burbujas), etiquetas, fase y una nota interna corta para el equipo.',
+    // strict: la API garantiza que los argumentos cumplen el esquema (mensajes siempre como lista de textos).
+    // El modo estricto no admite límites numéricos ni de tamaño de lista: el máximo de 4 burbujas lo marca el prompt.
+    strict: true,
     input_schema: {
       type: 'object',
+      additionalProperties: false,
       properties: {
-        mensajes: { type: 'array', items: { type: 'string' }, minItems: 0, maxItems: 4 },
+        mensajes: { type: 'array', items: { type: 'string' }, description: 'De 1 a 4 burbujas; cada una, un texto' },
         sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas', 'el_canaveral', 'desconocida'] },
         fase: { type: 'string', enum: ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'] },
         etiquetas: { type: 'array', items: { type: 'string' } },
@@ -118,8 +122,9 @@ export const TOOLS = [
         valoracion: {
           type: 'object',
           description: 'Nota interna (no se envía), en cada turno: lo probable que es que se apunte, de 1 (nada) a 10 (ya decidido o con el alta hecha), según su interés, su encaje y lo que falta para cerrar.',
+          additionalProperties: false,
           properties: {
-            nota: { type: 'integer', minimum: 1, maximum: 10 },
+            nota: { type: 'integer', description: 'De 1 a 10' },
             motivo: { type: 'string', description: 'Por qué, en una frase corta' },
           },
           required: ['nota'],
@@ -128,6 +133,7 @@ export const TOOLS = [
         retomar: {
           type: 'object',
           description: 'Solo si el lead dice que lo decidirá o se apuntará más adelante (después de vacaciones, cuando cobre, en enero, cuando se recupere...). Programa volver a escribirle entonces.',
+          additionalProperties: false,
           properties: {
             fecha: { type: 'string', description: 'AAAA-MM-DD en la que tiene sentido volver a escribirle según lo que ha dicho. Vacía si no da ninguna pista.' },
             motivo: { type: 'string', description: 'Lo que dijo, en pocas palabras (p. ej. «se apunta en septiembre, ahora está de vacaciones»).' },
@@ -151,6 +157,10 @@ export function revisarRespuesta(input) {
   if (/parla/.test(t) && /getafe/.test(t) && /las rosas/.test(t) && !/ca[ñn]averal/.test(t)) {
     return 'No enviado: has enumerado las sedes sin El Cañaveral. Vuelve a llamar a `responder` con los mismos mensajes, nombrando las cuatro: Parla, Getafe, Las Rosas y El Cañaveral, que es nuestra próxima apertura el 1 de febrero de 2027.';
   }
+  const textos = (Array.isArray(input?.mensajes) ? input.mensajes : []).filter((m) => !/^\[(imagen|audio|video|documento): /.test(String(m).trim()));
+  if (textos.length > 4) {
+    return `No enviado: son ${textos.length} burbujas y el máximo es 4. Vuelve a llamar a \`responder\` con 4 como mucho: quédate con lo que contesta a su mensaje y la pregunta que hace avanzar.`;
+  }
   if (puntoEnMedio(input?.mensajes)) {
     return 'No enviado: una burbuja lleva un punto en medio («… de este chat. los documentos …»). Vuelve a llamar a `responder` con lo mismo, pero cada frase en su propia burbuja (o unidas con una coma), sin puntos.';
   }
@@ -167,8 +177,14 @@ export function revisarRespuesta(input) {
 export function comoLista(mensajes) {
   if (Array.isArray(mensajes)) return mensajes.map((m) => (typeof m === 'string' ? m : String(m ?? ''))).filter((m) => m.trim());
   if (typeof mensajes !== 'string' || !mensajes.trim()) return [];
-  try { const j = JSON.parse(mensajes); if (Array.isArray(j)) return comoLista(j); } catch { /* no es JSON: va por líneas */ }
-  return mensajes.split(/\n+/).map((m) => m.trim()).filter(Boolean);
+  const t = mensajes.trim();
+  try { const j = JSON.parse(t); if (Array.isArray(j)) return comoLista(j); } catch { /* no es JSON válido */ }
+  // Parece una lista pero está mal formada (p. ej. «["a",["b"][0],"c"]»): se rescatan los textos entre comillas
+  if (t.startsWith('[')) {
+    const textos = [...t.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => { try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; } });
+    if (textos.length) return comoLista(textos);
+  }
+  return t.split(/\n+/).map((m) => m.trim()).filter(Boolean);
 }
 
 /** Un punto que separa dos frases dentro de una burbuja (no cuentan «...», «p. ej.», «etc.» ni las direcciones «C.»/«Av.»). */
