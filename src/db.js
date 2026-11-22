@@ -319,6 +319,7 @@ export function openDb(dbPath) {
 /** Columnas añadidas después de crear la base: se añaden si faltan. */
 const COLUMNAS_NUEVAS = {
   conversations: {
+    ghl_sync_at: 'TEXT',           // fecha del último mensaje de GHL ya revisado (Setter.sincronizar)
     analisis: 'TEXT',             // lo que Sofía ha entendido del lead (último turno)
     siguiente_paso: 'TEXT',       // qué busca conseguir en el siguiente mensaje
     ultimo_turno: 'TEXT',         // JSON: herramientas usadas y efectos del último turno

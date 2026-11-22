@@ -74,8 +74,10 @@ sincronizarSiHaceFalta(repo)
 cada('socios', 4 * 3600 * 1000, () => sincronizarSocios(repo).then((r) => { resolverAlerta(repo.db, 'aimharder-socios'); console.log('Socios sincronizados:', JSON.stringify(r)); }).catch(avisoSync));
 
 if (config.ghlWebhookEnabled) {
-  // Respuestas pendientes cada 5 s (hasta 4 chats a la vez) y seguimientos cada minuto
-  cada('respuestas', 5000, () => setter.tick(), 1000);
+  // Respuestas pendientes cada 2 s (hasta 4 chats a la vez) y seguimientos cada minuto. La vuelta no espera a que
+  // los chats terminen (cada respuesta tarda lo que tarda «escribir» sus burbujas): si esperase, un chat que toca
+  // mientras Sofía escribe en otro no empezaría hasta que acabase ese. `tick` ya cuenta los que hay en marcha.
+  cada('respuestas', 2000, () => { setter.tick().catch((e) => console.error('[respuestas]', e.message)); }, 1000);
   cada('seguimientos', 60000, () => procesarSeguimientos(setter));
   // Etiquetas puestas o quitadas en GHL (también reintenta las que no llegaron a subir)
   cada('etiquetas-ghl', 15 * 60000, async () => { const r = await etiquetas.sincronizarDesdeGhl(); if (r.puestas + r.quitadas + r.subidas) console.log('Etiquetas GHL:', JSON.stringify(r)); }, 60000);

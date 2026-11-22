@@ -31,6 +31,8 @@ const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
 export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
 
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
+const VENTANA_SYNC = 3 * 60000; // chat sin sincronizar todavía: solo se miran los mensajes de GHL de los últimos 3 min
+const SOLAPE_SYNC = 2 * 60000;  // margen hacia atrás al repasar un chat ya sincronizado
 /** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
 export function textoComparable(t) {
   return String(t || '').split('\n').filter((l) => !/^\s*(💬|☑️)|^\s*(sent from|received on|from other device)\b/i.test(l))
@@ -62,16 +64,93 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.contactId) return { ignorado: 'faltan ids' };
-    // Webhook de un workflow de GHL: sin id de conversación o con el canal como número → se pregunta a GHL
-    if ((!evt.conversationId || !CANALES_NATIVOS.has(evt.canal)) && this.ghl.buscarConversacion) {
-      const c = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
-      if (c?.id && !evt.conversationId) evt.conversationId = c.id;
-      if (evt.canal === 'desconocido' && c?.canal) evt.canal = c.canal;
+    // Webhook de un workflow de GHL: no trae el id de la conversación. Si el contacto ya tiene chat, sale de la
+    // base; si no, se pregunta a GHL.
+    if (!evt.conversationId) evt.conversationId = this.repo.db.prepare('SELECT id FROM conversations WHERE contact_id = ? ORDER BY rowid DESC LIMIT 1').get(evt.contactId)?.id;
+    let buscada = null;
+    if ((!evt.conversationId || (!CANALES_NATIVOS.has(evt.canal) && !this.ghl.mensajes)) && this.ghl.buscarConversacion) {
+      buscada = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
+      if (buscada?.id && !evt.conversationId) evt.conversationId = buscada.id;
     }
     if (!evt.conversationId) return { ignorado: 'faltan ids' };
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
-    return this.enSerie(evt.conversationId, () => this.procesarEvento(evt));
+    return this.enSerie(evt.conversationId, async () => {
+      // Entrante de workflow (sin id de mensaje o sin canal): lo que cuenta es lo que hay en la conversación de GHL.
+      // El canal NO se saca del «último mensaje» del chat: el conector de WhatsApp mete una copia de cada mensaje
+      // y, si la copia era lo último, el mensaje de verdad se descartaba como copia.
+      if (evt.evento === 'inbound' && (!evt.messageId || evt.canal === 'desconocido')) {
+        if (this.ghl.mensajes) {
+          const r = await this.sincronizar(evt.conversationId, evt);
+          if (r?.visto) return r;
+        }
+        // GHL no contesta o aún no lista el mensaje: entra tal como vino (el disparador del workflow solo salta
+        // con WhatsApp e Instagram). Cuando aparezca en GHL, `sincronizar` lo reconoce por el texto y no lo repite.
+        if (evt.canal === 'desconocido') {
+          const conocido = this.repo.getConv(evt.conversationId)?.channel;
+          evt.canal = CANALES_NATIVOS.has(conocido) ? conocido : CANALES_NATIVOS.has(buscada?.canal) ? buscada.canal : 'whatsapp';
+        }
+      }
+      return this.procesarEvento(evt);
+    });
+  }
+
+  /**
+   * Pone el chat al día con la conversación de GHL (por id de mensaje, así que repetirlo no duplica nada):
+   *  - entrantes de WhatsApp/Instagram que no estaban: entran como mensajes del lead (con su id, canal y adjuntos).
+   *    Cubre los que GHL no avisa: su workflow se salta los mensajes que llegan mientras procesa el anterior.
+   *  - salientes que no son de Sofía (el equipo desde GHL o desde el móvil): quedan en el historial como «equipo»
+   *    y, si Sofía está enviando de verdad en ese chat, se aparta (ajuste «pausar si el equipo escribe»).
+   * `evt` es el webhook que lo ha provocado; `visto` dice si su mensaje está en GHL (ya registrado o recién entrado).
+   */
+  async sincronizar(convId, evt = null, { programar = true, enMarcha = this.enCurso?.has(convId) } = {}) {
+    const lista = await this.safe(() => this.ghl.mensajes(convId));
+    if (!lista) return null;
+    const db = this.repo.db;
+    const cursor = this.repo.getConv(convId)?.ghl_sync_at;
+    // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
+    const desde = new Date(cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : this.now().getTime() - VENTANA_SYNC).toISOString();
+    const iso = (fecha, ms) => new Date(new Date(fecha).getTime() + ms).toISOString();
+    const conocido = (id) => Boolean(db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(id));
+    const buscado = textoComparable(evt?.texto);
+    const out = { visto: false, entrantes: 0, salientes: 0 };
+    let nuevoCursor = cursor || null; let pendiente = false;
+    for (const m of lista) {
+      if (!(m.fecha > desde)) continue;
+      const t = textoComparable(m.texto);
+      if (m.direccion === 'inbound' && CANALES_NATIVOS.has(m.canal)) {
+        // El del webhook: tiene que ser reciente (si no, podría ser otro mensaje anterior con el mismo texto)
+        if (evt && (!buscado || buscado === t) && m.fecha > iso(this.now(), -VENTANA_SYNC)) out.visto = true;
+        if (!conocido(m.id)) {
+          // Entró antes sin id (GHL aún no lo listaba): se le pone el id y no se repite
+          const gemelo = t && db.prepare("SELECT id, texto FROM messages WHERE conversation_id = ? AND autor = 'lead' AND external_id IS NULL AND created_at >= ? AND created_at <= ?")
+            .all(convId, iso(m.fecha, -60000), iso(m.fecha, 15 * 60000)).find((x) => textoComparable(x.texto) === t);
+          if (gemelo) db.prepare('UPDATE messages SET external_id = ? WHERE id = ?').run(m.id, gemelo.id);
+          else {
+            const conv = this.repo.getConv(convId);
+            await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
+              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar });
+            out.entrantes++;
+          }
+        }
+      } else if (m.direccion === 'outbound' && (CANALES_NATIVOS.has(m.canal) || m.tipo === 'TYPE_CUSTOM_SMS') && m.source !== 'workflow' && t && !conocido(m.id)) {
+        // Sofía está enviando ahora mismo: su burbuja puede verse en GHL antes de quedar registrada aquí.
+        // Se deja para la próxima vez (el cursor no pasa de aquí).
+        if (enMarcha) pendiente = true;
+        else if (this.repo.getConv(convId)) {
+          const nuestro = db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
+            .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
+          if (!nuestro) {
+            await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto, messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos });
+            out.salientes++;
+          }
+        }
+      }
+      if (!pendiente && (!nuevoCursor || m.fecha > nuevoCursor)) nuevoCursor = m.fecha;
+    }
+    if (nuevoCursor && nuevoCursor !== cursor && this.repo.getConv(convId)) this.repo.updateConv(convId, { ghl_sync_at: nuevoCursor });
+    if (out.entrantes > 1 || out.salientes) console.log(`[sync] ${convId}: ${out.entrantes} entrantes y ${out.salientes} del equipo recuperados de GHL`);
+    return out;
   }
 
   /** Ejecuta `fn` cuando haya terminado lo anterior con la misma clave (los fallos no cortan la cola). */
@@ -122,13 +201,15 @@ export class Setter {
     }
     // Si una persona del equipo escribe (o usa una palabra para parar), la IA se aparta de esa conversación.
     const parar = contienePalabra(evt.texto, ajustes.palabrasParar);
-    if (!ajustes.pausarSiEquipoEscribe && !parar) return { registrado: true };
+    // En modo prueba el equipo contesta todos los chats: sus mensajes quedan en el historial (Sofía redacta su
+    // borrador sabiendo lo que se ha dicho), pero no la apartan. Solo se aparta donde envía de verdad.
+    if (!parar && (!ajustes.pausarSiEquipoEscribe || !this.enviaDeVerdad(conv))) return { registrado: true };
     this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: parar ? `el equipo escribió «${parar}»` : 'humano escribió', respond_at: null });
     this.repo.cancelScheduled(conv.id, 'humano escribió');
     return { pausada: true };
   }
 
-  async onInbound(evt) {
+  async onInbound(evt, { programar = true } = {}) {
     const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
     const ajustesC = leerAjustes(this.repo);
@@ -179,6 +260,8 @@ export class Setter {
     const actual = this.repo.getConv(conv.id);
     if (actual.ai_paused || actual.derivado) return { pausada: true };
     if (SIN_RESPUESTA.test(evt.texto || '') && !adjunto) return { ignorado: 'mención o reacción' };
+    // Recuperado de GHL justo antes de contestar: ya va incluido en esa respuesta, no se programa otra
+    if (!programar) return { registrado: true };
 
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
     const { lectura } = retardoHumano([], { random: this.random });
@@ -240,6 +323,11 @@ export class Setter {
     const reintentos = c.reintentos || 0;
     const ultimo = reintentos >= ESPERAS_REINTENTO.length;
     let reloj;
+    // Antes de contestar se repasa la conversación en GHL: mensajes del lead que no avisó el workflow (entran en
+    // esta misma respuesta) y si alguien del equipo ha contestado ya (entonces Sofía no escribe).
+    if (this.ghl.mensajes && !String(c.id).startsWith('prueba-')) {
+      await this.safe(() => this.enSerie(c.id, () => this.sincronizar(c.id, null, { programar: false, enMarcha: false })));
+    }
     // Si salta el tope, la respuesta que siguiera en marcha queda anulada: no enviará nada cuando termine
     // (si no, podría salir tarde y repetida con el reintento).
     const control = { cancelado: false };
@@ -357,6 +445,7 @@ export class Setter {
     const efectos = { tags: new Set(), derivado: false, herramientas: [], etiquetas: [] };
 
     let respuesta;
+    const empezo = Date.now();
     try {
       ({ respuesta } = await runTurn({
         system, messages, complete: this.complete,
@@ -400,7 +489,7 @@ export class Setter {
     }
     try {
       // null = el turno se anuló por tardar antes de que saliera nada: no se envía ni se programa nada más
-      if (mensajes.length && (await this.enviar(conv, mensajes, plantilla, control)) === null) return null;
+      if (mensajes.length && (await this.enviar(conv, mensajes, plantilla, control, Date.now() - empezo)) === null) return null;
       if (efectos.recursos?.length) await this.enviarRecursos(conv, efectos.recursos);
     } catch (e) {
       // GHL ha fallado al enviar: queda registrado y el aviso del alta se intenta igualmente. Si en este turno
@@ -485,7 +574,8 @@ export class Setter {
     return Boolean(this.live || (conv?.telefono && esTelefonoPrueba(conv.telefono, this.telefonosPrueba)));
   }
 
-  async enviar(conv, mensajes, plantilla = null, control = null) {
+  /** `yaEsperadoMs`: lo que ha tardado el modelo en pensar; se descuenta del «escribiendo…» de la primera burbuja. */
+  async enviar(conv, mensajes, plantilla = null, control = null, yaEsperadoMs = 0) {
     const { escritura } = retardoHumano(mensajes, { random: this.random });
     if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
@@ -502,7 +592,7 @@ export class Setter {
     const ids = [];
     const pausadaAlEmpezar = Boolean(this.repo.getConv(conv.id)?.ai_paused);
     for (let i = 0; i < mensajes.length; i++) {
-      await this.sleep(escritura[i]);
+      await this.sleep(i === 0 ? Math.max(0, escritura[0] - yaEsperadoMs) : escritura[i]);
       // Alguien del equipo ha escrito mientras Sofía «escribía»: no se mandan las burbujas que faltan
       if (i > 0 && !pausadaAlEmpezar && this.repo.getConv(conv.id)?.ai_paused) break;
       // El turno se anuló por tardar mientras Sofía «escribía» la primera burbuja: no sale nada (ya hay un
