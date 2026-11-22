@@ -41,6 +41,7 @@ export function textoComparable(t) {
     .join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
 }
 // Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
 const MOTIVOS_DERIVAR = ['salud', 'gestion_socio', 'cobro', 'llamada', 'visita', 'no_documentado', 'otro'];
 const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
@@ -924,11 +925,15 @@ export class Setter {
     if (!clase || clase.getTime() - this.now().getTime() < 3600e3) return { ok: false, error: 'Esa clase ya ha pasado o empieza en menos de una hora: propón otra.' };
     const nombre = String(input.nombre_completo || '').trim();
     if (nombre.split(/\s+/).filter(Boolean).length < 2) return { ok: false, error: 'Para apuntarle en AimHarder hace falta su nombre y un apellido: pídeselo antes de reservar.' };
+    const email = String(input.email || '').trim();
+    if (!EMAIL.test(email)) return { ok: false, error: 'Para reservar la prueba hace falta su email: pídeselo (con los demás datos que falten) antes de reservar.' };
+    const telefono = String(input.telefono || '').trim() || conv.telefono;
+    if (!telefono && conv.channel !== 'whatsapp') return { ok: false, error: 'Para reservar la prueba hace falta su teléfono (no escribe por WhatsApp): pídeselo antes de reservar.' };
     const db = this.repo.db;
     const anterior = ultimaPrueba(db, conv.id);
     if (anterior && anterior.fecha_hora === fechaHora && anterior.modalidad === modalidad) return { ok: true, estado: 'ya_reservada', nota: 'Ya la tiene a esa hora: no la repitas, confírmasela si hace falta.' };
     const escribir = Boolean(this.live && config.aimharder.reservaPrueba && !String(conv.id).startsWith('prueba-'));
-    const res = (await this.safe(() => this.aimharder.reservarPrueba?.({ sede: 'parla', modalidad, fecha: m[1], hora: m[2], nombre_completo: nombre, telefono: conv.telefono, email: input.email || null }, { escribir })))
+    const res = (await this.safe(() => this.aimharder.reservarPrueba?.({ sede: 'parla', modalidad, fecha: m[1], hora: m[2], nombre_completo: nombre, telefono: telefono || null, email }, { escribir })))
       || { estado: 'simulada', detalle: 'Sin conexión con AimHarder: no se ha comprobado la clase.' };
     if (res.estado === 'no_hay_clase') {
       return { ok: false, error: res.detalle, horas_ese_dia: res.horas || [], nota: res.horas?.length ? 'Propónle una de esas horas (o otro día) y reserva cuando la elija.' : 'Ese día no hay clase de esa modalidad: propón otro día con consultar_horarios.' };
@@ -1048,6 +1053,7 @@ export class Setter {
   async alta(conv, datos, efectos) {
     // Un alta ya hecha no se repite (duplicaría la tarifa y el recibo en AimHarder)
     if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
+    if (!String(datos.telefono || '').trim() && !conv.telefono && conv.channel !== 'whatsapp') return { ok: false, error: 'Para el alta hace falta su teléfono (no escribe por WhatsApp): pídeselo antes de tramitarla.' };
     const sede = normalizarSede(datos.sede);
     if (sede === 'el_canaveral') return this.altaCanaveral(conv, datos, efectos);
     // Ya pasada al equipo: no se vuelve a tramitar ni a avisar en cada turno

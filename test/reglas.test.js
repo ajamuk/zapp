@@ -87,7 +87,7 @@ test('seguimiento por etiqueta: se programa al ponerla, sobrevive a que el lead 
 
 test('recordatorio de la clase de prueba: 3 h antes, con la clase en la tarea; se cancela si se anula', async () => {
   const { repo, setter, sal, avanzar } = montar({ respuestas: [
-    [{ name: 'reservar_prueba_parla', input: { modalidad: 'hyrox', fecha_hora: '2026-11-19 19:00', nombre_completo: 'Ana López' } }],
+    [{ name: 'reservar_prueba_parla', input: { modalidad: 'hyrox', fecha_hora: '2026-11-19 19:00', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
     responder({ mensajes: ['te la dejo apuntada'] }),
     responder({ mensajes: ['recuerda tu prueba de hoy a las 19:00 en Parla 💪'] }),
   ] });
@@ -107,7 +107,7 @@ test('recordatorio de la clase de prueba: 3 h antes, con la clase en la tarea; s
 
 test('después de la clase de prueba: sale 3 h después de la clase, con la clase en la tarea; se cancela si se anula', async () => {
   const { repo, setter, sal } = montar({ respuestas: [
-    [{ name: 'reservar_prueba_parla', input: { modalidad: 'academy', fecha_hora: '2026-11-19 10:00', nombre_completo: 'Ana López' } }],
+    [{ name: 'reservar_prueba_parla', input: { modalidad: 'academy', fecha_hora: '2026-11-19 10:00', nombre_completo: 'Ana López', email: 'ana@example.com' } }],
     responder({ mensajes: ['te la dejo apuntada'] }),
   ] });
   await setter.responder('c1');
