@@ -59,7 +59,7 @@ Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de
 - **Descuento de apertura** en febrero, marzo y abril de 2027; desde mayo se paga la cuota habitual.
 - **200 plazas de apertura en cuatro tramos**: plazas 1 a 10 → −50 % · plazas 11 a 35 → −30 % · plazas 36 a 110 → −20 % · plazas 111 a 200 → −10 %.
 - El tramo se asigna **por orden de primer pago completado**. Pedir información no reserva plaza, no garantiza tramo y no cobra nada. No se dice cuántas plazas quedan en cada tramo.
-- **Ya se puede hacer el alta**: la fecha de inicio es el 1 de febrero de 2027, el descuento del tramo se aplica a las cuotas de febrero, marzo y abril, y el recibo de la primera mensualidad (febrero, ya con el descuento) se emite en la fecha del alta. **El pago en la app todavía no está habilitado**: se avisa a cada persona cuando se pueda pagar. Mientras tanto la plaza queda anotada por orden de alta y se confirma al completar ese pago.
+- **Ya se puede hacer el alta**: la fecha de inicio es el 1 de febrero de 2027, el descuento del tramo se aplica a las cuotas de febrero, marzo y abril, y el recibo de la primera mensualidad (febrero, ya con el descuento) se emite en la fecha del alta. **El pago en la app todavía no está habilitado**: se avisa a cada persona cuando se pueda pagar. Mientras tanto la plaza queda anotada por orden de alta. Cuando se habilite, pagar la primera mensualidad es lo que reserva la plaza con la oferta de apertura: hay que dejar el pago hecho.
 - **Regalos en cualquier tramo**: comba profesional (se entrega en la apertura) y plaza en un seminario exclusivo (fecha y hora se confirmarán).
 - Horarios: aún no publicados; los de CrossFit + HYROX están pendientes de confirmar. Se pregunta la disponibilidad del lead y se anota.
 - Academy para empezar desde cero (en El Cañaveral también hay Academy de 1 día por semana); quien ya entrena, CrossFit + HYROX.
@@ -109,7 +109,7 @@ Los horarios están en `config/horarios.json` (sacados de AimHarder) y se consul
 
 - No hay matrícula, inscripción ni permanencia, y ahora mismo no hay promociones ni descuentos. Sin penalizaciones por cancelar o no asistir.
 - Alta a mitad de mes: el primer recibo es la parte proporcional de los días que quedan del mes (la calcula AimHarder). El recibo se emite el día que se tramita el alta, aunque empiece a entrenar más adelante.
-- El cobro de las cuotas es con tarjeta en la app (pago automático con TPV RedSys).
+- El cobro de las cuotas es con tarjeta en la app (pago automático con TPV RedSys) y la cuota se renueva el día 1 de cada mes. En el box también se puede pagar en efectivo o con Bizum.
 - El lead hace el primer pago desde la app (AimHarder) tras recibir la invitación por email.
 - La cuota se renueva sola el día 1 de cada mes.
 - En el box se puede pagar en efectivo o por Bizum.

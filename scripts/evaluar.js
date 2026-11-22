@@ -20,9 +20,14 @@ export const horasValidas = (sede) => {
   return s;
 };
 
+/** Archivo enviado por Sofía (imagen de tarifas, documento…): en el chat queda como «[imagen: nombre]». */
+export const esAdjunto = (m) => /^\[(imagen|audio|video|documento): [^\]]*\]$/.test(String(m).trim());
+
 /** Comprobaciones automáticas sobre la respuesta. Devuelve la lista de fallos. */
-export function comprobar(caso, mensajes) {
+export function comprobar(caso, todos) {
   const fallos = [];
+  // Los archivos que salen junto al texto no son mensajes escritos: no cuentan para el límite ni para el estilo
+  const mensajes = todos.filter((m) => !esAdjunto(m));
   const todo = caso.contexto.map(([, t]) => t).join('\n');
   const ultimoLead = [...caso.contexto].reverse().find(([r]) => r === 'lead')?.[1] || '';
   const sede = caso.sede !== undefined ? caso.sede : normalizarSede(todo);

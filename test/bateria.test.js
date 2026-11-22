@@ -137,3 +137,18 @@ test('la batería reconoce el límite mensual de gasto de la API como IA no disp
   assert.ok(SIN_SERVICIO.test('Your credit balance is too low'));
   assert.ok(!SIN_SERVICIO.test('overloaded_error'));
 });
+
+test('el juez ve la base de conocimiento (la del borrador si se prueba uno) y las tarifas', async () => {
+  const db = openDb(':memory:');
+  docs.sembrarDocumentos(db);
+  const b = docs.crearVersion(db, 'negocio', `${docs.enProduccion(db, 'negocio').texto}\nDATO-DEL-BORRADOR`);
+  const caso = bat.obtenerCaso(db, bat.guardarCaso(db, { nombre: 'm', tipo: 'momento', contexto: [['lead', 'qué es academy?']], criterios: ['No inventa datos'] }).id);
+  let sistema = null;
+  const completeJSON = async (req) => { sistema = req.system; return juez(true)(req); };
+  await bat.ejecutarCaso(db, caso, { complete: sofia('es nuestro programa para empezar de cero'), completeJSON });
+  const kb = sistema.map((x) => x.text).join('\n');
+  assert.match(kb, /<base_de_conocimiento>/); assert.match(kb, /<tarifas>/); assert.doesNotMatch(kb, /DATO-DEL-BORRADOR/);
+  assert.deepEqual(sistema.at(-1).cache_control, { type: 'ephemeral' });
+  await bat.ejecutarCaso(db, caso, { complete: sofia('es nuestro programa para empezar de cero'), completeJSON, borradores: { negocio: b.id } });
+  assert.match(sistema.map((x) => x.text).join('\n'), /DATO-DEL-BORRADOR/);
+});

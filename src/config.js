@@ -37,6 +37,12 @@ export const config = {
     modeloOptimizador: env('OPTIMIZADOR_MODEL', 'claude-opus-5-5'),
     // Modelo que hace de lead en la batería de pruebas (barato: solo escribe mensajes cortos)
     modeloLead: env('BATERIA_LEAD_MODEL', 'claude-haiku-5-5'),
+    // Modelo que redacta los textos de los seguimientos (tarea corta: Haiku cuesta 20 veces menos que Sonnet)
+    modeloSeguimientos: env('SEGUIMIENTOS_MODEL', 'claude-haiku-5-5'),
+    // Esfuerzo de razonamiento de Sofía (low | medium | high | xhigh | max). Vacío = el del modelo (high en Sonnet 5.5)
+    effort: env('AI_EFFORT', 'medium'),
+    // Duración de la caché del prompt y la base de conocimiento: 1h (los leads contestan con minutos u horas de pausa) o 5m
+    cacheTtl: env('AI_CACHE_TTL', '1h'),
     minDelay: num('AI_MIN_DELAY', 15),
     maxDelay: num('AI_MAX_DELAY', 50),
     typingSpeed: num('AI_TYPING_SPEED', 4),

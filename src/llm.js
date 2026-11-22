@@ -154,31 +154,36 @@ export function revisarRespuesta(input) {
   return null;
 }
 
+/** Respaldo en el servidor si el modelo se niega. Haiku no lo tiene: con él se llama sin `fallbacks`. */
+export const opcionesRespaldo = (modelo) => (/haiku/.test(modelo) ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
+
 /**
  * Ejecuta un turno: llama al modelo, resuelve herramientas y devuelve la entrada de `responder`.
  * `complete` se puede sustituir en tests.
  */
-export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta }) {
+export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta, modelo = config.ai.model, effort = config.ai.effort }) {
   // Sonnet 5.5 no admite forzar herramienta (tool_choice any/tool → 400): se pide en modo auto y, si contesta
   // en texto sin llamar a `responder`, se le recuerda una vez. Si el modelo se niega por seguridad, la API
   // reintenta con su modelo de respaldo (fallbacks "default").
   // Tiempo límite de 60 s por llamada (el SDK reintenta 2 veces los fallos de red, 429 y 5xx): una respuesta
   // normal tarda 4-8 s, y sin límite una llamada colgada bloquearía el chat hasta 10 minutos.
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: 60000, maxRetries: 2 }));
+  const respaldo = opcionesRespaldo(modelo);
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, ...respaldo }, { timeout: 60000, maxRetries: 2 }));
   const conv = [...messages];
   let recordatorios = 0; let correcciones = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
     const t0 = Date.now();
     const res = await llamar({
-      model: config.ai.model,
+      model: modelo,
       max_tokens: 8000, // el razonamiento interno (siempre activo en este modelo) cuenta dentro de este límite
+      ...(effort ? { output_config: { effort } } : {}),
       system,
       tools: TOOLS,
       tool_choice: { type: 'auto' },
       messages: conv,
     });
     // Una fila por intento facturable (modelo real, caché por duración, coste ya calculado)
-    for (const f of usosDe(res, config.ai.model)) onUsage?.(f, Date.now() - t0);
+    for (const f of usosDe(res, modelo)) onUsage?.(f, Date.now() - t0);
     if (res.stop_reason === 'refusal') throw new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`);
     if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
@@ -247,10 +252,13 @@ export async function pedirTexto({ system, messages, modelo = config.ai.modeloLe
 }
 
 /** Bloques de sistema con caché: el prompt y la base de conocimiento casi no cambian. */
-export function systemBlocks(prompt, negocio, contexto) {
+export function systemBlocks(prompt, negocio, contexto, ttl = config.ai.cacheTtl) {
+  // Caché de 1 h por defecto: escribirla cuesta el doble que la de 5 min, pero entre mensajes de leads suele haber
+  // más de 5 min y, sin ella, cada respuesta volvería a pagar los ~11.000 tokens del prompt y la base.
+  const cache = ttl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
   return [
     { type: 'text', text: prompt },
-    { type: 'text', text: `# Base de conocimiento\n\n${negocio}`, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: `# Base de conocimiento\n\n${negocio}`, cache_control: cache },
     { type: 'text', text: contexto },
   ];
 }

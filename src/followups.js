@@ -1,5 +1,6 @@
 // Seguimientos: los programa el sistema (reglas de reglas.js), el equipo a mano o un lanzamiento, y aquí se
 // preparan y se envían. Cada pendiente guarda el texto previsto: si el chat no cambia, sale exactamente ese.
+import { config } from './config.js';
 import { knowledge } from './knowledge.js';
 import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
@@ -91,7 +92,7 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
   let texto;
   if (regla.modo === 'fijo' && !regla.condicion && !/\[[^\]]+\]/.test(regla.textoFijo)) texto = regla.textoFijo; // sin huecos ni condición: no hace falta la IA
   else {
-    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now() }));
+    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now() }), { modelo: config.ai.modeloSeguimientos });
     if (regla.modo === 'fijo') texto = texto.replace(/\s*\n+\s*/g, ' ').trim();
     if (regla.modo === 'fijo' && texto && !respetaPlantillaFija(regla.textoFijo, texto)) texto = ''; // ha cambiado el texto fijo: no sale
   }

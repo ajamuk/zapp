@@ -17,3 +17,10 @@ test('detecta estilo, horas inventadas y prueba fuera de Parla', () => {
   assert.ok(comprobar(caso('quiero probar en getafe'), ['te reservo la clase de prueba']).includes('habla de prueba fuera de Parla'));
   assert.deepEqual(comprobar(caso('quiero probar en getafe'), ['en Getafe no hay clase de prueba, pero no hay permanencia']), []);
 });
+
+test('las imágenes que salen junto al texto no cuentan como mensajes', () => {
+  const c = { contexto: [['lead', 'empezar de cero']], sede: 'parla' };
+  const texto = ['para empezar tienes Academy', 'son grupos pequeños', 'cuántos días te ves entrenando?'];
+  assert.deepEqual(comprobar(c, [...texto, '[imagen: parla-academy-horarios]', '[imagen: parla-academy-tarifas]']), []);
+  assert.ok(comprobar(c, [...texto, 'otro', 'y otro más']).includes('más de 4 mensajes'));
+});

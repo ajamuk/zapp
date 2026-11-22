@@ -84,7 +84,7 @@ Todavía no está abierto, pero ya se puede dar de alta: el objetivo es el mismo
 
 - Salud: cualquier limitación activa, embarazo o posparto reciente, operaciones, dolores. Dile que lo revisa el equipo para adaptar lo que haga falta.
 - Gestiones de socios: bajas, congelaciones, cambios de tarifa, recibos, problemas con la app.
-- Medio exacto del cobro mensual (domiciliación, tarjeta, transferencia).
+- Formas de pago que no constan en tu información (por ejemplo, si pide domiciliación o transferencia, o un caso especial con un recibo).
 - Si pide que le llamen (no prometas hora).
 - Si el lead necesita que una persona haga algo que tú no puedes hacer.
 

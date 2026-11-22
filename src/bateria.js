@@ -20,7 +20,7 @@ import { pedirJSON, pedirTexto } from './llm.js';
 import * as docs from './documentos.js';
 import { costeRun } from './precios.js';
 import { comprobar, horasValidas } from '../scripts/evaluar.js';
-import { normalizarSede } from './knowledge.js';
+import { normalizarSede, knowledge } from './knowledge.js';
 
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 const fila = (c) => c && ({ ...c, contexto: json(c.contexto, []), criterios: json(c.criterios, []), activo: Boolean(c.activo), socio: Boolean(c.socio) });
@@ -126,7 +126,13 @@ Cómo escribes: como un cliente normal por chat, en español de España, mensaje
 Cuando ya tengas lo que querías, cuando te digan que te escribirá una persona del equipo, o si la conversación ya no da más de sí, contesta solo con: [FIN]`;
 
 const SISTEMA_JUEZ = `Evalúas una conversación entre Sofía (la setter por chat de CrossFit MetroPolitano, una IA) y un lead. Para cada criterio, decide si SE CUMPLE (true) o NO (false) mirando solo lo que hizo Sofía en la conversación y en la ficha técnica (herramientas que usó, etiquetas, estado del chat).
-Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
+Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Para saber si un dato es cierto, mira la base de conocimiento y las tarifas que tienes abajo: lo que está ahí no es inventado, aunque Sofía no haya usado una herramienta (si el criterio pide expresamente usar una herramienta, eso sí se comprueba en la ficha técnica). Es inventado lo que no está ni ahí ni en lo que devolvieron sus herramientas, o lo que lo contradice. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
+
+/** Sistema del juez: sus reglas y, en un bloque cacheado, la base de conocimiento y las tarifas con las que contesta Sofía. */
+export const sistemaJuez = (negocio) => [
+  { type: 'text', text: SISTEMA_JUEZ },
+  { type: 'text', text: `<base_de_conocimiento>\n${negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
+];
 
 const ESQUEMA_JUEZ = {
   type: 'object', additionalProperties: false, required: ['criterios'],
@@ -214,7 +220,7 @@ export async function ejecutarCaso(db, caso, { complete, completeLead, completeJ
 
   // Juez
   const j = await pedirJSON({
-    system: SISTEMA_JUEZ, schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: sumar,
+    system: sistemaJuez(docs.textosActivos(db, borradores || {}).negocio), schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: sumar,
     contenido: `<conversacion canal="${caso.canal}">\n${conversacion.map((m) => `${QUIEN[m.autor] || m.autor}: ${m.texto}`).join('\n')}${caso.tipo === 'escenario' && c.tipo === 'socio' ? '\n(Sofía no contestó: el sistema detectó que es socio, la pausó y avisó al equipo)' : ''}\n</conversacion>\n\n<ficha_tecnica>\n${JSON.stringify(estado, null, 1)}\n</ficha_tecnica>${caso.referencia ? `\n\n<referencia>\n${caso.referencia}\n</referencia>` : ''}\n\n<criterios>\n${caso.criterios.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n</criterios>`,
   });
   const criterios = caso.criterios.map((t, i) => { const r = (j.criterios || []).find((x) => x.n === i + 1); return { criterio: t, cumple: Boolean(r?.cumple), motivo: r?.motivo || 'el juez no lo valoró' }; });
