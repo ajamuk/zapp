@@ -34,6 +34,9 @@ test('tarifas: recomienda una y no mezcla sedes', () => {
   assert.equal(c.recomendada.euros_mes_apertura_feb_a_abr['-50% (plazas 1 a 10)'], 47.5);
   assert.equal(c.opciones.length, 3);
   assert.equal(consultarTarifas({ sede: 'el_canaveral', familia: 'crossfit' }).opciones.at(-1).euros_mes_apertura_feb_a_abr['-10% (plazas 111 a 200)'], 108);
+  // Los regalos de apertura salen siempre con las tarifas de El Cañaveral
+  const reg = consultarTarifas({ sede: 'el_canaveral', familia: 'academy' }).regalos;
+  assert.ok(reg.en_cualquier_tramo); assert.match(reg.comba, /comba profesional/i); assert.match(reg.seminario, /seminario exclusivo/i);
   // Alta en El Cañaveral: empieza el 1 de febrero aunque se pida antes, con el descuento del tramo que toca
   const o = calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'academy_2', fecha_inicio: '2026-12-01' });
   assert.deepEqual([o.fecha_inicio, o.descuento_pct, o.cuota_con_descuento, o.primer_recibo, o.cuota_mensual], ['2027-02-01', 50, 47.5, 47.5, 95]);
