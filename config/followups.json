@@ -1,6 +1,6 @@
 {
   "_nota": "Copiado de Zapp (reglas activas a 19 nov 2026). 'minutos' cuenta desde el último mensaje de la IA sin respuesta del lead. La IA decide en cada caso si la condición se cumple; si no, no envía. Las reglas con tipo 'largo-plazo' no van por minutos: se programan cuando el lead dice que lo decidirá o se apuntará más adelante (Sofía indica la fecha en `retomar`; si no hay fecha, 'dias'). Solo WhatsApp: Instagram no deja escribir pasados unos días.",
-  "estiloComun": "Sin ¿ ni ¡ ni punto final; minúscula inicial; 1-2 frases; como mucho un emoji (😊💪👍😅); de tú. No ofrezcas clases de prueba ni visitas, no prometas plazas ni horarios. Si la objeción pendiente es la clase de prueba y aún no se explicó, explica que una sesión no permite conocer la experiencia y que sin permanencia puede entrenar un mes y decidir. Si ayuda, puedes compartir https://www.instagram.com/metropolitano_crossfit/ una sola vez.",
+  "estiloComun": "Sin ¿ ni ¡ ni punto final; minúscula inicial; 1-2 frases; como mucho un emoji (😊💪👍😅); de tú. No ofrezcas visitas ni prometas plazas ni horarios. Clase de prueba: solo existe en Parla; ofrécela solo si se cumplen las reglas de «Clase de prueba» (se quedó callado después de saber su precio, aún no se le ofreció ni la rechazó y no quiere apuntarse ya), con dos horas reales de `consultar_horarios`. En Getafe, Las Rosas y El Cañaveral no la ofrezcas, y si la objeción pendiente es la clase de prueba y aún no se explicó, explica que una sesión no permite conocer la experiencia y que sin permanencia puede entrenar un mes y decidir. Nunca pidas permiso («te parece?», «te animas?»): indica el siguiente paso. Si ayuda, puedes compartir https://www.instagram.com/metropolitano_crossfit/ una sola vez.",
   "reglas": [
     {
       "id": "comercial-5h",
@@ -11,7 +11,7 @@
       ],
       "minutos": 300,
       "condicion": "Enviar solo si hubo interés real (preguntó precio, horarios o modalidad, eligió sede o dejó una objeción concreta). No enviar si ya respondió, compró, pidió no recibir mensajes, fue derivado a una persona, o si el alta está pendiente de preparar. No enviar ante un simple saludo, agradecimiento o conversación cerrada.",
-      "instrucciones": "Retoma el último dato o la duda concreta sin culpar ni repetir y termina en pregunta o propuesta concreta."
+      "instrucciones": "Demuestra que te acuerdas de él: retoma en pocas palabras lo que te contó (su motivo, su objetivo o su situación) y la duda concreta en la que se quedó, y por qué le encaja lo que le propusiste, sin culpar ni repetir lo que ya le dijiste. Termina con un siguiente paso concreto, mejor con dos opciones."
     },
     {
       "id": "info-tras-reserva",
@@ -33,7 +33,7 @@
       ],
       "minutos": 1438,
       "condicion": "Solo si no respondió al follow-up de 5h, el hilo sigue vivo y hubo interés real. No enviar si respondió, reservó, compró, pidió no recibir mensajes, fue derivado o hay alta pendiente.",
-      "instrucciones": "Último intento: responde primero a la duda u objeción pendiente, reduce fricción y deja una propuesta concreta o la puerta abierta sin presión."
+      "instrucciones": "Último intento: responde primero a la duda u objeción pendiente (si era el precio, la cuota de menos días; si era miedo a no poder, que el coach adapta todo a su nivel), conéctalo con lo que te contó, reduce fricción y deja una propuesta concreta o la puerta abierta sin presión."
     },
     {
       "id": "cierre-4-dias",

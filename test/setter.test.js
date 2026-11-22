@@ -144,6 +144,24 @@ test('derivar a equipo pausa la IA, etiqueta y avisa', async () => {
   assert.equal(repo.db.prepare("SELECT count(*) n FROM scheduled WHERE estado='pendiente'").get().n, 0, 'sin seguimientos tras derivar');
 });
 
+test('derivar a equipo sin motivo ni resumen no pausa el chat y Sofía sigue', async () => {
+  const { setter, repo, llamadas, avanzar } = montar({
+    respuestas: [
+      [{ name: 'derivar_a_equipo', input: {} }],
+      [{ name: 'responder', input: { mensajes: ['has hecho CrossFit alguna vez o sería empezar desde cero?'], fase: 'f2 diagnóstico' } }],
+    ],
+  });
+  await setter.handleWebhook(entrante('cuánto cuesta en getafe?'));
+  avanzar(60000);
+  await setter.tick();
+  const c = repo.getConv('c1');
+  assert.equal(c.derivado, 0);
+  assert.equal(c.ai_paused, 0);
+  assert.equal(llamadas.avisos.filter((a) => /Derivado/.test(a)).length, 0);
+  assert.deepEqual(llamadas.enviados, ['has hecho CrossFit alguna vez o sería empezar desde cero?']);
+  assert.match(JSON.stringify(llamadas.requests[1].messages.at(-1).content), /No se ha derivado/);
+});
+
 test('alta sin configurar: el equipo recibe los datos y la IA no dice que está hecha', async () => {
   const { setter, repo, llamadas, avanzar } = montar({
     alta: { estado: 'no_configurado', detalle: 'faltan selectores' },
