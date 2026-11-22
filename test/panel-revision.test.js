@@ -18,13 +18,13 @@ const chat = (repo, id, creado, mensajes = []) => {
 };
 
 test('desfase de Madrid: una hora en invierno y dos en verano', () => {
-  assert.equal(panel.desfaseMadrid(new Date('2026-01-15T12:00:00Z')), 60);
-  assert.equal(panel.desfaseMadrid(new Date('2026-07-15T12:00:00Z')), 120);
+  assert.equal(panel.desfaseMadrid(new Date('2026-01-15T12:00:59Z')), 60);
+  assert.equal(panel.desfaseMadrid(new Date('2026-07-15T12:00:59Z')), 120);
 });
 
 test('Resumen «Hoy» cuenta desde la medianoche de Madrid, no las últimas 24 horas', () => {
   const repo = crearRepo(openDb(':memory:'));
-  const ahora = new Date('2026-11-22T09:00:00Z'); // las 10:00 en Madrid
+  const ahora = new Date('2026-11-22T09:00:59Z'); // las 10:00 en Madrid
   // Ayer a las 20:00 de Madrid (hace 14 h): dentro de las últimas 24 h, pero no es hoy
   chat(repo, 'ayer', '2026-11-21 19:00:00', [['lead', 'hola', '2026-11-21T19:00:00.000Z'], ['ia', 'hola!', '2026-11-21T19:01:00.000Z']]);
   // Hoy a las 00:30 de Madrid (ayer 23:30 UTC): es hoy aunque en UTC sea el día anterior
@@ -43,6 +43,21 @@ test('Resumen «Hoy» cuenta desde la medianoche de Madrid, no las últimas 24 h
   assert.equal(dos.conversaciones.n, 3, 'con 2 días entra también ayer');
   // La serie va por día de Madrid: el mensaje de las 00:30 cuenta en el día 22, no en el 21
   assert.deepEqual(dos.serie.map((x) => [x.dia, x.lead]), [['2026-11-21', 1], ['2026-11-22', 2]]);
+});
+
+test('Resumen: medianoches y series correctas cuando cambia la hora de Madrid', () => {
+  for (const { ahora, antes, principio, final, siguiente, dia, diaSiguiente } of [
+    { ahora: '2026-03-30T09:00:59Z', antes: '2026-03-28T22:59:59Z', principio: '2026-03-28T23:00:00Z', final: '2026-03-29T21:59:59Z', siguiente: '2026-03-29T22:00:00Z', dia: '2026-03-29', diaSiguiente: '2026-03-30' },
+    { ahora: '2026-10-26T09:00:59Z', antes: '2026-10-24T21:59:59Z', principio: '2026-10-24T22:00:00Z', final: '2026-10-25T22:59:59Z', siguiente: '2026-10-25T23:00:00Z', dia: '2026-10-25', diaSiguiente: '2026-10-26' },
+  ]) {
+    const repo = crearRepo(openDb(':memory:'));
+    for (const [i, cuando] of [antes, principio, final, siguiente].entries()) chat(repo, `c${i}`, cuando, [['lead', 'hola', cuando]]);
+    const r = panel.resumen(repo.db, 2, new Date(ahora));
+    assert.equal(r.conversaciones.n, 3);
+    assert.equal(r.mensajes.lead, 3);
+    assert.deepEqual(r.serie.map((x) => [x.dia, x.lead]), [[dia, 2], [diaSiguiente, 1]]);
+    repo.db.close();
+  }
 });
 
 test('Resumen: un número de días raro no rompe la consulta', () => {

@@ -10,7 +10,18 @@ const partesMadrid = (d) => Object.fromEntries(fmtMadrid.formatToParts(d).map((x
 /** Minutos que Madrid va por delante de UTC en ese momento (60 en invierno, 120 en verano). */
 export function desfaseMadrid(ahora = new Date()) {
   const p = partesMadrid(ahora);
-  return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - ahora.getTime()) / 60000);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) / 60000 - Math.floor(ahora.getTime() / 60000);
+}
+
+function cortesMadrid(dias, momento) {
+  const p = partesMadrid(momento);
+  const hoy = Date.UTC(p.year, p.month - 1, p.day);
+  return Array.from({ length: dias + 1 }, (_, i) => {
+    const fecha = new Date(hoy + (i - dias + 1) * 864e5);
+    // A las 00:00 UTC Madrid conserva el desfase de su medianoche, incluso el día del cambio de hora.
+    const medianoche = new Date(fecha.getTime() - desfaseMadrid(fecha) * 60000);
+    return { dia: fecha.toISOString().slice(0, 10), utc: medianoche.toISOString().slice(0, 19).replace('T', ' ') };
+  });
 }
 
 /**
@@ -20,12 +31,9 @@ export function desfaseMadrid(ahora = new Date()) {
 
 export function resumen(db, dias = 1, momento = new Date()) {
   const d = Math.max(1, Math.min(90, Math.floor(Number(dias)) || 1));
-  const min = desfaseMadrid(momento);
-  // Medianoche de Madrid de hace d-1 días, en UTC. Las fechas guardadas vienen en dos formatos («2026-11-22 10:00:00»
-  // y «2026-11-22T10:00:00.000Z»): la comparación exacta va con datetime(); la del día, que vale para los dos, deja
-  // que la base use el índice de fechas y no lea los mensajes de meses atrás para contar los de hoy.
-  const inicio = new Date(Math.floor((momento.getTime() + min * 60000) / 864e5) * 864e5 - (d - 1) * 864e5 - min * 60000);
-  const ts = inicio.toISOString().slice(0, 19).replace('T', ' ');
+  const cortes = cortesMadrid(d, momento);
+  const ts = cortes[0].utc;
+  // Comparación por fecha para usar el índice y por instante para aceptar ambos formatos UTC de SQLite e ISO.
   const uno = (sql, ...p) => db.prepare(sql).get(...p);
   const todos = (sql, ...p) => db.prepare(sql).all(...p);
   const enPeriodo = (col) => `(${col} >= '${ts.slice(0, 10)}' AND datetime(${col}) >= '${ts}')`;
@@ -49,8 +57,12 @@ export function resumen(db, dias = 1, momento = new Date()) {
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
       sum(tokens_cache_write) cache_escritura, sum(tokens_out) salida, avg(ms) ms
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
-  const serie = todos(`SELECT date(datetime(created_at, '${min} minutes')) dia, sum(autor = 'lead') lead, sum(autor = 'ia') ia
-    FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')} GROUP BY dia ORDER BY dia`);
+  const intervalos = cortes.slice(0, -1).map(({ dia, utc }, i) => [dia, utc, cortes[i + 1].utc]);
+  const serie = todos(`WITH dias(dia, desde, hasta) AS (VALUES ${intervalos.map(() => '(?, ?, ?)').join(', ')})
+    SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia') ia
+    FROM dias d JOIN messages m ON m.created_at >= date(d.desde) AND m.created_at < date(d.hasta, '+1 day')
+      AND datetime(m.created_at) >= d.desde AND datetime(m.created_at) < d.hasta
+    WHERE m.conversation_id NOT LIKE 'prueba-%' GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
   return { dias: d, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
 }
 
