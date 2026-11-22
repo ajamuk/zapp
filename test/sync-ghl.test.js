@@ -147,3 +147,19 @@ test('lo que escribió el equipo hace rato entra una sola vez, aunque el conecto
   await setter.handleWebhook(webhook('vale, gracias'));
   assert.deepEqual(repo.history('cv1').map((m) => `${m.autor}: ${m.texto}`), ['lead: hola', 'humano: Hola Ana, te cuento', 'humano: son 85 € al mes', 'lead: vale, gracias']);
 });
+
+test('si GHL no confirma a tiempo un envío que sí salió, se da por enviado y el chat no se pausa', async () => {
+  const { setter, repo, en, avanzar } = montar({ respuestas: [['hola!', 'qué sede te pilla mejor?']] });
+  en.lista = [msg('g1', 'inbound', 'TYPE_WHATSAPP', 'hola', hace(5))];
+  await setter.handleWebhook(webhook('hola'));
+  avanzar(60000);
+  const enviar = setter.ghl.sendMessage; let n = 0;
+  setter.ghl.sendMessage = async (x) => { const r = await enviar(x); if (++n === 2) throw new Error('GHL POST /conversations/messages → sin respuesta en 20 s'); return r; };
+  await setter.tick();
+  assert.deepEqual(repo.history('cv1').filter((m) => m.autor === 'ia').map((m) => [m.texto, m.external_id]), [['hola!', 's1'], ['qué sede te pilla mejor?', 's2']]);
+  en.lista.push(msg('g2', 'inbound', 'TYPE_WHATSAPP', 'parla', new Date(T0.getTime() + 90000).toISOString()));
+  avanzar(40000);
+  await setter.handleWebhook(webhook('parla'));
+  assert.equal(repo.getConv('cv1').ai_paused, 0);
+  assert.equal(repo.history('cv1').filter((m) => m.autor === 'humano').length, 0);
+});

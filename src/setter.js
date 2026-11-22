@@ -599,13 +599,36 @@ export class Setter {
       // El turno se anuló por tardar mientras Sofía «escribía» la primera burbuja: no sale nada (ya hay un
       // reintento en cola). Si ya había salido alguna, se termina de enviar para no dejar la respuesta a medias.
       if (control?.cancelado && !ids.length) return null;
-      const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto: mensajes[i] });
+      let r;
+      try { r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto: mensajes[i] }); }
+      catch (e) {
+        // GHL a veces tarda más de 20 s en confirmar un mensaje que sí ha salido: se comprueba en la conversación.
+        // Si está, el turno sigue; si no, falla como antes.
+        r = await this.confirmarEnvio(conv, mensajes[i]);
+        if (!r) throw e;
+        console.log(`[envío] ${conv.id}: GHL no confirmó a tiempo, pero el mensaje sí salió`);
+      }
       this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'ia', texto: mensajes[i] });
       ids.push(r?.messageId || null);
       await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'ia', texto: mensajes[i] }));
     }
     this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
     return ids;
+  }
+
+  /** ¿Está en GHL, recién enviado y sin registrar aquí, un saliente con ese texto? Devuelve { messageId } o null. */
+  async confirmarEnvio(conv, texto) {
+    if (!this.ghl.mensajes) return null;
+    const t = textoComparable(texto);
+    for (const espera of [2000, 6000]) {
+      await this.sleep(espera);
+      const lista = (await this.safe(() => this.ghl.mensajes(conv.id, 15))) || [];
+      const desde = new Date(this.now().getTime() - 2 * 60000).toISOString();
+      const m = lista.filter((x) => x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal) && x.fecha > desde && textoComparable(x.texto) === t)
+        .find((x) => !this.repo.db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(x.id));
+      if (m) return { messageId: m.id };
+    }
+    return null;
   }
 
   /**
