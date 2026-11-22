@@ -177,8 +177,9 @@ function tarifasCanaveral(fam, dias, ocupadas = 0) {
   const rec = !n ? null : fam === 'academy' ? `academy_${Math.max(1, Math.min(3, n))}` : fam === 'crossfit_hyrox' ? (n <= 1 ? 'S' : n === 2 ? 'M' : n === 3 ? 'L' : 'XL') : null;
   return {
     ok: true, sede: 'el_canaveral', familia: fam || 'todas', opciones, recomendada: rec ? opciones.find((x) => x.clave === rec) : null,
+    regalos: { en_cualquier_tramo: true, comba: 'Comba profesional de regalo, se entrega en la apertura', seminario: 'Plaza en un seminario exclusivo; fecha, hora y acceso se confirmarán antes de celebrarlo (no hay más datos)' },
     tramo_actual: tramo.descuento ? { descuento_pct: tramo.descuento, plazas: tramo.plazas } : { descuento_pct: 0, nota: 'Las 200 plazas de apertura están cubiertas: cuota habitual.' },
-    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. Ya se puede tramitar el alta: empieza el 1 de febrero. ' + pagoCanaveral() + ' Da el precio del tramo_actual (es el que se le aplica si se apunta ahora); no lo garantices a quien aún no se ha apuntado ni digas cuántas plazas quedan. Regalos en cualquier tramo: comba profesional y plaza en un seminario exclusivo. No mezclar con precios de otras sedes.',
+    notas: 'Abre el 1 de febrero de 2027. Sin matrícula ni permanencia. El descuento vale febrero, marzo y abril de 2027; desde mayo, la cuota habitual. Ya se puede tramitar el alta: empieza el 1 de febrero. ' + pagoCanaveral() + ' Da el precio del tramo_actual (es el que se le aplica si se apunta ahora); no lo garantices a quien aún no se ha apuntado ni digas cuántas plazas quedan. Cuéntale siempre los regalos (ver «regalos»): entran en cualquier tramo. No mezclar con precios de otras sedes.',
   };
 }
 
