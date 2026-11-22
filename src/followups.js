@@ -190,7 +190,7 @@ export async function procesarSeguimientos(setter) {
       if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null);
-      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.live ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
+      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
       if (regla.recursoId && !plantilla) { const rec = recursosMod.obtener(setter.catalogo, regla.recursoId); if (rec?.activo) await setter.enviarRecursos(conv, [rec]); }
       if (regla.ponerEtiqueta) await setter.safe(() => setter.etiquetas?.poner(conv.id, regla.ponerEtiqueta, 'regla'));
     } catch (e) {

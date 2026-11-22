@@ -53,10 +53,12 @@ El simulador HTML independiente se puede regenerar con `npm run build-simulador`
 
 ## Conectar GHL
 
+Guía paso a paso: [`docs/activar-ghl.md`](docs/activar-ghl.md). En el VPS, `npm run verificar-ghl` comprueba token, usuarios y permisos sin enviar nada.
+
 1. En GHL: Ajustes → Integraciones privadas → token con permisos de conversaciones (leer/escribir), contactos (leer/escribir) y notas. Va a `GHL_TOKEN`.
 2. Workflow «Mensaje entrante» (disparador *Customer Replied*, canales WhatsApp e Instagram) → acción *Webhook* a
    la URL HTTPS del webhook del VPS con la cabecera `x-setter-secret` = `WEBHOOK_SECRET`.
-   Incluir conversationId, contactId, messageType, body, messageId, phone, tags y nombre del contacto.
+   Basta con el cuerpo estándar de GHL (`contact_id`, `message.body`…): el id de la conversación y el canal se piden a GHL.
 3. Mensajes que envía el equipo: para que la IA se aparte cuando escribe una persona, el servicio entiende el evento
    `OutboundMessage` de GHL (con `userId`). Si no se puede suscribir ese evento, el equipo pone la etiqueta `parar ia`
    antes de escribir. **A confirmar al conectar.**

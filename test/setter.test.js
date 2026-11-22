@@ -8,7 +8,7 @@ import { parseWebhook } from '../src/ghl.js';
 // Un martes a las 12:00 en Madrid (dentro de horario)
 const T0 = new Date('2026-11-17T11:00:00Z');
 
-function montar({ respuestas, socio = false, live = true, alta = { estado: 'preparada' } } = {}) {
+function montar({ respuestas, socio = false, live = true, alta = { estado: 'preparada' }, telefonosPrueba = [] } = {}) {
   const repo = crearRepo(openDb(':memory:'));
   const llamadas = { enviados: [], tags: [], notas: [], avisos: [], plantillas: [], asignados: [], requests: [] };
   const ghl = {
@@ -30,7 +30,7 @@ function montar({ respuestas, socio = false, live = true, alta = { estado: 'prep
     return { content: r.map((b, i) => ({ type: 'tool_use', id: `t${i}`, ...b })), usage: { input_tokens: 10, output_tokens: 5 } };
   };
   const setter = new Setter({
-    repo, ghl, complete, live, sleep: async () => {}, now: () => reloj, random: () => 0,
+    repo, ghl, complete, live, telefonosPrueba, sleep: async () => {}, now: () => reloj, random: () => 0,
     avisar: async (t) => llamadas.avisos.push(t),
     aimharder: {
       buscarSocioPorTelefono: async () => ({ esSocio: socio, sede: socio ? 'Getafe' : null }),
@@ -59,6 +59,30 @@ test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa',
   assert.ok(llamadas.tags.includes('socio') && llamadas.tags.includes('getafe'));
   assert.equal(llamadas.avisos.length, 1);
   assert.equal(repo.dueResponses('2100-01-01').length, 0);
+});
+
+test('un teléfono de prueba se trata como lead aunque sea socio', async () => {
+  const { setter, repo, llamadas } = montar({ socio: true, telefonosPrueba: ['600 000 000'] });
+  await setter.handleWebhook(entrante('hola'));
+  const c = repo.getConv('c1');
+  assert.equal(c.tipo, 'captacion');
+  assert.equal(c.ai_paused, 0);
+  assert.equal(llamadas.avisos.length, 0);
+  assert.ok(c.respond_at, 'queda programada la respuesta');
+});
+
+test('en modo shadow, a un teléfono de prueba se le contesta de verdad y al resto solo con nota', async () => {
+  const respuesta = () => [[{ name: 'responder', input: { mensajes: ['hola!'], fase: 'f1', etiquetas: [] } }]];
+  const prueba = montar({ live: false, telefonosPrueba: ['+34600000000'], respuestas: respuesta() });
+  await prueba.setter.handleWebhook(entrante('hola'));
+  prueba.avanzar(60000); await prueba.setter.tick();
+  assert.deepEqual(prueba.llamadas.enviados, ['hola!']);
+  assert.ok(!prueba.llamadas.notas.some((n) => n.startsWith('[Borrador IA')));
+  const otro = montar({ live: false, respuestas: respuesta() });
+  await otro.setter.handleWebhook(entrante('hola'));
+  otro.avanzar(60000); await otro.setter.tick();
+  assert.equal(otro.llamadas.enviados.length, 0);
+  assert.ok(otro.llamadas.notas.some((n) => n.startsWith('[Borrador IA')));
 });
 
 test('lead: espera, contesta con las burbujas y etiqueta la sede', async () => {

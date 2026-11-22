@@ -27,6 +27,9 @@ const ESPERAS_REINTENTO = [2 * 60000, 5 * 60000]; // si falla la IA o GHL: reint
 const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 // Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
 // externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
+const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
+
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
 /** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
 export function textoComparable(t) {
@@ -48,9 +51,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba });
   }
 
   // ---------- Entrada ----------
@@ -58,7 +61,14 @@ export class Setter {
   async handleWebhook(evt) {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
-    if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
+    if (!evt.contactId) return { ignorado: 'faltan ids' };
+    // Webhook de un workflow de GHL: sin id de conversación o con el canal como número → se pregunta a GHL
+    if ((!evt.conversationId || !CANALES_NATIVOS.has(evt.canal)) && this.ghl.buscarConversacion) {
+      const c = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
+      if (c?.id && !evt.conversationId) evt.conversationId = c.id;
+      if (evt.canal === 'desconocido' && c?.canal) evt.canal = c.canal;
+    }
+    if (!evt.conversationId) return { ignorado: 'faltan ids' };
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
     return this.enSerie(evt.conversationId, () => this.procesarEvento(evt));
@@ -186,7 +196,9 @@ export class Setter {
       if (telefono) this.repo.updateConv(conv.id, { telefono });
     }
     let socio = { esSocio: false };
-    if (telefono) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
+    // TEST_PHONES: números del equipo que se tratan siempre como lead (para probar a Sofía desde el CRM)
+    const prueba = telefono && esTelefonoPrueba(telefono, this.telefonosPrueba);
+    if (telefono && !prueba) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
     if (socio.esSocio) {
       const sede = normalizarSede(socio.sede);
       this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: 'socio' });
@@ -468,9 +480,14 @@ export class Setter {
     return id;
   }
 
+  /** ¿Salen de verdad los mensajes a este chat? En modo live, siempre; en shadow, solo a los TEST_PHONES. */
+  enviaDeVerdad(conv) {
+    return Boolean(this.live || (conv?.telefono && esTelefonoPrueba(conv.telefono, this.telefonosPrueba)));
+  }
+
   async enviar(conv, mensajes, plantilla = null, control = null) {
     const { escritura } = retardoHumano(mensajes, { random: this.random });
-    if (!this.live) {
+    if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
       await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado${plantilla ? ', plantilla' : ''}]\n${mensajes.join('\n')}`));
       for (const m of mensajes) this.repo.addMessage({ conversation_id: conv.id, autor: 'ia', texto: m, enviado: 0 });
@@ -525,7 +542,7 @@ export class Setter {
   async enviarRecursos(conv, lista) {
     for (const r of lista) {
       const msg = { conversation_id: conv.id, autor: 'ia', texto: `[${r.tipo}: ${r.nombre}]`, adjunto: r.tipo, media_ruta: r.media_ruta, media_mime: r.mime };
-      if (!this.live) {
+      if (!this.enviaDeVerdad(conv)) {
         await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado] adjuntaría el archivo «${r.nombre}»`));
         this.repo.addMessage({ ...msg, enviado: 0 });
         continue;
@@ -544,7 +561,7 @@ export class Setter {
   async enviarAvisoAlta(conv, mensajes) {
     try {
       const ids = await this.enviar(conv, mensajes);
-      if (this.live && (!ids || ids.length < mensajes.length || ids.some((x) => !x))) throw new Error('GHL no devolvió el id de algún mensaje');
+      if (this.enviaDeVerdad(conv) && (!ids || ids.length < mensajes.length || ids.some((x) => !x))) throw new Error('GHL no devolvió el id de algún mensaje');
     } catch (e) {
       await this.avisar?.(`El alta está hecha pero el aviso al lead no se ha podido comprobar en el chat: ${e.message}. Revisar la conversación.`, { sede: conv.sede });
     }
@@ -744,7 +761,7 @@ export class Setter {
     const r = await this.responder(conv.id, { extraContexto: preguntas.contextoRespuesta(p), motivo: 'pregunta-respondida', avisarFallo: false });
     if (!r) return 'no se ha enviado (chat pausado)';
     if (!r.mensajes.length) return 'Sofía vio que ya estaba contestada';
-    return this.live ? 'enviada al lead' : 'borrador (modo prueba)';
+    return this.enviaDeVerdad(conv) ? 'enviada al lead' : 'borrador (modo prueba)';
   }
 
   /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */

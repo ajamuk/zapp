@@ -5,14 +5,17 @@
   "description": "Setter IA de CrossFit MetroPolitano: cerebro en el VPS, bandeja en GoHighLevel, altas en AimHarder.",
   "type": "module",
   "main": "src/index.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test test/*.test.js",
     "simular": "node scripts/simular.js",
     "sync-aimharder": "node scripts/sync-aimharder.js",
     "evaluar": "node scripts/evaluar.js",
-    "build-simulador": "node scripts/build-simulador.js"
+    "build-simulador": "node scripts/build-simulador.js",
+    "verificar-ghl": "node scripts/verificar-ghl.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.11.0",
