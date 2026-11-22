@@ -5,12 +5,30 @@ import * as reglasSeg from './reglas.js';
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
 const PRUEBAS = "c.id NOT LIKE 'prueba-%'";
 
+const fmtMadrid = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' });
+const partesMadrid = (d) => Object.fromEntries(fmtMadrid.formatToParts(d).map((x) => [x.type, x.value]));
+/** Minutos que Madrid va por delante de UTC en ese momento (60 en invierno, 120 en verano). */
+export function desfaseMadrid(ahora = new Date()) {
+  const p = partesMadrid(ahora);
+  return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - ahora.getTime()) / 60000);
+}
 
-export function resumen(db, dias = 1) {
-  const desde = `-${Math.max(1, Math.min(90, Number(dias) || 1))} days`;
+/**
+ * Resumen de los últimos `dias` días naturales en Madrid, contando hoy: con 1 es «hoy» desde medianoche (no las
+ * últimas 24 horas), con 7 es hoy y los 6 días anteriores. La serie por día también va por día de Madrid.
+ */
+
+export function resumen(db, dias = 1, momento = new Date()) {
+  const d = Math.max(1, Math.min(90, Math.floor(Number(dias)) || 1));
+  const min = desfaseMadrid(momento);
+  // Medianoche de Madrid de hace d-1 días, en UTC. Las fechas guardadas vienen en dos formatos («2026-11-22 10:00:00»
+  // y «2026-11-22T10:00:00.000Z»): la comparación exacta va con datetime(); la del día, que vale para los dos, deja
+  // que la base use el índice de fechas y no lea los mensajes de meses atrás para contar los de hoy.
+  const inicio = new Date(Math.floor((momento.getTime() + min * 60000) / 864e5) * 864e5 - (d - 1) * 864e5 - min * 60000);
+  const ts = inicio.toISOString().slice(0, 19).replace('T', ' ');
   const uno = (sql, ...p) => db.prepare(sql).get(...p);
   const todos = (sql, ...p) => db.prepare(sql).all(...p);
-  const enPeriodo = (col) => `datetime(${col}) >= datetime('now', '${desde}')`;
+  const enPeriodo = (col) => `(${col} >= '${ts.slice(0, 10)}' AND datetime(${col}) >= '${ts}')`;
 
   const conversaciones = uno(`SELECT count(*) n,
       sum(IFNULL(tipo, '') = 'socio') socios,
@@ -31,9 +49,9 @@ export function resumen(db, dias = 1) {
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
       sum(tokens_cache_write) cache_escritura, sum(tokens_out) salida, avg(ms) ms
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
-  const serie = todos(`SELECT date(datetime(created_at)) dia, sum(autor = 'lead') lead, sum(autor = 'ia') ia
+  const serie = todos(`SELECT date(datetime(created_at, '${min} minutes')) dia, sum(autor = 'lead') lead, sum(autor = 'ia') ia
     FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')} GROUP BY dia ORDER BY dia`);
-  return { dias: Number(dias) || 1, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
+  return { dias: d, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
 }
 
 // ---------- Filtros y vistas de Chats ----------
@@ -251,7 +269,7 @@ export function rendimiento(db, dias = 90) {
 const DIAS_SEM = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const enMadrid = (iso) => {
   const d = new Date(/Z$|T/.test(iso) ? iso : `${iso.replace(' ', 'T')}Z`);
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d).map((x) => [x.type, x.value]));
+  const p = partesMadrid(d);
   return { dia: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(p.weekday), hora: Number(p.hour), fecha: `${p.year}-${p.month}-${p.day}` };
 };
 
@@ -294,7 +312,6 @@ import { costeRun } from './precios.js';
 export { PRECIOS, costeRun } from './precios.js';
 const MOTIVOS = { bateria: 'Batería de pruebas', 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
 
-const motivoDe = (r) => (String(r.conversation_id || '').startsWith('prueba-') ? 'Probar IA' : MOTIVOS[r.motivo] || r.motivo || 'Otros');
 const nombreModelo = (m) => String(m || 'desconocido').replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1').replace(/^./, (c) => c.toUpperCase());
 
 /**
@@ -303,21 +320,29 @@ const nombreModelo = (m) => String(m || 'desconocido').replace(/^claude-/, '').r
  * y en euros aproximados. Cada llamada guarda su coste al hacerse, con el modelo que respondió de verdad.
  */
 export function consumo(db, { meses = 6, dias = 31, eurPorUsd = Number(process.env.EUR_POR_USD) || 0.92 } = {}) {
-  const runs = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, date(created_at) dia, * FROM ai_runs
-    WHERE datetime(created_at) >= datetime('now', 'start of month', ?) AND (tokens_in > 0 OR tokens_out > 0 OR tokens_cache_read > 0 OR tokens_cache_write > 0 OR IFNULL(coste_usd, 0) > 0)`)
-    .all(`-${Math.max(0, Math.min(24, Number(meses) || 6) - 1)} months`);
+  // Las llamadas con el coste ya guardado se suman en la base (decenas de miles de filas se quedan en unas pocas);
+  // solo las antiguas, sin coste apuntado, se recalculan una a una.
+  const usado = '(tokens_in > 0 OR tokens_out > 0 OR tokens_cache_read > 0 OR tokens_cache_write > 0 OR IFNULL(coste_usd, 0) > 0)';
+  const periodo = "datetime(created_at) >= datetime('now', 'start of month', ?)";
+  const mesesAtras = `-${Math.max(0, Math.min(24, Number(meses) || 6) - 1)} months`;
+  const grupos = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, date(created_at) dia, modelo, motivo,
+      IFNULL(conversation_id, '') LIKE 'prueba-%' prueba, sum(coste_usd) usd, count(*) llamadas, sum(respaldo) respaldos
+    FROM ai_runs WHERE ${periodo} AND coste_usd IS NOT NULL AND ${usado} GROUP BY 1, 2, 3, 4, 5`).all(mesesAtras);
+  const antiguas = db.prepare(`SELECT strftime('%Y-%m', created_at) mes, date(created_at) dia, * FROM ai_runs
+    WHERE ${periodo} AND coste_usd IS NULL AND ${usado}`).all(mesesAtras)
+    .map((r) => ({ mes: r.mes, dia: r.dia, modelo: r.modelo, motivo: r.motivo, prueba: String(r.conversation_id || '').startsWith('prueba-'), usd: costeRun(r), llamadas: 1, respaldos: r.respaldo ? 1 : 0 }));
   const desde = new Date(Date.now() - (Math.max(1, Math.min(92, Number(dias) || 31)) - 1) * 864e5).toISOString().slice(0, 10);
-  const suma = (o, k, c) => { const x = (o[k] ??= { usd: 0, llamadas: 0 }); x.usd += c; x.llamadas++; return x; };
+  const suma = (o, k, c, n) => { const x = (o[k] ??= { usd: 0, llamadas: 0 }); x.usd += c; x.llamadas += n; return x; };
   const out = {}; const porDia = {};
   let respaldos = 0;
-  for (const r of runs) {
-    const c = costeRun(r); const motivo = motivoDe(r); const modelo = nombreModelo(r.modelo);
+  for (const r of [...grupos, ...antiguas]) {
+    const c = r.usd; const n = r.llamadas; const motivo = r.prueba ? 'Probar IA' : MOTIVOS[r.motivo] || r.motivo || 'Otros'; const modelo = nombreModelo(r.modelo);
     const m = (out[r.mes] ??= { mes: r.mes, usd: 0, llamadas: 0, motivos: {}, modelos: {} });
-    m.usd += c; m.llamadas++;
-    const mm = suma(m.motivos, motivo, c); suma((mm.modelos ??= {}), modelo, c);
-    suma(m.modelos, modelo, c);
-    if (r.respaldo) respaldos++;
-    if (r.dia >= desde) { const d = (porDia[r.dia] ??= { dia: r.dia, usd: 0, modelos: {}, motivos: {} }); d.usd += c; suma(d.modelos, modelo, c); suma(d.motivos, motivo, c); }
+    m.usd += c; m.llamadas += n;
+    const mm = suma(m.motivos, motivo, c, n); suma((mm.modelos ??= {}), modelo, c, n);
+    suma(m.modelos, modelo, c, n);
+    respaldos += r.respaldos || 0;
+    if (r.dia >= desde) { const d = (porDia[r.dia] ??= { dia: r.dia, usd: 0, modelos: {}, motivos: {} }); d.usd += c; suma(d.modelos, modelo, c, n); suma(d.motivos, motivo, c, n); }
   }
   const lista = (o) => Object.entries(o).map(([k, v]) => ({ nombre: k, ...v, eur: v.usd * eurPorUsd, ...(v.modelos ? { modelos: lista(v.modelos) } : {}) })).sort((a, b) => b.usd - a.usd);
   const chatsMes = Object.fromEntries(db.prepare(`SELECT strftime('%Y-%m', created_at) mes, count(*) n FROM conversations WHERE id NOT LIKE 'prueba-%' GROUP BY mes`).all().map((x) => [x.mes, x.n]));

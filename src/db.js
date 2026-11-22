@@ -272,6 +272,7 @@ const INDICES = `
 CREATE INDEX IF NOT EXISTS conversations_contact ON conversations(contact_id);
 CREATE INDEX IF NOT EXISTS conversations_created ON conversations(created_at);
 CREATE INDEX IF NOT EXISTS messages_autor_fecha ON messages(autor, created_at);
+CREATE INDEX IF NOT EXISTS messages_fecha ON messages(created_at);
 CREATE INDEX IF NOT EXISTS scheduled_conv ON scheduled(conversation_id, estado);
 CREATE INDEX IF NOT EXISTS scheduled_regla ON scheduled(regla_id, estado);
 CREATE INDEX IF NOT EXISTS ai_runs_fecha ON ai_runs(created_at);
