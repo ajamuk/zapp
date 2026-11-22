@@ -151,6 +151,9 @@ export function revisarRespuesta(input) {
   if (/parla/.test(t) && /getafe/.test(t) && /las rosas/.test(t) && !/ca[ñn]averal/.test(t)) {
     return 'No enviado: has enumerado las sedes sin El Cañaveral. Vuelve a llamar a `responder` con los mismos mensajes, nombrando las cuatro: Parla, Getafe, Las Rosas y El Cañaveral, que es nuestra próxima apertura el 1 de febrero de 2027.';
   }
+  if (puntoEnMedio(input?.mensajes)) {
+    return 'No enviado: una burbuja lleva un punto en medio («… de este chat. los documentos …»). Vuelve a llamar a `responder` con lo mismo, pero cada frase en su propia burbuja (o unidas con una coma), sin puntos.';
+  }
   if (dosPreguntas(input?.mensajes)) {
     return 'No enviado: haces dos preguntas en el mismo turno. Vuelve a llamar a `responder` con una sola pregunta, la que más desbloquea, en la última burbuja; la otra, para el turno siguiente.';
   }
@@ -168,6 +171,11 @@ export function comoLista(mensajes) {
   return mensajes.split(/\n+/).map((m) => m.trim()).filter(Boolean);
 }
 
+/** Un punto que separa dos frases dentro de una burbuja (no cuentan «...», «p. ej.», «etc.» ni las direcciones «C.»/«Av.»). */
+export function puntoEnMedio(mensajes) {
+  return (Array.isArray(mensajes) ? mensajes : []).some((m) => /(?<![.\s])(?<!\b(?:p|ej|etc|av|avda|c|n|nº|sr|sra|dr|dra|tel))\.(?!\.)\s+\S/i.test(String(m).replace(/https?:\/\/\S+/g, '')));
+}
+
 /** Dos preguntas en un turno: dos «?» o una pregunta que engancha otra con «, y …» («cuántos días, y te va mejor mañana o tarde?»). */
 export function dosPreguntas(mensajes) {
   const ms = (Array.isArray(mensajes) ? mensajes : []).filter((m) => !/^\[(imagen|audio|video|documento): /.test(String(m).trim()));
@@ -176,6 +184,9 @@ export function dosPreguntas(mensajes) {
   const ultima = t.split(/(?<=[.!\n])/).find((x) => x.includes('?')) || '';
   return /,\s*y\s+(qu[eé]|cu[aá]l|cu[aá]nt[oa]s?|cu[aá]ndo|c[oó]mo|d[oó]nde|te\s+(va|viene|vendr[ií]a|encaja|parece)|prefieres|puedes)\b/i.test(ultima);
 }
+
+/** Herramientas cuyo resultado tiene que ver Sofía antes de contestar (no se aceptan en el mismo paso que `responder`). */
+export const ESPERAR_RESULTADO = ['preparar_alta', 'reservar_prueba_parla', 'calcular_primer_recibo', 'consultar_horarios', 'consultar_tarifas'];
 
 /** Respaldo en el servidor si el modelo se niega. Haiku no lo tiene: con él se llama sin `fallbacks`. */
 export const opcionesRespaldo = (modelo) => (/haiku/.test(modelo) ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
@@ -193,7 +204,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
   const respaldo = opcionesRespaldo(modelo);
   const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, ...respaldo }, { timeout: 60000, maxRetries: 2 }));
   const conv = [...messages];
-  let recordatorios = 0; let correcciones = 0;
+  let recordatorios = 0; let correcciones = 0; let esperas = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
     const t0 = Date.now();
     const res = await llamar({
@@ -218,6 +229,26 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
       correcciones++;
       conv.push({ role: 'assistant', content: res.content });
       conv.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: final.id, content: pega, is_error: true }] });
+      continue;
+    }
+    // `responder` a la vez que una herramienta cuyo resultado necesita (el alta, la reserva, horarios, precios): lo
+    // habría escrito sin verlo («ya está tu alta en marcha»). Se ejecuta la herramienta y se le pide contestar después.
+    const prisa = final && esperas < 2 && usos.filter((u) => ESPERAR_RESULTADO.includes(u.name));
+    if (prisa?.length) {
+      esperas++;
+      conv.push({ role: 'assistant', content: res.content });
+      const resultados = [];
+      for (const u of usos) {
+        if (u === final || u.name === 'responder') {
+          resultados.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: `No enviado: has contestado antes de ver el resultado de ${prisa.map((x) => `\`${x.name}\``).join(', ')}. Mira el resultado y vuelve a llamar a \`responder\` una sola vez, con lo que ha pasado de verdad.` });
+          continue;
+        }
+        let out;
+        try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
+        onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
+        resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
+      }
+      conv.push({ role: 'user', content: resultados });
       continue;
     }
     if (final) {

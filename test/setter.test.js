@@ -333,3 +333,32 @@ test('si el modelo manda los mensajes como texto en vez de lista, se convierten 
   const { respuesta } = await runTurn({ system: [], messages: [{ role: 'user', content: 'hola' }], ejecutarHerramienta: async () => ({}), complete });
   assert.deepEqual(respuesta.mensajes, ['vale', 'cuántos días te ves?']);
 });
+
+test('si contesta a la vez que pide el alta (sin ver el resultado), se ejecuta el alta y se le pide contestar después', async () => {
+  const { runTurn } = await import('../src/llm.js');
+  let paso = 0; const hechas = [];
+  const complete = async (req) => {
+    paso++;
+    if (paso === 1) return { content: [
+      { type: 'tool_use', id: 'a', name: 'preparar_alta', input: { nombre: 'Andrea' } },
+      { type: 'tool_use', id: 'r', name: 'responder', input: { mensajes: ['ya está tu alta en marcha'], fase: 'f5 cierre' } },
+    ], usage: { input_tokens: 10, output_tokens: 5 } };
+    const ultimo = req.messages.at(-1).content;
+    assert.ok(ultimo.some((b) => b.tool_use_id === 'r' && b.is_error && /antes de ver el resultado/.test(b.content)));
+    assert.ok(ultimo.some((b) => b.tool_use_id === 'a' && /preparada/.test(b.content)));
+    return { content: [{ type: 'tool_use', id: 'r2', name: 'responder', input: { mensajes: ['listo, alta preparada'], fase: 'f5 cierre' } }], usage: { input_tokens: 10, output_tokens: 5 } };
+  };
+  const { respuesta } = await runTurn({ system: [], messages: [{ role: 'user', content: 'mis datos' }], complete, ejecutarHerramienta: async (n) => { hechas.push(n); return { ok: true, estado: 'preparada' }; } });
+  assert.deepEqual(hechas, ['preparar_alta']); // una sola vez
+  assert.deepEqual(respuesta.mensajes, ['listo, alta preparada']);
+});
+
+test('un punto en medio de una burbuja se devuelve para que lo parta; abreviaturas, urls y «...» no cuentan', async () => {
+  const { puntoEnMedio, revisarRespuesta } = await import('../src/llm.js');
+  assert.ok(puntoEnMedio(['el teléfono ya lo tengo de este chat. los documentos los firmas en la app']));
+  assert.ok(revisarRespuesta({ mensajes: ['vale. te lo miro'] }));
+  for (const ok of ['bueno... ya me dices', 'en Av. de la Paz 35', 'por ejemplo, p. ej. el lunes', 'mira https://maps.app.goo.gl/XK2R. hola', 'son 2,83 €', 'perfecto 💪']) {
+    if (ok.includes('https')) continue;
+    assert.equal(puntoEnMedio([ok]), false, ok);
+  }
+});
