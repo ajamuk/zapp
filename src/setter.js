@@ -58,7 +58,14 @@ export class Setter {
   async handleWebhook(evt) {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
-    if (!evt.conversationId || !evt.contactId) return { ignorado: 'faltan ids' };
+    if (!evt.contactId) return { ignorado: 'faltan ids' };
+    // Webhook de un workflow de GHL: sin id de conversación o con el canal como número → se pregunta a GHL
+    if ((!evt.conversationId || !CANALES_NATIVOS.has(evt.canal)) && this.ghl.buscarConversacion) {
+      const c = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
+      if (c?.id && !evt.conversationId) evt.conversationId = c.id;
+      if (evt.canal === 'desconocido' && c?.canal) evt.canal = c.canal;
+    }
+    if (!evt.conversationId) return { ignorado: 'faltan ids' };
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
     return this.enSerie(evt.conversationId, () => this.procesarEvento(evt));

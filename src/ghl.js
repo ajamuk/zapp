@@ -7,7 +7,9 @@ export function canalDesdeTipo(t) {
   if (s.includes('whatsapp') || s === 'type_whatsapp') return 'whatsapp';
   if (s === 'ig' || s.includes('instagram') || s === 'type_instagram') return 'instagram';
   if (s === 'fb' || s.includes('facebook') || s.includes('messenger')) return 'messenger';
-  return s || 'desconocido';
+  // El workflow de GHL manda el tipo como número ({{message.type}}): no se adivina, se pregunta a GHL (buscarConversacion)
+  if (!s || /^\d+$/.test(s)) return 'desconocido';
+  return s;
 }
 
 /**
@@ -17,7 +19,21 @@ export function canalDesdeTipo(t) {
 /** GHL puede mandar listas como texto («a, b») cuando vienen de un campo de workflow. */
 const aLista = (v) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : v == null ? null : []);
 
-export function parseWebhook(b = {}) {
+/**
+ * La acción «Webhook» de un workflow de GHL manda su propio formato: contact_id, full_name, phone, tags como texto,
+ * message: { type, body } y lo que se añada en «Custom Data» dentro de `customData`. No trae el id de la conversación
+ * ni el canal por nombre: los completa `Setter.handleWebhook` preguntando a GHL.
+ */
+function aplanar(raw) {
+  const extra = raw.customData || raw.custom_data || {};
+  const b = { ...raw };
+  // Un campo de «Custom Data» vacío o con la variable sin sustituir ({{...}}) no pisa lo que ya venga
+  for (const [k, v] of Object.entries(extra)) if (v !== '' && v != null && !/^\{\{.*\}\}$/.test(String(v))) b[k] = v;
+  return b;
+}
+
+export function parseWebhook(raw = {}) {
+  const b = aplanar(raw || {});
   const tipoEvento = b.type || b.event || '';
   const direction = String(b.direction || (tipoEvento.includes('Outbound') ? 'outbound' : 'inbound')).toLowerCase();
   const msg = b.message || {};
@@ -25,14 +41,14 @@ export function parseWebhook(b = {}) {
   return {
     evento: esTags ? 'tags' : direction === 'outbound' ? 'outbound' : 'inbound',
     conversationId: b.conversationId || b.conversation_id || msg.conversationId,
-    contactId: b.contactId || b.contact_id || msg.contactId || (esTags ? b.id : undefined),
+    contactId: b.contactId || b.contact_id || msg.contactId || b.contact?.id || (esTags ? b.id : undefined),
     canal: canalDesdeTipo(b.messageType || msg.type || b.channel),
     texto: b.body ?? msg.body ?? b.text ?? '',
     messageId: b.messageId || b.id || msg.id || null,
     userId: b.userId || msg.userId || null, // presente cuando escribe una persona del equipo desde GHL
     source: b.source || msg.source || null,
     adjuntos: aLista(b.attachments ?? msg.attachments) || [],
-    nombre: b.contactName || b.full_name || b.contact?.name || null,
+    nombre: b.contactName || b.full_name || [b.first_name, b.last_name].filter(Boolean).join(' ') || b.contact?.name || null,
     telefono: b.phone || b.contact?.phone || null,
     tags: aLista(b.tags ?? b.contact?.tags),
     fecha: b.dateAdded || new Date().toISOString(),
@@ -126,6 +142,17 @@ export class Ghl {
     if (!f?.id) throw new Error('No se ha podido preparar el campo de la plantilla en GHL');
     this._campo = f.id;
     return f.id;
+  }
+
+  /**
+   * Conversación de un contacto (en GHL hay una por contacto y location) y el canal de su último mensaje.
+   * Para los webhooks de workflow, que no traen el id de la conversación ni el canal por nombre.
+   */
+  async buscarConversacion(contactId) {
+    const q = new URLSearchParams({ locationId: config.ghl.locationId, contactId, limit: '5' });
+    const r = await this.req('GET', `/conversations/search?${q}`);
+    const c = (r?.conversations || [])[0];
+    return c ? { id: c.id, canal: canalDesdeTipo(c.lastMessageType || c.type) } : null;
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }
