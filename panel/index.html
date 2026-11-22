@@ -42,7 +42,7 @@
   .chip.verde { color: var(--green); border-color: #2fbf7155; } .chip.ambar { color: var(--amber); border-color: #d1ad7166; }
   .chip.rojo { color: var(--red); border-color: #e05a4f55; } .chip.azul { color: var(--blue); border-color: #4ea1e055; } .chip.violeta { color: var(--violet); border-color: #9d7be055; }
   .filtros { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-  .chats { display: grid; grid-template-columns: minmax(235px, 33%) minmax(0, 1fr); gap: 14px; height: max(400px, calc(100dvh - 350px)); }
+  .chats { display: grid; grid-template-columns: minmax(235px, 33%) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 14px; height: var(--alto-chats, max(400px, calc(100dvh - 350px))); }
   .lista { overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
   #raiz .item { display: block; width: 100%; border: 0; border-radius: 0; border-bottom: 1px solid var(--line); text-align: left; background: var(--panel); padding: 11px 13px; }
   #raiz .item:hover, #raiz .item.activo { background: var(--panel2); }
@@ -50,7 +50,7 @@
   .item .nom { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item .ult { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 2px 0 5px; }
   .item .chips { display: flex; gap: 4px; flex-wrap: wrap; }
-  .hilo { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+  .hilo { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; min-height: 0; overflow: hidden; }
   .hilo .cab { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
   .hilo .msgs { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
   .burbuja { max-width: 75%; padding: 7px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
@@ -355,7 +355,27 @@
   .secciones .n { margin-left: 2px; }
   .secciones a[aria-current="page"] .n { background: #ffffff33; }
   .al-dia { align-self: center; margin-left: auto; }
-  @media (min-width: 541px) and (max-width: 1420px) { .secciones { gap: 5px; } .secciones a { padding: 8px 10px; } }
+  @media (min-width: 541px) { .secciones { gap: 5px; } .secciones a { padding: 8px 10px; } }
+  /* Chats en escritorio: la conversación llega hasta abajo de la ventana, cada columna con su propio desplazamiento,
+     y en pantallas anchas la ficha del lead va en una tercera columna en vez de comerse los mensajes */
+  .dia-sep { align-self: center; font-size: 11px; color: var(--muted); background: var(--panel2); border-radius: 99px; padding: 2px 10px; margin: 6px 0 2px; }
+  #raiz .item.activo { box-shadow: inset 3px 0 0 var(--green); }
+  .pie-b { margin-bottom: 14px; } .pie-b:last-child { margin-bottom: 0; }
+  @media (min-width: 1041px) {
+    /* Solo la zona de chats se ensancha en pantallas grandes: la cabecera y el menú no se mueven al cambiar de sección */
+    #main:has(.chats) { margin-inline: min(0px, calc((1200px - min(1640px, 100vw - 96px)) / 2)); }
+    #main:has(.chats) > h2 { display: none; }
+    .hilo .etq-hilo { padding-block: 6px; }
+    .chats { grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); }
+    .burbuja { max-width: min(75%, 620px); }
+    .hilo .msgs { background: color-mix(in srgb, var(--panel2) 45%, var(--panel)); }
+    .b-lead { background: var(--panel); border: 1px solid var(--line); }
+  }
+  @media (min-width: 1280px) {
+    .hilo:has(.pie) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(280px, 26%, 360px); grid-template-rows: auto auto minmax(0, 1fr); }
+    .hilo:has(.pie) > .cab, .hilo:has(.pie) > .etq-hilo { grid-column: 1 / -1; }
+    .hilo:has(.pie) > .pie { max-height: none; border-top: 0; border-left: 1px solid var(--line); padding: 14px; font-size: 13px; }
+  }
   #raiz #arriba { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 50; width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 18px; background: var(--panel); box-shadow: 0 4px 16px #0003; }
   #raiz .mas { display: block; width: 100%; border: 0; border-radius: 0; background: var(--panel2); min-height: 48px; }
   .regla p.largo { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
@@ -400,6 +420,9 @@ const SEDES = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_can
 const CANAL = { whatsapp: 'WhatsApp', instagram: 'Instagram' };
 const hora = (iso) => { if (!iso) return ''; const d = new Date(/Z$|T/.test(iso) ? iso : iso.replace(' ', 'T') + 'Z'); const hoy = new Date();
   return d.toDateString() === hoy.toDateString() ? d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); };
+const fechaDe = (iso) => new Date(/Z$|T/.test(iso || '') ? iso : String(iso || '').replace(' ', 'T') + 'Z');
+const diaTexto = (f) => { const hoy = new Date(); const ayer = new Date(hoy.getTime() - 864e5);
+  return f.toDateString() === hoy.toDateString() ? 'Hoy' : f.toDateString() === ayer.toDateString() ? 'Ayer' : f.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', ...(f.getFullYear() !== hoy.getFullYear() ? { year: 'numeric' } : {}) }); };
 const minutos = (m) => m >= 1440 ? `${+(m / 1440).toFixed(1)} días` : m >= 60 ? `${+(m / 60).toFixed(1)} h` : `${m} min`;
 const miles = (n) => Number(n || 0).toLocaleString('es-ES');
 
@@ -811,7 +834,7 @@ async function chats() {
     cerrarHilo(); pintarFiltros(); lista(); refrescarVistas();
   });
   $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; cerrarHilo(); chats(); };
-  $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); };
+  $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); ajustarAltoChats(); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; estado.limite = 100; lista(); }, 300); };
   pintarFiltros();
   $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
@@ -893,6 +916,7 @@ function pintarFiltros() {
   });
   $('#qall') && ($('#qall').onclick = () => aplicar({}));
   const bfil = $('#bfil'); if (bfil) bfil.innerHTML = `Filtros${act.length ? ` <span class="n">${act.length}</span>` : ''}`;
+  ajustarAltoChats();
 }
 
 const normalizar = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k, v]) => (Array.isArray(v) ? v.length : v) && !(k === 'modo' && (c.etiquetas || []).length < 2)).map(([k, v]) => [k, Array.isArray(v) ? [...v].map(String).sort() : v]).sort());
@@ -913,6 +937,15 @@ async function refrescarChats() {
 }
 setInterval(refrescarChats, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarChats(); });
+
+/** En escritorio, la zona de chats ocupa lo que queda de ventana (cambia al abrir los filtros o cambiar el tamaño). */
+function ajustarAltoChats() {
+  const ch = $('#ch'); if (!ch) return;
+  if (matchMedia('(max-width: 1040px)').matches) { ch.style.removeProperty('--alto-chats'); return; }
+  const arriba = ch.getBoundingClientRect().top + window.scrollY;
+  ch.style.setProperty('--alto-chats', `${Math.max(420, window.innerHeight - arriba - 25)}px`);
+}
+window.addEventListener('resize', ajustarAltoChats);
 
 /** Pone al día los números de las vistas sin repintar la sección. */
 async function refrescarVistas() {
@@ -982,7 +1015,8 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
       <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
-    <div class="msgs" id="msgs">${d.mensajes.map((x) => `<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${hora(x.created_at)}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`).join('') || '<div class="vacio">Sin mensajes</div>'}</div>
+    <div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
+      return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
@@ -993,7 +1027,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
         ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
-    ].filter(Boolean).join('<br><br>') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
+    ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
   if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
