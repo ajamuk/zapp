@@ -39,13 +39,16 @@ export function comprobar(caso, todos) {
   if (/precio|cu[aá]nto|cuota|tarifa|cuesta|pagar/i.test(ultimoLead) && sede && sede !== 'el_canaveral' && !/€/.test(texto)) fallos.push('preguntó el precio con la sede clara y no lo da');
   if (sede && ['getafe', 'las_rosas'].includes(sede) && /prueba/i.test(texto) && !/no (hay|ofrecemos|tenemos)/i.test(texto)) fallos.push('habla de prueba fuera de Parla');
   // Cada mensaje se compara con la sede que nombra (si compara dos sedes, cada hora va con la suya) o, si no nombra
-  // ninguna, con la del chat. Las 22:00 de «las clases se abren para reservar a las 22:00» no son una hora de clase.
+  // ninguna, con la del chat. No son horas de clase: las 22:00 de «las reservas abren a las 22:00», una hora que
+  // Sofía niega («a las 19:00 no hay») ni la que acaba de decir el lead («a partir de las 20:00»).
+  const delLead = new Set((ultimoLead.match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0')));
   const malas = new Map();
-  for (const x of mensajes.filter((m) => !/se abren|reservar|se publica/i.test(m))) {
+  for (const x of mensajes.filter((m) => !/\babren?\b|reserv|se publica/i.test(m))) {
     const s = normalizarSede(x) || sede;
     if (!s || s === 'el_canaveral') continue;
     const validas = horasValidas(s);
-    for (const h of (x.match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0'))) if (!validas.has(h)) (malas.get(s) || malas.set(s, new Set()).get(s)).add(h);
+    const sinNegadas = x.replace(/\b\d{1,2}:\d{2}\s*(,\s*)?no\s+(hay|tenemos)\b/gi, '').replace(/\bno\s+(hay|tenemos)\s+(nada\s+|clases?\s+)?(a\s+las\s+)?\d{1,2}:\d{2}/gi, '');
+    for (const h of (sinNegadas.match(/\b\d{1,2}:\d{2}\b/g) || []).map((h) => h.padStart(5, '0'))) if (!validas.has(h) && !delLead.has(h)) (malas.get(s) || malas.set(s, new Set()).get(s)).add(h);
   }
   for (const [s, hs] of malas) fallos.push(`horas que no existen en ${s}: ${[...hs].join(', ')}`);
   return fallos;
