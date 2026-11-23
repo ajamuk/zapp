@@ -16,6 +16,7 @@
     "evaluar": "node scripts/evaluar.js",
     "build-simulador": "node scripts/build-simulador.js",
     "verificar-ghl": "node scripts/verificar-ghl.js",
+    "verificar-aislamiento": "node scripts/verificar-aislamiento.js",
     "prueba-extremo": "node scripts/prueba-extremo.js"
   },
   "dependencies": {

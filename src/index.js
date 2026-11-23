@@ -15,6 +15,7 @@ import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
 import { rutaPruebas } from './probar.js';
+import { estadoAislamiento, chatPermitido, cuarentena, enmascarar } from './aislamiento.js';
 
 // Un fallo suelto nunca debe dejar el servicio a medias: las promesas sin capturar se registran y se sigue;
 // un error no capturado de verdad cierra el proceso y systemd lo vuelve a levantar en 5 s.
@@ -26,6 +27,14 @@ const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
 if (recuperado.chats || recuperado.seguimientos || recuperado.reportes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
+// Aislamiento en un número de WhatsApp propio: si está configurado, lo que hubiera en cola de otros chats no sale
+const aislamiento = estadoAislamiento();
+if (aislamiento.modo !== 'apagado') {
+  const q = cuarentena(repo.db, aislamiento);
+  console.log(aislamiento.modo === 'activo'
+    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)} de la subcuenta ${aislamiento.locationId}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
+    : `[aislamiento] MAL CONFIGURADO (${aislamiento.motivos.join('; ')}): no entra ni sale ningún mensaje hasta arreglarlo.`);
+}
 let apisAimHarder;
 const apiSede = (sede) => (apisAimHarder ??= clientesApi())[sede];
 const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador,
@@ -52,14 +61,14 @@ const avisar = async (texto, opciones = {}) => {
   return ok;
 };
 
-const ghl = new Ghl();
+const ghl = new Ghl({ aislamiento });
 const etiquetas = new Etiquetador({
-  repo, ghl, avisar,
+  repo, ghl, avisar, permitido: (conv) => chatPermitido(aislamiento, conv),
   // Seguimientos que dispara una etiqueta: se programan al ponerla y se cancelan al quitarla
   alPoner: (convId, etiquetaId) => programarPorEtiqueta(repo, repo.db, convId, etiquetaId),
   alQuitar: (convId, etiquetaId) => cancelarPorEtiqueta(repo, repo.db, convId, etiquetaId),
 });
-const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas });
+const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas, aislamiento });
 
 // ---------- Bucles (ninguno se solapa consigo mismo; los errores se registran y no paran el servicio) ----------
 const registro = {};
@@ -80,10 +89,12 @@ const app = crearApp({ setter, repo, etiquetas, ghl, salud });
 const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
+  else if (aislamiento.modo === 'apagado') console.warn('[aislamiento] MODE=live SIN aislamiento: Sofía contesta todo lo que entre en la subcuenta, sea del número que sea (docs/aislamiento-whatsapp.md).');
 });
 // Claves que faltan o son cortas: se avisa en el registro y en las alertas del panel (sin enseñar la clave)
 const debiles = clavesDebiles();
 if (debiles.length) { debiles.forEach((a) => console.warn('[seguridad]', a)); registrarAlerta(repo.db, { clave: 'claves-debiles', tipo: 'servidor', titulo: 'Hay claves del servicio que faltan o son demasiado cortas', detalle: debiles.join('\n'), nivel: 'aviso' }); } else resolverAlerta(repo.db, 'claves-debiles');
+if (aislamiento.modo === 'invalido') registrarAlerta(repo.db, { clave: 'aislamiento', tipo: 'servidor', titulo: 'El aislamiento de WhatsApp está mal configurado: Sofía no recibe ni envía nada', detalle: aislamiento.motivos.join('\n'), nivel: 'error' }); else resolverAlerta(repo.db, 'aislamiento');
 servidor.on('error', (e) => { console.error('No se puede abrir el puerto:', e.message); process.exit(1); });
 
 // Índice de socios desde AimHarder: cada 4 horas. Al arrancar solo se descargan las sedes con datos de más

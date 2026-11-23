@@ -70,6 +70,11 @@ export const config = {
     tagPlantilla: env('GHL_TAG_PLANTILLA', 'sofia-enviar-plantilla'),
     campoPlantilla: env('GHL_CAMPO_PLANTILLA', 'Sofía · Texto de seguimiento'),
   },
+  // Aislamiento en un número de WhatsApp propio (docs/aislamiento-whatsapp.md). Los dos vacíos = sin aislamiento.
+  aislamiento: {
+    numero: env('SOFIA_WA_NUMERO'),          // número propio de Sofía en formato internacional (+34…)
+    locationId: env('SOFIA_WA_LOCATION_ID'), // subcuenta de GHL de ese número; tiene que ser la misma que GHL_LOCATION_ID
+  },
   aimharder: {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
       access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),

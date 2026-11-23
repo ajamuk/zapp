@@ -16,6 +16,7 @@ import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
+import { APAGADO, evaluarEntrante, chatPermitido } from './aislamiento.js';
 
 const TAGS = knowledge.etiquetas;
 /** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
@@ -58,11 +59,61 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - avisar(texto, {sede}): aviso al equipo (Telegram)
  * - complete: sustituto de la llamada al modelo (tests)
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
+ * - aislamiento: estado de aislamiento.js (el servicio real pasa el de la configuración; simuladores y tests, ninguno)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
+  }
+
+  // ---------- Aislamiento en el número propio (aislamiento.js) ----------
+
+  /** ¿Hay aislamiento configurado (bien o mal)? */
+  aislado() { return this.aislamiento.modo !== 'apagado'; }
+
+  /** ¿Puede Sofía hacer algo en este chat? Sin aislamiento, siempre. */
+  permitido(conv) { return chatPermitido(this.aislamiento, conv); }
+
+  /** Último seguro antes de cualquier salida o cambio en GHL de un chat. */
+  exigirPermitido(conv) {
+    if (!this.permitido(conv)) { const e = new Error('Aislamiento: este chat no está verificado para el número propio; no se envía nada'); e.noReintentar = true; throw e; }
+  }
+
+  /**
+   * ¿Es este entrante un WhatsApp al número propio? Se decide solo con el mensaje leído de la API de GHL (`evidencia`
+   * es el de la lista de la conversación; si le faltan datos o no hay, se pide el mensaje por su id). Lo que diga el
+   * webhook (canal, teléfono del contacto, datos del workflow) no cuenta. Sin prueba, no entra.
+   */
+  async comprobarEntrante(evt, evidencia = null) {
+    const a = this.aislamiento;
+    if (a.modo === 'apagado') return { ok: true };
+    if (a.modo !== 'activo') return { ok: false, motivo: 'aislamiento mal configurado' };
+    const id = evidencia?.id || evt.messageId;
+    this.descartados ??= new Map();
+    if (id && this.descartados.has(id)) return { ok: false, motivo: this.descartados.get(id), repetido: true };
+    const esperado = { conversationId: evt.conversationId, contactId: evt.contactId };
+    let v = evaluarEntrante(a, evidencia, esperado);
+    if (!v.ok && id && this.ghl.mensaje && (!evidencia || !evidencia.locationId || evidencia.para == null)) {
+      const m = await this.safe(() => this.ghl.mensaje(id));
+      v = m ? evaluarEntrante(a, m, esperado) : { ok: false, motivo: 'GHL no devuelve ese mensaje' };
+      // GHL caído o lento no es una prueba en contra: no se recuerda como descartado y se volverá a mirar
+      if (!m) return v;
+    }
+    if (!v.ok) {
+      if (id) { this.descartados.set(id, v.motivo); if (this.descartados.size > 2000) this.descartados.delete(this.descartados.keys().next().value); }
+      console.warn(`[aislamiento] entrante descartado (${v.motivo})`); // sin teléfonos ni texto
+    }
+    return v;
+  }
+
+  /** GHL aún no lista el mensaje del aviso: se vuelve a mirar la conversación un par de veces (si no, se perdería). */
+  repasarLuego(evt) {
+    if (!this.ghl.mensajes) return;
+    for (const ms of this.repasosAislamiento ?? [8000, 40000]) {
+      const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId, evt)).catch(() => {}); }, ms);
+      t.unref?.();
+    }
   }
 
   // ---------- Entrada ----------
@@ -71,6 +122,7 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.contactId) return { ignorado: 'faltan ids' };
+    if (this.aislamiento.modo === 'invalido') return { ignorado: 'aislamiento mal configurado' };
     evt.recibido ??= this.now().toISOString(); // cuándo llegó el aviso (puede procesarse más tarde, detrás de otro)
     // Webhook de un workflow de GHL: no trae el id de la conversación. Si el contacto ya tiene chat, sale de la
     // base; si no, se pregunta a GHL.
@@ -96,6 +148,8 @@ export class Setter {
             return r;
           }
         }
+        // Con aislamiento nada entra «tal como vino»: sin el mensaje de GHL no hay prueba de a qué número se escribió
+        if (this.aislado()) { this.repasarLuego(evt); return { ignorado: 'aislamiento: GHL aún no lista el mensaje; se repasa en unos segundos' }; }
         // GHL no contesta o aún no lista el mensaje: entra tal como vino (el disparador del workflow solo salta
         // con WhatsApp e Instagram). Cuando aparezca en GHL, `sincronizar` lo reconoce por el texto y no lo repite.
         if (evt.canal === 'desconocido') {
@@ -143,9 +197,9 @@ export class Setter {
           if (gemelo) db.prepare('UPDATE messages SET external_id = ? WHERE id = ?').run(m.id, gemelo.id);
           else {
             const conv = this.repo.getConv(convId);
-            await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
-              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar });
-            out.entrantes++;
+            const r = await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
+              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar, evidencia: m });
+            if (r?.aislamiento) out.descartados = (out.descartados || 0) + 1; else out.entrantes++;
           }
           // Recién registrado: es el del webhook aunque este se haya procesado con retraso
           if (esElDelWebhook) out.visto = true;
@@ -249,6 +303,7 @@ export class Setter {
     if (!evt.userId) return { ignorado: 'saliente sin usuario (sistema o plantilla)' };
     const conv = this.repo.getConv(evt.conversationId);
     if (!conv) return { ignorado: 'conversación desconocida' };
+    if (!this.permitido(conv)) return { ignorado: 'aislamiento: chat de otro número' };
     // `creado`: fecha real del mensaje en GHL cuando se recupera más tarde (su copia del conector se compara por esa fecha)
     const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}) });
     if (!ins) return { ignorado: 'duplicado' };
@@ -269,7 +324,13 @@ export class Setter {
     return { pausada: true };
   }
 
-  async onInbound(evt, { programar = true } = {}) {
+  async onInbound(evt, { programar = true, evidencia = null } = {}) {
+    // Aislamiento: antes de crear el chat o tocar nada del contacto (etiquetas, notas, AimHarder, avisos)
+    if (this.aislado()) {
+      const v = await this.comprobarEntrante(evt, evidencia);
+      if (!v.ok) return { ignorado: `aislamiento: ${v.motivo}`, aislamiento: true };
+      evt.canal = 'whatsapp';
+    }
     // Un teléfono de prueba reinicia su conversación escribiendo la palabra de reinicio (para los leads es un texto más)
     const previa = this.repo.getConv(evt.conversationId);
     if (esReinicio(evt.texto, this.palabraReinicio) && esTelefonoPrueba(evt.telefono || previa?.telefono, this.telefonosPrueba)) {
@@ -280,6 +341,7 @@ export class Setter {
     }
     const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
+    if (this.aislamiento.modo === 'activo' && conv.aislado_num !== this.aislamiento.clave) { this.repo.updateConv(conv.id, { aislado_num: this.aislamiento.clave }); conv.aislado_num = this.aislamiento.clave; }
     // Se contesta por donde ha escrito la última vez (el mismo contacto puede escribir por Instagram y luego por WhatsApp)
     if (!nuevo && CANALES_NATIVOS.has(evt.canal) && conv.channel !== evt.canal) { this.repo.updateConv(conv.id, { channel: evt.canal }); conv.channel = evt.canal; }
     const ajustesC = leerAjustes(this.repo);
@@ -355,6 +417,7 @@ export class Setter {
   async avisoFueraDeHorario(conv, ahora = this.now()) {
     const ajustes = leerAjustes(this.repo);
     const a = ajustes.fueraHorario;
+    if (!this.permitido(conv)) return null;
     if (!a?.activo || !a.canales[conv.channel] || !ajustes.ia_activa || !ajustes.canales[conv.channel]) return null;
     if (avisadoEnEsteCierre(conv.aviso_fuera_at, ahora)) return null;
     const texto = textoAviso(a.mensaje, { ahora, nombre: conv.nombre });
@@ -418,7 +481,12 @@ export class Setter {
     const ahora = this.now();
     this.ultimoTick = Date.now();
     const ajustes = leerAjustes(this.repo);
-    const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id));
+    const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id)).filter((c) => {
+      if (this.permitido(c)) return true;
+      // Aislamiento: respuesta pendiente de un chat que no es del número propio (cola de antes, «forzar» desde el panel…)
+      this.repo.updateConv(c.id, { respond_at: null, reintentos: 0 });
+      return false;
+    });
     // Fuera de horario no se contesta, venga de donde venga la respuesta pendiente (un reintento, un reinicio del
     // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel y los teléfonos
     // de prueba del equipo (TEST_PHONES) no tienen horario.
@@ -568,6 +636,7 @@ export class Setter {
   async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null, avisarFallo = true, control = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
+    if (!this.permitido(conv)) return null; // aislamiento: ni se llama al modelo ni se ejecuta ninguna herramienta
     const ultimoDelLead = () => this.repo.db.prepare("SELECT max(id) m FROM messages WHERE conversation_id = ? AND autor = 'lead'").get(convId)?.m ?? 0;
     const leadAlEmpezar = ultimoDelLead();
     const reinicioAlEmpezar = this.reinicios?.get(convId) || 0;
@@ -723,7 +792,7 @@ export class Setter {
     const marca = evt.fecha && !Number.isNaN(Date.parse(evt.fecha)) ? new Date(evt.fecha).toISOString() : this.now().toISOString();
     this.repo.borrarConversacion(id);
     this.repo.upsertConv(base);
-    this.repo.updateConv(id, { ghl_sync_at: marca, ghl_sync_suelo: marca });
+    this.repo.updateConv(id, { ghl_sync_at: marca, ghl_sync_suelo: marca, ...(this.aislamiento.modo === 'activo' ? { aislado_num: this.aislamiento.clave } : {}) });
     this.repo.addMessage({ conversation_id: id, external_id: evt.messageId || null, autor: 'sistema', texto: '[conversación de prueba reiniciada desde WhatsApp]' });
     // Una respuesta que estuviera en marcha para la conversación anterior ya no debe salir
     (this.reinicios ??= new Map()).set(id, (this.reinicios.get(id) || 0) + 1);
@@ -752,6 +821,8 @@ export class Setter {
 
   /** `yaEsperadoMs`: lo que ha tardado el modelo en pensar; se descuenta del «escribiendo…» de la primera burbuja. */
   async enviar(conv, mensajes, plantilla = null, control = null, yaEsperadoMs = 0) {
+    this.exigirPermitido(conv);
+    if (plantilla && this.aislado()) { const e = new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor'); e.noReintentar = true; throw e; }
     const { escritura } = retardoHumano(mensajes, { random: this.random });
     if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
@@ -829,6 +900,7 @@ export class Setter {
 
   /** Envía archivos de Recursos. En modo prueba, solo una nota en GHL y un borrador en el chat. */
   async enviarRecursos(conv, lista) {
+    this.exigirPermitido(conv);
     for (const r of lista) {
       const msg = { conversation_id: conv.id, autor: 'ia', texto: `[${r.tipo}: ${r.nombre}]`, adjunto: r.tipo, media_ruta: r.media_ruta, media_mime: r.mime };
       if (!this.enviaDeVerdad(conv)) {
@@ -1060,6 +1132,7 @@ export class Setter {
   async contestarPregunta(p) {
     const conv = p.conversation_id ? this.repo.getConv(p.conversation_id) : null;
     if (!conv) return 'sin chat';
+    if (!this.permitido(conv)) return 'aislamiento: el chat no es del número propio de Sofía; no se envía';
     if (conv.ai_paused || conv.derivado) return 'chat pausado o derivado: contéstale tú';
     if (this.enCurso?.has(conv.id)) return 'Sofía estaba contestando en ese chat: no se ha enviado';
     if (!String(conv.id).startsWith('prueba-') && fueraDeVentana(conv, this.now())) return 'han pasado más de 24 h desde su último mensaje: no se puede escribir sin plantilla';
