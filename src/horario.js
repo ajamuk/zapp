@@ -30,7 +30,8 @@ export function siguienteApertura(date = new Date(), opts = {}) {
   const d = new Date(date);
   for (let i = 0; i < 8 * 24 * 4; i++) { // hasta una semana (por si hay días cerrados)
     if (dentroDeHorario(d, opts)) return d;
-    d.setMinutes(d.getMinutes() + 15, 0, 0);
+    // Se avanza por cuartos de hora en punto: un mensaje de las 7:54 se contesta a las 8:00, no a las 8:09
+    d.setMinutes(Math.floor(d.getMinutes() / 15) * 15 + 15, 0, 0);
   }
   return d;
 }
