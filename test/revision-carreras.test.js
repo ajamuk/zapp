@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { openDb, repo as crearRepo } from '../src/db.js';
 import { Setter } from '../src/setter.js';
 import { parseWebhook } from '../src/ghl.js';
+import { MENSAJE_FUERA_HORARIO } from '../src/fuera-horario.js';
 
 // Carreras y casos límite del recorrido aviso de GHL → respuesta, encontrados en la revisión del 22/11.
 // Cada test reproduce el fallo tal como se dio y comprueba que ya no pasa.
@@ -127,11 +128,11 @@ test('una respuesta pendiente de madrugada (reintento, reinicio, forzar) espera 
   // lo que hacen /panel/.../forzar, recuperar() tras un reinicio, la etiqueta «forzar respuesta» o un reintento
   repo.updateConv('cv1', { respond_at: ahora().toISOString() });
   await setter.tick();
-  assert.equal(en.enviados.length, 0);
+  assert.deepEqual(en.enviados, [MENSAJE_FUERA_HORARIO]); // solo el aviso automático de fuera de horario
   assert.equal(new Date(repo.getConv('cv1').respond_at).toISOString(), '2026-11-17T07:00:00.000Z'); // las 8:00 en Madrid
   avanzar(5 * 3600e3 + 60000);
   await setter.tick();
-  assert.deepEqual(en.enviados, ['hola!']);
+  assert.deepEqual(en.enviados, [MENSAJE_FUERA_HORARIO, 'hola!']);
 });
 
 test('un aviso procesado con más de 3 minutos de retraso no duplica el mensaje del lead', async () => {

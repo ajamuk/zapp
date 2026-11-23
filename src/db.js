@@ -336,6 +336,7 @@ const COLUMNAS_NUEVAS = {
     resumen: 'TEXT',              // resumen de toda la conversación (lo escribe Sofía en cada turno)
     nota_ghl_id: 'TEXT',          // nota de la ficha de GHL con la valoración y el resumen (se actualiza)
     nota_ghl_texto: 'TEXT',       // último texto enviado a esa nota (para no repetir la llamada si no cambia)
+    aviso_fuera_at: 'TEXT',       // último aviso automático de fuera de horario (uno por cada cierre)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
