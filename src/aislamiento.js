@@ -22,7 +22,8 @@ export const enmascarar = (numero) => { const d = soloDigitos(numero); return d 
  * `live` (MODE=live): enviar de verdad EXIGE el aislamiento. Sin configurar, en live queda inválido y el servicio no
  * actúa; en modo prueba (shadow) sigue «apagado», como siempre. Los simuladores no pasan por aquí.
  */
-export function estadoAislamiento({ numero = config.aislamiento?.numero, locationId = config.aislamiento?.locationId, locationCliente = config.ghl.locationId, live = config.mode === 'live' } = {}) {
+export function estadoAislamiento({ numero = config.aislamiento?.numero, locationId = config.aislamiento?.locationId, locationCliente = config.ghl.locationId, live = config.mode === 'live',
+  adoptar = config.aislamiento?.adoptar, plantillas = config.aislamiento?.plantillas } = {}) {
   const n = String(numero || '').trim(); const loc = String(locationId || '').trim();
   if (!n && !loc) return live ? { modo: 'invalido', motivos: ['MODE=live exige el aislamiento en un número propio (SOFIA_WA_NUMERO y SOFIA_WA_LOCATION_ID); sin él solo se puede usar MODE=shadow'] } : { modo: 'apagado' };
   const motivos = [];
@@ -31,7 +32,9 @@ export function estadoAislamiento({ numero = config.aislamiento?.numero, locatio
   if (!loc) motivos.push('falta SOFIA_WA_LOCATION_ID');
   else if (loc !== String(locationCliente || '').trim()) motivos.push('SOFIA_WA_LOCATION_ID no coincide con GHL_LOCATION_ID (el token y las consultas irían a otra subcuenta)');
   if (motivos.length) return { modo: 'invalido', motivos };
-  return { modo: 'activo', numero: n, digitos: soloDigitos(n), locationId: loc, clave: `${loc}:${soloDigitos(n)}` };
+  // adoptar: los chats que ya había pueden pasar a verificados si GHL confirma que son de esta línea.
+  // plantillas: quien configura declara que el workflow de plantilla de esta subcuenta envía desde el número propio.
+  return { modo: 'activo', numero: n, digitos: soloDigitos(n), locationId: loc, clave: `${loc}:${soloDigitos(n)}`, adoptar: adoptar === true, plantillas: plantillas === true };
 }
 
 export const APAGADO = Object.freeze({ modo: 'apagado' });
@@ -88,6 +91,9 @@ export function salienteVerificado(aisl, m) {
 }
 
 /** ¿Está este chat verificado para el número y la subcuenta actuales? (lo marca su primer entrante, que pasó el control) */
+/** ¿Se pueden enviar plantillas (por el workflow de GHL)? Sin aislamiento, como siempre; con él, solo si se ha declarado. */
+export const plantillasPermitidas = (aisl) => !aisl || aisl.modo === 'apagado' || (aisl.modo === 'activo' && aisl.plantillas === true);
+
 export const chatVerificado = (aisl, conv) => aisl?.modo === 'activo' && Boolean(conv?.aislado_num) && conv.aislado_num === aisl.clave && !conv.aislado_bloqueo;
 
 /** ¿Puede Sofía hacer algo en este chat? Sin aislamiento, siempre; mal configurado, nunca; activo, solo los verificados. */
@@ -104,7 +110,10 @@ export function chatPermitido(aisl, conv) {
 export function cuarentena(db, aisl) {
   if (aisl?.modo !== 'activo') return { respuestas: 0, seguimientos: 0 };
   const clave = aisl.clave;
-  const fuera = "id NOT LIKE 'prueba-%' AND (IFNULL(aislado_num, '') != ? OR aislado_bloqueo IS NOT NULL)";
+  // Con adopción, la cola de los chats que había se conserva (se comprueba cada uno en GHL antes de escribirle);
+  // solo se cancela la de los bloqueados
+  const fuera = aisl.adoptar ? "id NOT LIKE 'prueba-%' AND (aislado_bloqueo IS NOT NULL OR ? IS NULL)"
+    : "id NOT LIKE 'prueba-%' AND (IFNULL(aislado_num, '') != ? OR aislado_bloqueo IS NOT NULL)";
   const respuestas = db.prepare(`UPDATE conversations SET respond_at = NULL, respondiendo_desde = NULL, reintentos = 0
     WHERE (respond_at IS NOT NULL OR respondiendo_desde IS NOT NULL) AND ${fuera}`).run(clave).changes;
   const seguimientos = db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = 'aislamiento: chat no verificado para el número propio'

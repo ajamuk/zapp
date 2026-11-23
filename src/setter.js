@@ -16,7 +16,7 @@ import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
-import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado } from './aislamiento.js';
+import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
 
 const TAGS = knowledge.etiquetas;
 /** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
@@ -71,6 +71,23 @@ export class Setter {
 
   /** ¿Hay aislamiento configurado (bien o mal)? */
   aislado() { return this.aislamiento.modo !== 'apagado'; }
+
+  /** ¿Se pueden enviar plantillas? (false: aislamiento sin la declaración de que el workflow envía desde el número propio) */
+  plantillas() { return plantillasPermitidas(this.aislamiento); }
+
+  /**
+   * Chat que ya estaba en la base antes del aislamiento. Si el número propio es el que la subcuenta ya tenía
+   * (SOFIA_WA_ADOPTAR_CHATS=true), se repasa su conversación en GHL y pasa a verificado solo si GHL lo confirma
+   * (ver `sincronizar`). Devuelve si al terminar Sofía puede actuar en él.
+   */
+  async intentarAdoptar(convId) {
+    const c = this.repo.getConv(convId);
+    if (!c) return false;
+    if (this.permitido(c)) return true;
+    if (this.aislamiento.modo !== 'activo' || !this.aislamiento.adoptar || c.aislado_bloqueo || !this.ghl.mensajes) return false;
+    await this.safe(() => this.enSerie(convId, () => this.sincronizar(convId, null, { enMarcha: false })));
+    return this.permitido(this.repo.getConv(convId));
+  }
 
   /** ¿Puede Sofía hacer algo en este chat? Sin aislamiento, siempre. */
   permitido(conv) { return chatPermitido(this.aislamiento, conv); }
@@ -206,9 +223,11 @@ export class Setter {
    */
   async sincronizar(convId, evt = null, { programar = true, enMarcha = this.enCurso?.has(convId) } = {}) {
     // Aislamiento: un chat de la base que no es del número propio (heredado o bloqueado) ni se consulta ni se toca
+    let porAdoptar = false;
     if (this.aislado()) {
       const c = this.repo.getConv(convId);
-      if (c && !this.permitido(c)) {
+      porAdoptar = Boolean(c && !this.permitido(c) && this.aislamiento.modo === 'activo' && this.aislamiento.adoptar && !c.aislado_bloqueo);
+      if (c && !this.permitido(c) && !porAdoptar) {
         if (!(this.ajenosVistos ??= new Set()).has(convId)) { this.ajenosVistos.add(convId); if (this.ajenosVistos.size > 2000) this.ajenosVistos.clear(); console.warn(`[aislamiento] ${convId}: chat no verificado para el número propio; no se atiende`); }
         return { visto: false, entrantes: 0, salientes: 0, ajeno: true, ignorado: 'aislamiento: chat no verificado para el número propio' };
       }
@@ -218,6 +237,15 @@ export class Setter {
     const aisl = this.aislamiento.modo === 'activo' ? this.aislamiento : null;
     // Se mira toda la lista (no solo lo reciente): basta un mensaje de otra línea para que la conversación sea compartida
     if (aisl && lista.some((m) => esDeOtraLinea(aisl, m))) return this.bloquearCompartida(convId);
+    if (porAdoptar) {
+      // Se adopta solo con prueba: en la conversación de GHL no hay nada de otra línea (comprobado arriba) y sí al
+      // menos un WhatsApp entrante al número propio. Sin eso, el chat sigue sin atenderse.
+      const c = this.repo.getConv(convId);
+      const prueba = lista.some((m) => evaluarEntrante(aisl, m, { conversationId: convId, contactId: c.contact_id }).ok);
+      if (!prueba) return { visto: false, entrantes: 0, salientes: 0, ajeno: true, ignorado: 'aislamiento: chat anterior sin WhatsApp al número propio en GHL' };
+      this.repo.updateConv(convId, { aislado_num: aisl.clave });
+      console.log(`[aislamiento] ${convId}: chat anterior adoptado (GHL confirma que es del número propio)`);
+    }
     const db = this.repo.db;
     const cursor = this.repo.getConv(convId)?.ghl_sync_at;
     // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
@@ -530,12 +558,12 @@ export class Setter {
     const ahora = this.now();
     this.ultimoTick = Date.now();
     const ajustes = leerAjustes(this.repo);
-    const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id)).filter((c) => {
-      if (this.permitido(c)) return true;
+    const pendientes = [];
+    for (const c of this.repo.dueResponses(ahora.toISOString()).filter((x) => !this.enCurso.has(x.id) && !this.mediosEnCurso?.has(x.id))) {
+      if (this.permitido(c) || (await this.intentarAdoptar(c.id))) { pendientes.push(c); continue; }
       // Aislamiento: respuesta pendiente de un chat que no es del número propio (cola de antes, «forzar» desde el panel…)
       this.repo.updateConv(c.id, { respond_at: null, reintentos: 0 });
-      return false;
-    });
+    }
     // Fuera de horario no se contesta, venga de donde venga la respuesta pendiente (un reintento, un reinicio del
     // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel y los teléfonos
     // de prueba del equipo (TEST_PHONES) no tienen horario.
@@ -872,7 +900,7 @@ export class Setter {
   /** `yaEsperadoMs`: lo que ha tardado el modelo en pensar; se descuenta del «escribiendo…» de la primera burbuja. */
   async enviar(conv, mensajes, plantilla = null, control = null, yaEsperadoMs = 0) {
     this.exigirPermitido(conv);
-    if (plantilla && this.aislado()) { const e = new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor'); e.noReintentar = true; throw e; }
+    if (plantilla && !this.plantillas()) { const e = new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor'); e.noReintentar = true; throw e; }
     const { escritura } = retardoHumano(mensajes, { random: this.random });
     if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.

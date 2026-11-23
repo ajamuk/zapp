@@ -32,7 +32,7 @@ const aislamiento = estadoAislamiento();
 if (aislamiento.modo !== 'apagado') {
   const q = cuarentena(repo.db, aislamiento);
   console.log(aislamiento.modo === 'activo'
-    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)} de la subcuenta ${aislamiento.locationId}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
+    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)} de la subcuenta ${aislamiento.locationId}. ${aislamiento.adoptar ? 'Los chats anteriores se adoptan si GHL confirma que son de este número. ' : ''}Plantillas: ${aislamiento.plantillas ? 'permitidas' : 'bloqueadas'}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
     : `[aislamiento] MAL CONFIGURADO (${aislamiento.motivos.join('; ')}): no entra ni sale ningún mensaje hasta arreglarlo.`);
 }
 let apisAimHarder;

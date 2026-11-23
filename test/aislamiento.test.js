@@ -569,3 +569,105 @@ test('segundo seguro: aunque se llegue a `onInbound` con un mensaje bueno, un ch
   assert.deepEqual([m.repo.history('viejo').length, m.repo.getConv('viejo').aislado_num], [1, null]);
   sinEfectos(m.sal);
 });
+
+// ---------- El número propio es el que ya tenía la subcuenta: adopción de los chats que había y plantillas ----------
+
+const AISL_MISMO = estadoAislamiento({ numero: PROPIO, locationId: LOC, locationCliente: LOC, adoptar: true, plantillas: true });
+
+test('opciones: por defecto ni se adoptan chats ni hay plantillas; hay que declararlo', () => {
+  assert.deepEqual([AISL.adoptar, AISL.plantillas], [false, false]);
+  assert.deepEqual([AISL_MISMO.adoptar, AISL_MISMO.plantillas, AISL_MISMO.clave], [true, true, AISL.clave]);
+});
+
+/** El chat heredado «viejo» pasa a ser la conversación c1 del contacto k1 (la misma que lee `deGhl`). */
+function heredadoC1(m) {
+  heredado(m);
+  m.repo.db.prepare("UPDATE conversations SET id = 'c1', contact_id = 'k1' WHERE id = 'viejo'").run();
+  for (const t of ['messages', 'scheduled']) m.repo.db.prepare(`UPDATE ${t} SET conversation_id = 'c1' WHERE conversation_id = 'viejo'`).run();
+}
+
+test('adopción: un chat que ya había se atiende cuando GHL confirma que es del número propio', async () => {
+  const m = montar({ aislamiento: AISL_MISMO, lista: [deGhl('v1', { para: PROPIO_GHL, texto: 'hola', fecha: '2026-11-16T10:00:00.000Z' }), deGhl('m1', { para: PROPIO_GHL })] });
+  heredadoC1(m);
+  m.repo.db.prepare("UPDATE scheduled SET estado = 'cancelado'").run();
+  await m.setter.handleWebhook(aviso());
+  assert.equal(m.repo.getConv('c1').aislado_num, AISL.clave);
+  m.avanzar(60000); await m.setter.tick();
+  assert.equal(m.sal.enviados.length, 1);
+  assert.equal(m.repo.history('c1').filter((x) => x.autor === 'lead').length, 2, 'conserva su historial, que es de esta misma línea');
+});
+
+test('adopción: no se adopta si en GHL hay algo de otra línea, ni si no hay ningún WhatsApp al número propio', async () => {
+  const casos = {
+    'otra línea': [deGhl('x1', { para: OTRO_GHL, fecha: '2026-11-10T10:00:00.000Z' }), deGhl('m1', { para: PROPIO_GHL })],
+    'saliente de otra línea': [saliente('o1', { de: OTRO_GHL, fecha: '2026-11-10T10:00:00.000Z' }), deGhl('m1', { para: PROPIO_GHL })],
+    'sin destinatario': [deGhl('m1', { para: null })],
+    'solo Instagram': [deGhl('m1', { tipo: 'TYPE_INSTAGRAM', canal: 'instagram', para: null })],
+    'otra subcuenta': [deGhl('m1', { para: PROPIO_GHL, locationId: OTRA_LOC })],
+    'vacía': [],
+  };
+  for (const [nombre, lista] of Object.entries(casos)) {
+    const m = montar({ aislamiento: AISL_MISMO, lista });
+    heredadoC1(m);
+    await m.setter.handleWebhook(aviso());
+    m.avanzar(60000); await m.setter.tick(); await procesarSeguimientos(m.setter);
+    assert.equal(m.repo.getConv('c1').aislado_num, null, nombre);
+    assert.equal(m.repo.history('c1').length, 1, nombre);
+    sinEfectos(m.sal);
+  }
+});
+
+test('adopción: la cola que había se conserva y cada envío comprueba antes el chat en GHL', async () => {
+  const m = montar({ aislamiento: AISL_MISMO, lista: [deGhl('v1', { para: PROPIO_GHL, texto: 'hola' })], respuestas: [['respuesta pendiente'], ['sigues ahí?']] });
+  heredadoC1(m);
+  assert.deepEqual(cuarentena(m.repo.db, AISL_MISMO), { respuestas: 0, seguimientos: 0 }, 'no se cancela la cola de los chats por adoptar');
+  m.avanzar(60000); await m.setter.tick();
+  assert.equal(m.repo.getConv('c1').aislado_num, AISL.clave, 'adoptado al ir a contestar');
+  assert.deepEqual(m.sal.enviados.map((x) => x.texto), ['respuesta pendiente']);
+  // Un chat bloqueado no se adopta ni conserva su cola
+  const b = montar({ aislamiento: AISL_MISMO, lista: [deGhl('v1', { para: PROPIO_GHL })] });
+  heredadoC1(b);
+  b.repo.updateConv('c1', { aislado_bloqueo: 'conversación compartida con otra línea de WhatsApp' });
+  assert.deepEqual(cuarentena(b.repo.db, AISL_MISMO), { respuestas: 1, seguimientos: 2 });
+  assert.equal(await b.setter.intentarAdoptar('c1'), false);
+});
+
+test('adopción: un seguimiento manual de un chat que había sale tras adoptarlo; si GHL no lo confirma, se omite', async () => {
+  for (const [lista, sale] of [[[deGhl('v1', { para: PROPIO_GHL, texto: 'hola' })], true], [[deGhl('v1', { para: OTRO_GHL, texto: 'hola' })], false]]) {
+    const m = montar({ aislamiento: AISL_MISMO, lista });
+    heredadoC1(m);
+    m.repo.updateConv('c1', { respond_at: null });
+    m.repo.db.prepare("UPDATE scheduled SET estado = 'cancelado' WHERE tipo != 'manual'").run();
+    m.avanzar(60000); await procesarSeguimientos(m.setter);
+    assert.deepEqual(m.sal.enviados.map((x) => x.texto), sale ? ['mensaje escrito a mano antes del cambio'] : []);
+    const estadoFinal = m.repo.db.prepare("SELECT estado FROM scheduled WHERE tipo = 'manual'").get().estado;
+    if (sale) assert.equal(estadoFinal, 'enviado'); else assert.ok(['omitido', 'cancelado'].includes(estadoFinal), estadoFinal);
+    assert.equal(Boolean(m.repo.getConv('c1').aislado_bloqueo), !sale);
+  }
+});
+
+test('plantillas declaradas (SOFIA_WA_PLANTILLAS): fuera de las 24 h el seguimiento sale por el workflow de GHL', async () => {
+  const m = montar({ aislamiento: AISL_MISMO, lista: [deGhl('m1', { para: PROPIO_GHL })] });
+  await m.setter.handleWebhook(aviso());
+  m.avanzar(60000); await m.setter.tick();
+  m.repo.db.prepare("UPDATE scheduled SET estado = 'cancelado'").run();
+  programarManual(m.repo, 'c1', 'te escribo más tarde', new Date(T0.getTime() + 30 * 3600e3).toISOString(), T0);
+  m.avanzar(34 * 3600e3);
+  await procesarSeguimientos(m.setter);
+  assert.deepEqual(m.sal.plantillas, [{ contactId: 'k1', texto: 'te escribo más tarde' }]);
+  assert.equal(m.repo.db.prepare("SELECT estado, detalle FROM scheduled WHERE tipo = 'manual'").get().detalle, 'plantilla');
+  // Cliente real: escribe el campo y pone la etiqueta que dispara el workflow; sin la declaración, nada
+  const c = clienteGhl(AISL_MISMO);
+  c.ghl._campo = 'campo1';
+  await c.ghl.enviarPorPlantilla({ contactId: 'k1', texto: 'hola' });
+  assert.deepEqual(c.peticiones.map((p) => `${p.method} ${p.url.replace('https://ghl.invalid', '')}`), ['PUT /contacts/k1', 'DELETE /contacts/k1/tags', 'POST /contacts/k1/tags']);
+  assert.deepEqual(c.peticiones[2].body, { tags: ['sofia-enviar-plantilla'] });
+});
+
+test('plantilla que sale por otra línea: al repasar la conversación, el chat queda bloqueado', async () => {
+  const m = await chatPropio({ aislamiento: AISL_MISMO });
+  m.anadir(saliente('p1', { de: OTRO_GHL, source: 'workflow', userId: null, texto: 'plantilla enviada por el workflow' }));
+  m.avanzar(120000);
+  await m.setter.enSerie('c1', () => m.setter.sincronizar('c1'));
+  assert.equal(m.repo.getConv('c1').aislado_bloqueo, 'conversación compartida con otra línea de WhatsApp');
+});

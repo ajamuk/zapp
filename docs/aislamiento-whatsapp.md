@@ -41,6 +41,29 @@ y al revés. Por eso **esa topología no se admite**:
 conversaciones y las etiquetas son nuevos y no hay nada que compartir. Compartir subcuenta con otra línea no es una
 configuración válida para `MODE=live`.
 
+## El número de Sofía es el que ya tenía la subcuenta (+34 604 84 08 58)
+
+Confirmado el 23 nov 2026: el número propio es el WhatsApp que ya está conectado en la subcuenta de GHL, y es el
+**único** número de esa subcuenta (WhatsApp → Numbers: 1). Los 86 mensajes revisados por API llevan ese número en
+`to` (entrantes) y `from` (salientes). No hay otra línea con la que compartir conversación, así que:
+
+```sh
+SOFIA_WA_NUMERO=+34604840858
+SOFIA_WA_LOCATION_ID=<el mismo id que GHL_LOCATION_ID>
+SOFIA_WA_ADOPTAR_CHATS=true     # los chats que ya había son de este mismo número
+SOFIA_WA_PLANTILLAS=true        # el workflow «Sofía · enviar plantilla» envía desde este número
+```
+
+- **`SOFIA_WA_ADOPTAR_CHATS`**: sin él, un chat que ya estaba en la base no se atiende nunca. Con él, se adopta **uno
+  a uno y con prueba**: al entrar un mensaje (o al ir a enviarle algo pendiente) se lee su conversación en GHL y pasa
+  a verificado solo si no hay nada de otra línea y hay al menos un WhatsApp entrante al número propio. Conserva su
+  historial y su estado (socio, pausa, alta…), que son de esta misma línea, y su cola de seguimientos no se cancela
+  al arrancar. Si GHL no lo confirma, sigue sin atenderse.
+- **`SOFIA_WA_PLANTILLAS`**: sin él, las plantillas siguen bloqueadas. Ver `docs/seguimientos.md`.
+- Si algún día se conecta **otro número** a esta subcuenta, vuelve a aplicar todo lo de «topología no admitida»:
+  los chats donde aparezca la otra línea quedan bloqueados.
+- Instagram queda fuera: con el aislamiento activo no entra ni sale nada por Instagram.
+
 ## Qué hace falta (pasos mínimos)
 
 1. **Número y subcuenta** (pendiente de confirmar por Carlos): una **subcuenta de GHL solo para Sofía** con ese único

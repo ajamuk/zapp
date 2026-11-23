@@ -205,7 +205,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   const db = repo.db;
   admin.get('/panel/estado', (_req, res) => res.json({
     modo: config.mode, modelo: config.ai.model, alta_en_pruebas: config.aimharder.altaDryRun,
-    aislamiento: ((a) => ({ modo: a.modo, ...(a.modo === 'activo' ? { numero: enmascarar(a.numero), subcuenta: a.locationId } : {}), ...(a.motivos ? { motivos: a.motivos } : {}) }))(setter?.aislamiento || estadoAislamiento()),
+    aislamiento: ((a) => ({ modo: a.modo, ...(a.modo === 'activo' ? { numero: enmascarar(a.numero), subcuenta: a.locationId, adoptar: a.adoptar, plantillas: a.plantillas } : {}), ...(a.motivos ? { motivos: a.motivos } : {}) }))(setter?.aislamiento || estadoAislamiento()),
     modelo_configurado: Boolean(config.ai.apiKey), entrada_ghl: config.ghlWebhookEnabled,
     credenciales_alta: Boolean(config.aimharder.adminUser && config.aimharder.adminPassword),
     ajustes: leerAjustes(repo), contadores: panel.contadores(db), alertas: alertas.abiertas(db).length,
