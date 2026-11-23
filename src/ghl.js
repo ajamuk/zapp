@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { estadoAislamiento } from './aislamiento.js';
+import { estadoAislamiento, plantillasPermitidas } from './aislamiento.js';
 
 const CANAL_A_TIPO = { whatsapp: 'WhatsApp', instagram: 'IG', messenger: 'FB' };
 
@@ -145,8 +145,9 @@ export class Ghl {
    * Ver docs/seguimientos.md.
    */
   async enviarPorPlantilla({ contactId, texto }) {
-    // La plantilla la envía un workflow de GHL: desde aquí no se puede fijar con qué número sale
-    if (this.aislamiento && this.aislamiento.modo !== 'apagado') throw new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor');
+    // La plantilla la envía un workflow de GHL: desde aquí no se puede fijar con qué número sale. Con aislamiento solo
+    // se usa si se ha declarado (SOFIA_WA_PLANTILLAS=true) que ese workflow envía desde el número propio.
+    if (!plantillasPermitidas(this.aislamiento)) throw new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor');
     const campo = await this.campoPlantilla();
     await this.req('PUT', `/contacts/${contactId}`, { customFields: [{ id: campo, field_value: texto }] });
     const tag = config.ghl.tagPlantilla;

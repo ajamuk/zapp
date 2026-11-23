@@ -74,6 +74,11 @@ export const config = {
   aislamiento: {
     numero: env('SOFIA_WA_NUMERO'),          // número propio de Sofía en formato internacional (+34…)
     locationId: env('SOFIA_WA_LOCATION_ID'), // subcuenta de GHL de ese número; tiene que ser la misma que GHL_LOCATION_ID
+    // El número propio es el que ya tenía la subcuenta: los chats que había en la base son de esta misma línea y se
+    // pueden adoptar, uno a uno, cuando GHL lo confirma (ver docs/aislamiento-whatsapp.md)
+    adoptar: env('SOFIA_WA_ADOPTAR_CHATS', 'false') === 'true',
+    // El workflow «Sofía · enviar plantilla» de esta subcuenta envía desde el número propio (docs/seguimientos.md)
+    plantillas: env('SOFIA_WA_PLANTILLAS', 'false') === 'true',
   },
   aimharder: {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
