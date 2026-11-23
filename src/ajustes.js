@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import * as reglas from './reglas.js';
+import { ajustesFueraHorario, validarFueraHorario } from './fuera-horario.js';
 
 /**
  * Ajustes que se cambian desde el panel sin reiniciar (se guardan en la base de datos).
@@ -25,6 +26,8 @@ export function leerAjustes(repo) {
     palabrasReanudar: g.palabrasReanudar ?? [],                 // si el equipo las escribe, Sofía vuelve a contestar
     canalesPausa: { whatsapp: g.canalesPausa?.whatsapp ?? false, instagram: g.canalesPausa?.instagram ?? false }, // chats nuevos empiezan pausados
     horarioDias: g.horarioDias ?? {},
+    // Aviso automático cuando un lead escribe fuera del horario de Sofía: { activo, mensaje, canales }
+    fueraHorario: ajustesFueraHorario(g.fueraHorario),
     canaveralPlazasOcupadas: g.canaveralPlazasOcupadas ?? 0,    // plazas de apertura de El Cañaveral ya ocupadas por otras vías (web, en persona)                           // { lunes: { desde, hasta } | null } (null = ese día no contesta)
   };
 }
@@ -44,6 +47,7 @@ export function guardarAjustes(repo, cambio = {}) {
   const actual = leerAjustes(repo);
   const n = { ...actual, ...cambio, canales: { ...actual.canales, ...(cambio.canales || {}) }, seguimientos: { ...actual.seguimientos, ...(cambio.seguimientos || {}) } };
   n.canalesPausa = { ...actual.canalesPausa, ...(cambio.canalesPausa || {}) };
+  n.fueraHorario = validarFueraHorario(actual.fueraHorario, cambio.fueraHorario);
   const palabras = (l) => [...new Set((Array.isArray(l) ? l : String(l || '').split(',')).map((x) => String(x).trim().toLowerCase()).filter((x) => x.length >= 2))].slice(0, 30);
   n.palabrasParar = palabras(n.palabrasParar); n.palabrasReanudar = palabras(n.palabrasReanudar);
   if (n.palabrasParar.some((x) => n.palabrasReanudar.includes(x))) throw new Error('Una palabra no puede parar y reanudar a la vez.');
@@ -64,7 +68,7 @@ export function guardarAjustes(repo, cambio = {}) {
   if (!(n.minDelay >= 0 && n.maxDelay >= n.minDelay && n.maxDelay <= 600)) throw new Error('Retraso: mínimo ≥ 0, máximo ≥ mínimo y como mucho 600 s');
   if (!(n.typingSpeed >= 1 && n.typingSpeed <= 20)) throw new Error('Velocidad de escritura: de 1 a 20 letras por segundo');
   for (const [id, on] of Object.entries(cambio.seguimientos || {})) repo.db.prepare('UPDATE reglas_seguimiento SET activo = ? WHERE id = ?').run(on ? 1 : 0, id);
-  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias', 'canaveralPlazasOcupadas']) {
+  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias', 'fueraHorario', 'canaveralPlazasOcupadas']) {
     if (JSON.stringify(n[k]) !== JSON.stringify(actual[k])) repo.guardarAjuste(k, n[k]);
   }
   return aplicarAjustes(repo);

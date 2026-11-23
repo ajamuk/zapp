@@ -15,6 +15,7 @@ import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
+import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 
 const TAGS = knowledge.etiquetas;
 /** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
@@ -336,9 +337,45 @@ export class Setter {
     const { lectura } = retardoHumano([], { random: this.random });
     let cuando = new Date(ahora.getTime() + lectura);
     // Los teléfonos de prueba del equipo no tienen horario: se prueba a Sofía a cualquier hora
-    if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) cuando = siguienteApertura(cuando);
+    let aviso = null;
+    if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) {
+      cuando = siguienteApertura(cuando);
+      aviso = await this.avisoFueraDeHorario(actual, ahora);
+    }
     this.repo.updateConv(conv.id, { respond_at: cuando.toISOString() });
-    return { programada: cuando.toISOString() };
+    return { programada: cuando.toISOString(), ...(aviso ? { aviso_fuera_horario: aviso } : {}) };
+  }
+
+  /**
+   * Fuera de horario, el lead recibe al momento un aviso automático (texto fijo de Ajustes, sin pasar por la IA):
+   * que ahora no se está atendiendo y que se le contesta en cuanto se lea. Uno por cada cierre y chat. Sofía
+   * contesta de verdad en la siguiente apertura. Queda en el chat como mensaje del «sistema»: no cuenta como
+   * respuesta de Sofía ni entra en lo que lee el modelo (que solo recibe una nota en el contexto).
+   */
+  async avisoFueraDeHorario(conv, ahora = this.now()) {
+    const ajustes = leerAjustes(this.repo);
+    const a = ajustes.fueraHorario;
+    if (!a?.activo || !a.canales[conv.channel] || !ajustes.ia_activa || !ajustes.canales[conv.channel]) return null;
+    if (avisadoEnEsteCierre(conv.aviso_fuera_at, ahora)) return null;
+    const texto = textoAviso(a.mensaje, { ahora, nombre: conv.nombre });
+    // Se marca antes de enviar: dos mensajes casi a la vez no mandan dos avisos
+    this.repo.updateConv(conv.id, { aviso_fuera_at: ahora.toISOString() });
+    const msg = { conversation_id: conv.id, autor: 'sistema', tipo: TIPO_AVISO, texto };
+    if (!this.enviaDeVerdad(conv)) {
+      await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado: aviso fuera de horario]\n${texto}`));
+      this.repo.addMessage({ ...msg, enviado: 0 });
+      return 'borrador';
+    }
+    try {
+      const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto });
+      this.repo.addMessage({ ...msg, external_id: r?.messageId || null });
+      return 'enviado';
+    } catch (e) {
+      // Puede haber salido aunque GHL no lo confirme: si aparece luego en GHL, no se toma por un mensaje del equipo
+      this.anotarSinConfirmar(conv.id, { texto, extra: { autor: 'sistema', tipo: TIPO_AVISO } });
+      console.error(`Aviso fuera de horario sin confirmar en ${conv.id}:`, e.message);
+      return 'error';
+    }
   }
 
   async clasificar(conv, evt) {
@@ -463,11 +500,21 @@ export class Setter {
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
       `- Alta: ${conv.alta_estado || 'no iniciada'}. ${this.textoPrueba(conv)}`,
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
+      this.notaAvisoFuera(conv),
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,
     ].filter(Boolean).join('\n');
+  }
+
+  /** Si lo último que recibió el lead fue el aviso automático de fuera de horario, Sofía lo sabe al volver. */
+  notaAvisoFuera(conv) {
+    const db = this.repo.db;
+    const aviso = db.prepare("SELECT id, texto FROM messages WHERE conversation_id = ? AND autor = 'sistema' AND tipo = ? ORDER BY id DESC LIMIT 1").get(conv.id, TIPO_AVISO);
+    if (!aviso) return '';
+    if (db.prepare("SELECT 1 FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND id > ? LIMIT 1").get(conv.id, aviso.id)) return '';
+    return `- Fuera de horario, al lead le llegó este aviso automático: «${aviso.texto}». Ahora ya le atiendes: contesta a lo que escribió con naturalidad, sin volver a decir que no estabais ni pedir perdón por la espera.`;
   }
 
   /** Línea de la clase de prueba para el contexto: la reservada aquí, o la del calendario de GHL (metro-trial-ops). */
