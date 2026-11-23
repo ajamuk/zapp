@@ -4,8 +4,10 @@
 import { config } from './config.js';
 import { siguienteApertura, diaLocal, hoyLocal } from './horario.js';
 
-export const MENSAJE_FUERA_HORARIO = '¡Hola! Ahora mismo no estamos atendiendo el WhatsApp. En cuanto lo leamos te contestamos y te ayudamos con todo lo que necesites 😊';
+export const MENSAJE_FUERA_HORARIO = '¡Hola! Ahora mismo no estamos atendiendo los mensajes. En cuanto lo leamos te contestamos y te ayudamos con todo lo que necesites 😊';
 export const TIPO_AVISO = 'fuera_horario';
+// Texto por defecto anterior (hablaba solo de WhatsApp): si quedó guardado tal cual, se usa el nuevo
+const MENSAJE_ANTERIOR = '¡Hola! Ahora mismo no estamos atendiendo el WhatsApp. En cuanto lo leamos te contestamos y te ayudamos con todo lo que necesites 😊';
 
 const DIA_TXT = { lunes: 'el lunes', martes: 'el martes', miercoles: 'el miércoles', jueves: 'el jueves', viernes: 'el viernes', sabado: 'el sábado', domingo: 'el domingo' };
 
@@ -39,12 +41,12 @@ export function avisadoEnEsteCierre(avisoAt, ahora = new Date()) {
   return siguienteApertura(new Date(avisoAt)).getTime() === siguienteApertura(ahora).getTime();
 }
 
-/** Ajustes con sus valores por defecto (activo en WhatsApp, apagado en Instagram). */
+/** Ajustes con sus valores por defecto (activo en WhatsApp e Instagram). */
 export function ajustesFueraHorario(g = {}) {
   return {
     activo: g.activo ?? true,
-    mensaje: typeof g.mensaje === 'string' && g.mensaje.trim() ? g.mensaje : MENSAJE_FUERA_HORARIO,
-    canales: { whatsapp: g.canales?.whatsapp ?? true, instagram: g.canales?.instagram ?? false },
+    mensaje: typeof g.mensaje === 'string' && g.mensaje.trim() && g.mensaje.trim() !== MENSAJE_ANTERIOR ? g.mensaje : MENSAJE_FUERA_HORARIO,
+    canales: { whatsapp: g.canales?.whatsapp ?? true, instagram: g.canales?.instagram ?? true },
   };
 }
 
