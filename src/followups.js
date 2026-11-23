@@ -145,6 +145,8 @@ export async function procesarSeguimientos(setter) {
     const regla = reglaDelPendiente(setter.catalogo, s);
     let conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    // Aislamiento: a un chat que no es del número propio no se le escribe ni se toca nada suyo en GHL
+    if (setter.permitido && !setter.permitido(conv)) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: chat no verificado para el número propio'); continue; }
     // Antes de escribirle se repasa el chat en GHL: si el lead ha contestado (y GHL no avisó) o el equipo ya le
     // ha escrito, el seguimiento no debe salir encima. Mientras dura, el chat cuenta como «en curso».
     if (setter.ghl?.mensajes && !String(conv.id).startsWith('prueba-')) {
@@ -182,6 +184,8 @@ export async function procesarSeguimientos(setter) {
     }
 
     const plantilla = fueraDeVentana(conv, ahora);
+    // La plantilla la envía un workflow de GHL y ahí no se puede fijar el número emisor: con aislamiento no sale
+    if (plantilla && setter.aislado?.()) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: fuera de las 24 h solo se puede por plantilla, y no se puede fijar su número emisor'); continue; }
     if (plantilla && !(conv.channel === 'whatsapp' && regla.plantilla)) {
       repo.finishScheduled(s.id, 'omitido', conv.channel === 'instagram' ? 'Instagram no deja escribir fuera de plazo' : 'fuera de la ventana de 24 h y sin plantilla');
       continue;
@@ -340,7 +344,7 @@ export async function procesarLanzamientos(setter) {
   const db = repo.db;
   const ahora = setter.now();
   for (const l of db.prepare("SELECT * FROM lanzamientos WHERE estado = 'programado' AND programado_at <= ?").all(ahora.toISOString())) {
-    const dest = destinatarios(db, l);
+    const dest = destinatarios(db, l).filter((c) => !setter.permitido || setter.permitido(repo.getConv(c.id)));
     db.transaction(() => {
       dest.forEach((c, i) => repo.schedule(c.id, `lanzamiento-${l.id}`, new Date(ahora.getTime() + i * ESPACIADO_MS).toISOString(), { lanzamiento: l.id }, 'lanzamiento', l.texto));
       db.prepare("UPDATE lanzamientos SET estado = 'enviando', total = ? WHERE id = ?").run(dest.length, l.id);

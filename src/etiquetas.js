@@ -158,9 +158,10 @@ export function bloqueo(etq, idsActuales) {
  * - now(): fecha actual (para chats de prueba con hora simulada)
  */
 export class Etiquetador {
-  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date(), alPoner = null, alQuitar = null, enviarMeta = null }) {
+  constructor({ repo, catalogo = repo.db, ghl, avisar, now = () => new Date(), alPoner = null, alQuitar = null, enviarMeta = null, permitido = () => true }) {
     // alPoner/alQuitar(convId, etiquetaId): para los seguimientos que dispara una etiqueta
-    Object.assign(this, { repo, catalogo, ghl, avisar, now, alPoner, alQuitar, enviarMeta });
+    // permitido(conv): con el aislamiento activo, false en los chats que no son del número propio (no se etiquetan ni se toca su contacto)
+    Object.assign(this, { repo, catalogo, ghl, avisar, now, alPoner, alQuitar, enviarMeta, permitido });
   }
 
   get db() { return this.repo.db; }
@@ -174,6 +175,7 @@ export class Etiquetador {
     const etq = obtener(this.catalogo, etiquetaId);
     const conv = this.repo.getConv(convId);
     if (!etq || !conv) return { puesta: false, motivo: 'no existe' };
+    if (!this.permitido(conv)) return { puesta: false, motivo: 'aislamiento: chat de otro número' };
     if (origen !== 'manual' && !etq.activa) return { puesta: false, motivo: 'etiqueta desactivada' };
     const actuales = idsDelChat(this.db, convId);
     if (actuales.includes(etq.id)) return { puesta: false, motivo: 'ya la lleva' };
@@ -196,7 +198,7 @@ export class Etiquetador {
     const conv = this.repo.getConv(convId);
     const r = this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etiquetaId);
     if (r.changes) await this.safe(async () => this.alQuitar?.(convId, etiquetaId));
-    if (r.changes && etq && conv?.contact_id && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
+    if (r.changes && etq && conv?.contact_id && this.permitido(conv) && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
       await this.safe(() => this.ghl?.removeTags(conv.contact_id, [clave(etq.nombre)]));
     }
     return { quitada: r.changes > 0 };
@@ -230,7 +232,7 @@ export class Etiquetador {
 
   /** Pone el tag en el contacto de GHL y marca la etiqueta como confirmada si sale bien. */
   async subirAGhl(conv, etq) {
-    if (!this.ghl?.addTags || !conv.contact_id) return false;
+    if (!this.ghl?.addTags || !conv.contact_id || !this.permitido(conv)) return false;
     try {
       await this.ghl.addTags(conv.contact_id, [clave(etq.nombre)]);
       this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
@@ -253,7 +255,7 @@ export class Etiquetador {
     if (!contactId || !Array.isArray(tags)) return { puestas: 0, quitadas: 0, subidas: 0 };
     const enGhl = new Set(tags.map(clave));
     const catalogo = listar(this.catalogo);
-    const chats = this.db.prepare("SELECT * FROM conversations WHERE contact_id = ? AND id NOT LIKE 'prueba-%'").all(contactId);
+    const chats = this.db.prepare("SELECT * FROM conversations WHERE contact_id = ? AND id NOT LIKE 'prueba-%'").all(contactId).filter((c) => this.permitido(c));
     const out = { puestas: 0, quitadas: 0, subidas: 0 };
     for (const conv of chats) {
       const filas = this.db.prepare('SELECT etiqueta_id, ghl_sync, created_at FROM conv_etiquetas WHERE conversation_id = ?').all(conv.id);
@@ -276,8 +278,8 @@ export class Etiquetador {
   /** Revisión periódica: lee de GHL los tags de los contactos con actividad reciente. */
   async sincronizarDesdeGhl({ dias = 30, pausaMs = 150 } = {}) {
     if (!this.ghl?.getContact) return { contactos: 0 };
-    const contactos = this.db.prepare(`SELECT DISTINCT c.contact_id FROM conversations c WHERE c.id NOT LIKE 'prueba-%' AND c.contact_id IS NOT NULL
-      AND (datetime(c.updated_at) >= datetime('now', ?) OR EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.ghl_sync = 0))`).all(`-${dias} days`).map((r) => r.contact_id);
+    const contactos = [...new Set(this.db.prepare(`SELECT c.* FROM conversations c WHERE c.id NOT LIKE 'prueba-%' AND c.contact_id IS NOT NULL
+      AND (datetime(c.updated_at) >= datetime('now', ?) OR EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.ghl_sync = 0))`).all(`-${dias} days`).filter((c) => this.permitido(c)).map((r) => r.contact_id))];
     const total = { contactos: 0, puestas: 0, quitadas: 0, subidas: 0, errores: 0 };
     for (const id of contactos) {
       try {
