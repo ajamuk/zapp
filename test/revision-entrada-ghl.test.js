@@ -90,3 +90,21 @@ test('seguimientos programados sobre borradores no salen al pasar a enviar de ve
   assert.equal(sal.enviados.length, 0);
   assert.match(repo.db.prepare("SELECT detalle FROM scheduled WHERE estado = 'omitido' ORDER BY id LIMIT 1").get().detalle, /modo prueba/);
 });
+
+test('fuera de horario: el teléfono de prueba recibe respuesta al momento; un lead espera a la apertura en punto', async () => {
+  // 17/11 12:00 + 19 h 54 min = miércoles 18/11 a las 7:54 en Madrid (Sofía contesta desde las 8:00)
+  const prueba = montar({ live: false, telefonosPrueba: ['+34600000000'], respuestas: [resp(['hola, soy Sofía'])] });
+  prueba.avanzar((19 * 60 + 54) * 60000);
+  await prueba.setter.handleWebhook(entrante('hola', 'w1'));
+  prueba.avanzar(60000); await prueba.setter.tick();
+  assert.deepEqual(prueba.sal.enviados, ['hola, soy Sofía']);
+
+  const lead = montar({ live: true, respuestas: [resp(['hola, soy Sofía'])] });
+  lead.avanzar((19 * 60 + 54) * 60000);
+  await lead.setter.handleWebhook(entrante('hola', 'w1'));
+  lead.avanzar(60000); await lead.setter.tick();
+  assert.deepEqual(lead.sal.enviados, []);
+  assert.equal(lead.repo.getConv('c1').respond_at, '2026-11-18T07:00:00.000Z');
+  lead.avanzar(5 * 60000); await lead.setter.tick(); // 8:00
+  assert.deepEqual(lead.sal.enviados, ['hola, soy Sofía']);
+});

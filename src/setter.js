@@ -335,7 +335,8 @@ export class Setter {
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
     const { lectura } = retardoHumano([], { random: this.random });
     let cuando = new Date(ahora.getTime() + lectura);
-    if (!dentroDeHorario(cuando)) cuando = siguienteApertura(cuando);
+    // Los teléfonos de prueba del equipo no tienen horario: se prueba a Sofía a cualquier hora
+    if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) cuando = siguienteApertura(cuando);
     this.repo.updateConv(conv.id, { respond_at: cuando.toISOString() });
     return { programada: cuando.toISOString() };
   }
@@ -382,12 +383,14 @@ export class Setter {
     const ajustes = leerAjustes(this.repo);
     const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id));
     // Fuera de horario no se contesta, venga de donde venga la respuesta pendiente (un reintento, un reinicio del
-    // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel no tienen horario.
+    // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel y los teléfonos
+    // de prueba del equipo (TEST_PHONES) no tienen horario.
+    const sinHorario = (c) => String(c.id).startsWith('prueba-') || this.esDePrueba(c);
     if (pendientes.length && !dentroDeHorario(ahora)) {
       const apertura = siguienteApertura(ahora).toISOString();
-      for (const c of pendientes) if (!String(c.id).startsWith('prueba-')) this.repo.updateConv(c.id, { respond_at: apertura });
+      for (const c of pendientes) if (!sinHorario(c)) this.repo.updateConv(c.id, { respond_at: apertura });
     }
-    const tanda = pendientes.filter((c) => dentroDeHorario(ahora) || String(c.id).startsWith('prueba-')).slice(0, libres);
+    const tanda = pendientes.filter((c) => dentroDeHorario(ahora) || sinHorario(c)).slice(0, libres);
     await Promise.all(tanda.map((c) => this.atender(c, ajustes)));
   }
 
