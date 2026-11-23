@@ -322,7 +322,7 @@ export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
 // ---------- Consumo de la IA ----------
 import { costeRun } from './precios.js';
 export { PRECIOS, costeRun } from './precios.js';
-const MOTIVOS = { bateria: 'Batería de pruebas', 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
+const MOTIVOS = { bateria: 'Batería de pruebas', 'resumen-instrucciones': 'Resumen de las instrucciones', respuesta: 'Respuestas a leads', outbound: 'Sofía inicia', followup: 'Seguimientos', 'followup-plantilla': 'Seguimientos', 'redactar-seguimiento': 'Textos previstos de seguimientos', 'captacion-diagnostico': 'Captación (diagnóstico)', reporte: 'Reportes (análisis)', 'reporte-comprobacion': 'Reportes (comprobación)' };
 
 const nombreModelo = (m) => String(m || 'desconocido').replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-(\d+)$/, ' $1').replace(/^./, (c) => c.toUpperCase());
 

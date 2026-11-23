@@ -27,6 +27,7 @@ import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
+import * as captacion from './captacion.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const htmlPanel = readFileSync(panelPath, 'utf8');
@@ -257,6 +258,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     try { res.json(await textoPrevisto(setter, s, { forzar: req.body?.rehacer === true })); } catch (e) { console.error('Previa seguimiento:', e.message); res.status(502).json({ error: 'Sofía no ha podido preparar el texto.' }); }
   });
   // ---------- Alertas del sistema ----------
+  // Captación por nivel de conciencia: solo lectura (diagnósticos, planes y borradores; nada se envía)
+  admin.get('/panel/captacion', (_req, res) => res.json(captacion.datosPanel(db)));
   admin.get('/panel/alertas', (_req, res) => res.json({ abiertas: alertas.abiertas(db), recientes: alertas.recientes(db) }));
   admin.post('/panel/alertas/comprobar', async (_req, res) => res.json({ comprobaciones: await alertas.vigilar(db, { ghl: ghl || etiquetas.ghl }), abiertas: alertas.abiertas(db) }));
   admin.post('/panel/alertas/:id/resolver', (req, res) => res.json({ ok: alertas.cerrarAMano(db, Number(req.params.id)) }));

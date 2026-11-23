@@ -102,6 +102,13 @@ export const config = {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),
   },
+  // Captación por nivel de conciencia (docs/captacion.md). Solo modo prueba: prepara borradores, nunca envía.
+  captacion: {
+    activa: env('CAPTACION_ENABLED', 'false') === 'true',        // la vuelta automática del servicio (apagada por defecto)
+    ia: env('CAPTACION_IA', 'true') === 'true',                   // diagnosticar con el modelo; si no, por reglas de texto
+    redactarIA: env('CAPTACION_REDACTAR_IA', 'false') === 'true', // que Sofía adapte el texto de cada borrador (si no, el de la pieza)
+    modelo: env('CAPTACION_MODEL', ''),                           // vacío = el de Sofía (AI_MODEL)
+  },
   telegram: {
     token: env('TELEGRAM_BOT_TOKEN'),
     chats: {

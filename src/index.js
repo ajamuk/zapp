@@ -15,6 +15,7 @@ import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
 import { rutaPruebas } from './probar.js';
+import * as captacion from './captacion.js';
 
 // Un fallo suelto nunca debe dejar el servicio a medias: las promesas sin capturar se registran y se sigue;
 // un error no capturado de verdad cierra el proceso y systemd lo vuelve a levantar en 5 s.
@@ -104,6 +105,18 @@ if (config.ghlWebhookEnabled) {
   cada('etiquetas-ghl', 15 * 60000, async () => { const r = await etiquetas.sincronizarDesdeGhl(); if (r.puestas + r.quitadas + r.subidas) console.log('Etiquetas GHL:', JSON.stringify(r)); }, 60000);
   // Etiquetas con regla de inactividad («si no responde en X h»)
   cada('etiquetas-inactividad', 5 * 60000, () => etiquetas.revisarInactividad());
+}
+
+// Captación por nivel de conciencia (apagada salvo CAPTACION_ENABLED=true): diagnostica los chats fríos y prepara
+// borradores que solo se ven en el panel. No envía nada ni escribe en GHL, esté el servicio en prueba o en real.
+if (config.captacion.activa) {
+  cada('captacion', 30 * 60000, async () => {
+    const r = await captacion.ciclo({
+      repo, ia: config.captacion.ia && Boolean(config.ai.apiKey),
+      redactar: config.captacion.redactarIA && config.ai.apiKey ? (convId, contexto) => setter.redactar(convId, contexto, { modelo: config.ai.modeloSeguimientos }) : null,
+    });
+    if (r.diagnosticados + r.borradores + r.paradas + r.respuestas) console.log('Captación (modo prueba):', JSON.stringify(r));
+  }, 2 * 60000);
 }
 
 // Horarios de clases desde AimHarder: una vez al día (la primera a los 3 minutos de arrancar). Si cambian, Sofía

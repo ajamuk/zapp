@@ -16,7 +16,8 @@
     "evaluar": "node scripts/evaluar.js",
     "build-simulador": "node scripts/build-simulador.js",
     "verificar-ghl": "node scripts/verificar-ghl.js",
-    "prueba-extremo": "node scripts/prueba-extremo.js"
+    "prueba-extremo": "node scripts/prueba-extremo.js",
+    "diagnostico-captacion": "node scripts/diagnostico-captacion.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.11.0",

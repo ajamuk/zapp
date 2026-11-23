@@ -1,0 +1,308 @@
+{
+  "_nota": "Captación por nivel de conciencia (ver docs/captacion.md). Solo modo prueba: los toques quedan como borradores en el panel y no se envía nada. Los textos son una propuesta inicial, en el estilo de Sofía, para revisar antes de pasar a real: una sola frase (irían dentro de una plantilla de WhatsApp), sin datos que no estén en config/negocio.md.",
+  "control_pct": 20,
+  "diagnostico_dias": 5,
+  "antiguedad_max_dias": 180,
+  "max_sin_respuesta": 4,
+  "separacion_dias": 3,
+  "hora_envio": "11:00",
+  "max_diagnosticos_por_vuelta": 20,
+  "valoracion_caliente": 7,
+  "cadencias": {
+    "caliente": [
+      7,
+      14,
+      30
+    ],
+    "frio": [
+      10,
+      25,
+      45,
+      75
+    ]
+  },
+  "toques_por_valoracion": [
+    {
+      "hasta": 3,
+      "toques": 2
+    },
+    {
+      "hasta": 6,
+      "toques": 3
+    },
+    {
+      "hasta": 10,
+      "toques": 4
+    }
+  ],
+  "toques_sin_valoracion": 3,
+  "piezas": [
+    {
+      "id": "n2-historia-socio",
+      "nombre": "Historia de un socio que empezó de cero",
+      "niveles": [
+        2
+      ],
+      "objetivo": "Que vea que la gente que entrena aquí empezó como él.",
+      "texto": "me acordé de ti, la mayoría de la gente que entrena con nosotros empezó sin haber hecho nada antes, dime qué te gustaría conseguir y te cuento cómo se empieza",
+      "material": "testimonio-empezo-de-cero"
+    },
+    {
+      "id": "n2-clase-1h",
+      "nombre": "Cómo es una clase de 1 hora",
+      "niveles": [
+        2
+      ],
+      "objetivo": "Quitar la idea de que hay que llegar en forma.",
+      "texto": "por si te ayuda a hacerte una idea, una clase dura 1 hora con el calentamiento incluido y el coach va guiando a cada persona a su nivel, dime qué te gustaría conseguir y te digo por dónde empezar",
+      "material": "video-clase-1h"
+    },
+    {
+      "id": "n2-gente-normal",
+      "nombre": "CrossFit para gente normal",
+      "niveles": [
+        2
+      ],
+      "objetivo": "Posicionamiento: no es solo para gente en forma.",
+      "texto": "lo nuestro es CrossFit para gente normal, no hace falta llegar en forma, dime si has entrenado algo antes y te cuento cómo sería tu caso",
+      "material": "fotos-comunidad"
+    },
+    {
+      "id": "n3-academy",
+      "nombre": "Cómo funciona Academy",
+      "niveles": [
+        3
+      ],
+      "rutas": [
+        "academy",
+        "desconocida"
+      ],
+      "objetivo": "Por qué empezar aquí y no en un gimnasio: iniciación guiada.",
+      "texto": "te cuento cómo se empieza con nosotros: en Academy aprendes los movimientos paso a paso, en grupos de máximo 10 y con el coach corrigiendo, te miro horarios de mañana o de tarde?",
+      "material": "video-academy"
+    },
+    {
+      "id": "n3-clases-comunidad",
+      "nombre": "Clases con toda la comunidad (con experiencia)",
+      "niveles": [
+        3
+      ],
+      "rutas": [
+        "crossfit",
+        "hyrox"
+      ],
+      "objetivo": "Quien ya entrena entra directo, sin turno fijo.",
+      "texto": "como ya tienes experiencia entras directamente a las clases de CrossFit y HYROX con toda la comunidad, sin turno fijo, te miro horarios de mañana o de tarde?",
+      "material": "video-clase-crossfit"
+    },
+    {
+      "id": "n3-resenas",
+      "nombre": "Lo que cuentan los socios",
+      "niveles": [
+        3
+      ],
+      "objetivo": "Prueba social.",
+      "texto": "te dejo lo que cuentan quienes ya entrenan con nosotros, dime en qué centro te vendría mejor y te cuento cómo sería allí",
+      "material": "resenas-socios"
+    },
+    {
+      "id": "n4-precio-menos-dias",
+      "nombre": "Precio: la cuota de menos días",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "precio"
+      ],
+      "objetivo": "Alternativa real al precio, sin descuentos.",
+      "texto": "le he dado una vuelta a lo del precio: hay una cuota de menos días que sale más económica, sin matrícula ni permanencia, dime cuántos días te ves entrenando y te digo la tuya"
+    },
+    {
+      "id": "n4-precio-prorrateo",
+      "nombre": "Precio: el primer recibo es la parte del mes que queda",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "precio"
+      ],
+      "excluir_sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Reducir el primer desembolso.",
+      "texto": "por si te ayuda con el precio, si empiezas a mitad de mes el primer recibo es solo la parte de los días que quedan, y sin permanencia, dime qué día te vendría bien empezar y te digo cuánto sería"
+    },
+    {
+      "id": "n4-prueba-parla",
+      "nombre": "Prueba: clase de prueba gratis en Parla",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "prueba",
+        "miedo"
+      ],
+      "sedes": [
+        "parla"
+      ],
+      "omitir_si_ya": "clase de prueba",
+      "objetivo": "Que lo vea por sí mismo (solo Parla y solo si aún no se le ha ofrecido).",
+      "texto": "si prefieres verlo antes de decidir, en Parla te dejo una clase de prueba gratis, te va mejor por la mañana o por la tarde?"
+    },
+    {
+      "id": "n4-prueba-un-mes",
+      "nombre": "Prueba: un mes sin permanencia",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "prueba"
+      ],
+      "sedes": [
+        "getafe",
+        "las_rosas"
+      ],
+      "objetivo": "Explicar por qué no hay prueba y cuál es la alternativa.",
+      "texto": "sobre lo de probar antes: una sola clase no deja ver cómo es esto, pero como no hay permanencia puedes entrenar un mes pagando solo los días que quedan y decidir después, te miro horarios de mañana o de tarde?"
+    },
+    {
+      "id": "n4-miedo-testimonio",
+      "nombre": "Miedo al nivel: todos empiezan desde cero",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "miedo"
+      ],
+      "objetivo": "Seguridad con lo que es verdad.",
+      "texto": "casi todo el mundo llega pensando que no está en forma para esto, en Academy el coach adapta todo a tu nivel y todos empiezan desde cero, te miro horarios de mañana o de tarde?",
+      "material": "testimonio-empezo-de-cero"
+    },
+    {
+      "id": "n4-horario",
+      "nombre": "Horario: sin turno fijo",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "horario"
+      ],
+      "excluir_sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Flexibilidad real del horario.",
+      "texto": "sobre el horario: no hay turno fijo, cada día eliges la hora en la app, dime si te va mejor por la mañana o por la tarde y te digo las horas que hay ahora"
+    },
+    {
+      "id": "n4-distancia",
+      "nombre": "Distancia: los cuatro centros",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "distancia"
+      ],
+      "objetivo": "Buscarle el centro que le pilla mejor.",
+      "texto": "tenemos cuatro centros, Parla, Getafe, Las Rosas y El Cañaveral, que abre el 1 de febrero de 2027, dime por qué zona te mueves y te digo cuál te pilla mejor"
+    },
+    {
+      "id": "n4-destapar-duda",
+      "nombre": "Destapar la duda",
+      "niveles": [
+        4
+      ],
+      "frenos": [
+        "desconocido",
+        "ninguno"
+      ],
+      "objetivo": "Saber qué le frena cuando no lo ha dicho.",
+      "texto": "me quedé con la duda de qué te hizo dudar, fue el precio, el horario o cómo te vas a ver al empezar?"
+    },
+    {
+      "id": "sin-permanencia",
+      "nombre": "Sin matrícula ni permanencia",
+      "niveles": [
+        3,
+        4
+      ],
+      "objetivo": "Bajar el riesgo de probar un mes.",
+      "texto": "una cosa que suele ayudar a decidirse: no hay matrícula ni permanencia, puedes entrenar un mes y ver qué tal, te miro horarios de mañana o de tarde?"
+    },
+    {
+      "id": "n5-inicio-mes",
+      "nombre": "Momento: empezar ya pagando solo lo que queda de mes",
+      "niveles": [
+        5
+      ],
+      "excluir_sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Disparador real: el prorrateo del primer recibo.",
+      "texto": "si te viene bien empezar ya, el primer recibo es solo la parte del mes que queda y no hay permanencia, dime qué día quieres empezar y te dejo el alta preparada"
+    },
+    {
+      "id": "n5-alta-preparada",
+      "nombre": "Momento: dejar el alta preparada",
+      "niveles": [
+        5
+      ],
+      "excluir_sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Reducir la fricción del último paso.",
+      "texto": "sigo teniendo apuntado lo que hablamos, cuando quieras dime el día que te gustaría empezar y te dejo el alta preparada en un momento"
+    },
+    {
+      "id": "n5-canaveral-apertura",
+      "nombre": "El Cañaveral: apertura y regalos",
+      "niveles": [
+        4,
+        5
+      ],
+      "sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Disparador real: fecha de apertura y regalos de cualquier tramo.",
+      "texto": "El Cañaveral abre el 1 de febrero de 2027 y ya se puede hacer el alta, con la comba y la plaza en el seminario de regalo, dime si empiezas desde cero o ya entrenas y te digo tu cuota"
+    },
+    {
+      "id": "n5-canaveral-orden",
+      "nombre": "El Cañaveral: el descuento va por orden de alta",
+      "niveles": [
+        4,
+        5
+      ],
+      "sedes": [
+        "el_canaveral"
+      ],
+      "objetivo": "Disparador real: el tramo se asigna por orden; sin decir plazas ni prometer tramo.",
+      "texto": "el descuento de apertura de El Cañaveral va por orden de alta y pedir información no reserva plaza, cuando quieras te digo el que hay ahora y te dejo el alta preparada"
+    }
+  ],
+  "material": {
+    "testimonio-empezo-de-cero": {
+      "formato": "vídeo corto o foto con texto",
+      "descripcion": "Testimonio real de un socio o socia que empezó sin experiencia ni forma física, con su permiso por escrito. Idealmente uno por sede y de edades distintas."
+    },
+    "video-clase-1h": {
+      "formato": "vídeo de 30 a 60 s",
+      "descripcion": "Cómo es una clase de 1 hora de principio a fin: llegada, calentamiento, técnica y entrenamiento, con gente normal."
+    },
+    "fotos-comunidad": {
+      "formato": "2 o 3 fotos",
+      "descripcion": "Fotos reales de clases con socios de todo tipo (edades, niveles), con permiso de imagen."
+    },
+    "video-academy": {
+      "formato": "vídeo de 30 a 60 s",
+      "descripcion": "Una sesión de Academy: grupo pequeño, el coach corrigiendo, cargas adaptadas."
+    },
+    "video-clase-crossfit": {
+      "formato": "vídeo de 30 a 60 s",
+      "descripcion": "Una clase de CrossFit o HYROX con toda la comunidad, para quien ya tiene experiencia."
+    },
+    "resenas-socios": {
+      "formato": "imagen con 3 o 4 reseñas",
+      "descripcion": "Reseñas reales (Google o Instagram) por sede. El Cañaveral aún no tiene propias: usar las de Getafe y Parla diciéndolo."
+    }
+  }
+}

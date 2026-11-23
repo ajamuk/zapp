@@ -524,13 +524,13 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['captacion', 'Captación'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 const hoyMes = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
 const PRIMERA = {
   resumen: () => [`/panel/resumen?dias=${estado.dias}`, '/panel/alertas'], embudo: () => [`/panel/embudo?mes=${estado.mes || hoyMes()}`],
   estadisticas: () => ['/panel/estadisticas?dias=30&sede=&canal=', '/panel/consumo?meses=6'], chats: () => ['/panel/vistas', '/panel/opciones'],
-  etiquetas: () => ['/panel/etiquetas', '/panel/meta'], altas: () => ['/panel/altas'], preguntas: () => ['/panel/preguntas'], seguimientos: () => ['/panel/seguimientos'],
+  etiquetas: () => ['/panel/etiquetas', '/panel/meta'], altas: () => ['/panel/altas'], preguntas: () => ['/panel/preguntas'], seguimientos: () => ['/panel/seguimientos'], captacion: () => ['/panel/captacion'],
   recursos: () => ['/panel/recursos'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
 };
 /** Sección y chat (si lo hay) que dice la dirección. Una sección que no existe lleva a Resumen. */
@@ -616,7 +616,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, captacion, recursos, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -1307,6 +1307,46 @@ const TIPOS_SEG = [
 const unidades = (min) => (min % 1440 === 0 ? [min / 1440, 'dias'] : min % 60 === 0 ? [min / 60, 'horas'] : [min, 'minutos']);
 const textoEspera = (r) => { const [n, u] = unidades(r.minutos); const t = u === 'minutos' && n >= 120 ? `${Math.floor(n / 60)} h ${n % 60} min` : `${n} ${u === 'dias' ? (n === 1 ? 'día' : 'días') : u === 'horas' ? (n === 1 ? 'hora' : 'horas') : 'min'}`;
   return r.tipo === 'cita' ? `${t} antes` : r.tipo === 'tras-cita' ? `${t} después de la clase` : r.tipo === 'largo-plazo' ? (r.despuesDe ? `${t} después del anterior` : `fecha que dé el lead o ${t}`) : `${t} después`; };
+
+// Captación por nivel de conciencia: solo lectura. Diagnóstico de cada lead frío, plan de toques y borradores.
+async function captacion() {
+  $('#main').innerHTML = '<h2>Captación</h2><div class="vacio">Cargando…</div>';
+  const d = await api('/panel/captacion');
+  if (estado.seccion !== 'captacion') return;
+  const FRENO = { precio: 'Precio', horario: 'Horario', miedo: 'Miedo al nivel', momento: 'Momento', prueba: 'Quiere probar', distancia: 'Distancia', ninguno: 'Ninguno', desconocido: 'Sin identificar' };
+  const MOTIVO = { forma: 'Ponerse en forma', peso: 'Perder peso', fuerza: 'Fuerza', comunidad: 'Comunidad', hyrox: 'HYROX', salud: 'Salud', otro: 'Otro', desconocido: 'Sin identificar' };
+  const ESTADO = { activo: ['Con plan', 'verde'], control: ['Control', 'azul'], sin_plan: ['Sin plan', ''], conversando: ['Conversando', 'violeta'], pausado: ['En pausa', 'ambar'], dormido: ['Dormido', ''], parado: ['Parado', 'rojo'] };
+  const lead = (x) => `<a href="#chats/${encodeURIComponent(x.conversation_id)}" style="color:var(--blue)">${esc(x.nombre || x.conversation_id)}</a>${x.sede ? ` <span class="chip">${esc(SEDES[x.sede] || x.sede)}</span>` : ''}`;
+  const pct = (a, b) => (b ? `${Math.round((100 * a) / b)} %` : '—');
+  const e = d.estados; const g = d.grupos;
+  const filaToque = (t, conTexto) => `<tr><td>${fechaCorta(conTexto ? t.resuelto_at || t.due_at : t.due_at)}</td><td>${lead(t)}</td>
+    <td>Nivel ${t.nivel} · ${esc(FRENO[t.freno] || t.freno)}</td><td>${esc(t.pieza_nombre)}${!conTexto && t.detalle ? `<div class="ayuda">${esc(t.detalle)}</div>` : ''}</td>
+    ${conTexto ? `<td><div class="previsto">«${esc(t.texto)}»</div>${t.material_falta ? `<div class="ayuda">Falta el material «${esc(t.material_falta)}»</div>` : ''}</td>` : ''}</tr>`;
+  $('#main').innerHTML = `<h2>Captación</h2>
+    <div class="aviso">Modo prueba: aquí no se envía nada. Los toques quedan como borradores para revisarlos. ${d.activa ? '' : 'La vuelta automática está apagada (<code>CAPTACION_ENABLED</code>).'}</div>
+    <p class="intro">Cuando un chat lleva ${d.parametros.diagnostico_dias} días frío y Sofía ya no tiene seguimientos pendientes, se diagnostica al lead (nivel de conciencia, motivo y freno) y se planifican los contenidos según su nivel. Un ${d.parametros.control_pct} % queda de control, solo con los seguimientos de siempre. Se para si responde, se da de alta, es socio, se deriva o pide que no se le escriba, y a los ${d.parametros.max_sin_respuesta} toques sin respuesta.</p>
+    ${d.total ? `<div class="tarjetas">${tarjeta(miles(d.total), 'Leads diagnosticados')}${tarjeta(miles(e.activo || 0), 'Con plan en marcha')}${tarjeta(miles(d.borradores.length), 'Borradores preparados')}${tarjeta(miles(e.control || 0), 'En el grupo de control')}${tarjeta(miles(e.dormido || 0), 'Dormidos')}${tarjeta(miles(e.parado || 0), 'Parados')}</div>
+    <h3>Nivel de conciencia</h3>
+    <div class="tabla"><table><tr><th>Nivel</th><th>Con contenidos</th><th>Control</th></tr>${d.niveles.map((n) => `<tr><td>${n.nivel}. ${esc(n.nombre)}</td><td>${miles(n.tratamiento)}</td><td>${miles(n.control)}</td></tr>`).join('')}</table></div>
+    <p><b>Freno:</b> ${d.frenos.map((f) => `<span class="chip">${esc(FRENO[f.freno] || f.freno)} ${miles(f.n)}</span>`).join(' ')}</p>
+    <p><b>Motivo:</b> ${d.motivos.map((f) => `<span class="chip">${esc(MOTIVO[f.motivo] || f.motivo)} ${miles(f.n)}</span>`).join(' ')}</p>
+    <h3>Con contenidos frente a control</h3>
+    <div class="tabla"><table><tr><th>Grupo</th><th>Leads</th><th>Respondieron</th><th>Suben de nivel</th><th>Altas</th></tr>${[['tratamiento', 'Con contenidos'], ['control', 'Control']].map(([k, t]) => `<tr><td>${t}</td><td>${miles(g[k].leads)}</td><td>${miles(g[k].respondieron)} <span class="ayuda">${pct(g[k].respondieron, g[k].leads)}</span></td><td>${miles(g[k].suben)}</td><td>${miles(g[k].altas)} <span class="ayuda">${pct(g[k].altas, g[k].leads)}</span></td></tr>`).join('')}</table></div>
+    <p class="ayuda">En modo prueba los leads no reciben los contenidos, así que los dos grupos deben salir parecidos: la comparación vale cuando se envíe de verdad.</p>
+    <h3>Borradores <span class="ayuda">lo que se habría enviado</span></h3>
+    ${d.borradores.length ? `<div class="tabla"><table><tr><th>Preparado</th><th>Lead</th><th>Diagnóstico</th><th>Contenido</th><th>Texto</th></tr>${d.borradores.map((t) => filaToque(t, true)).join('')}</table></div>` : '<div class="vacio">Todavía no ha vencido ningún toque</div>'}
+    <h3>Próximos toques</h3>
+    ${d.proximos.length ? `<div class="tabla"><table><tr><th>Cuándo</th><th>Lead</th><th>Diagnóstico</th><th>Contenido</th></tr>${d.proximos.map((t) => filaToque(t, false)).join('')}</table></div>` : '<div class="vacio">No hay toques previstos</div>'}
+    <h3>Leads</h3>
+    <div class="tabla"><table><tr><th>Lead</th><th>Nivel</th><th>Motivo</th><th>Freno</th><th>Estado</th><th>En qué se basa</th></tr>${d.perfiles.map((p) => `<tr><td>${lead(p)} <span class="chip">${CANAL[p.channel] || ''}</span></td>
+      <td>${p.nivel}${p.nivel !== p.nivel_inicial ? ` <span class="ayuda">antes ${p.nivel_inicial}</span>` : ''}</td><td>${esc(MOTIVO[p.motivo] || p.motivo)}</td><td>${esc(FRENO[p.freno] || p.freno)}</td>
+      <td><span class="chip ${(ESTADO[p.estado] || [])[1] || ''}">${esc((ESTADO[p.estado] || [p.estado])[0])}</span>${p.detalle ? `<div class="ayuda">${esc(p.detalle)}</div>` : ''}</td>
+      <td class="largo">${esc(p.evidencia || '')} <span class="ayuda">${p.origen === 'ia' ? 'IA' : 'reglas'}</span></td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay ningún lead diagnosticado</div>'}
+    <h3>Material que piden los contenidos</h3>
+    <p class="ayuda">Se sube en Recursos con ese mismo nombre. Mientras falte, el borrador sale solo con el texto.</p>
+    <div class="tabla"><table><tr><th>Nombre del recurso</th><th>Qué es</th><th>Lo usan</th><th>Estado</th></tr>${d.material.map((m) => `<tr><td><code>${esc(m.clave)}</code></td><td>${esc(m.descripcion)} <span class="ayuda">${esc(m.formato)}</span></td><td>${m.piezas.map(esc).join(', ')}${m.borradores ? `<div class="ayuda">${miles(m.borradores)} borradores lo esperan</div>` : ''}</td>
+      <td><span class="chip ${m.disponible ? 'verde' : 'ambar'}">${m.disponible ? 'Subido' : 'Falta'}</span></td></tr>`).join('')}</table></div>`;
+}
 
 async function seguimientos() {
   if (estado.editRegla) return editorRegla();

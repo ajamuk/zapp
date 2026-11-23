@@ -22,6 +22,7 @@ Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 | `config/aimharder-alta.json` | Pasos del alta por navegador (pendiente de grabar) |
 | `src/setter.js` | Lógica principal |
 | `src/followups.js` | Seguimientos (ventana de 24 h y plantilla de WhatsApp) |
+| `src/captacion.js`, `config/captacion.json` | Captación por nivel de conciencia (solo modo prueba, ver `docs/captacion.md`) |
 | `docs/analisis-conversaciones.md` | Análisis de 200 conversaciones de Zapp |
 | `docs/aimharder.md` | Cómo terminar la parte de AimHarder |
 
@@ -76,6 +77,14 @@ Sale una vez por cada cierre (aunque escriba varias veces esa noche) y Sofía le
 sabiendo que ya recibió el aviso. Se configura en **Ajustes → Aviso fuera de horario**: activarlo, el texto
 (admite `{nombre}` y `{apertura}`, p. ej. «mañana a las 8:00») y los canales (por defecto WhatsApp e Instagram).
 No sale a socios, chats en pausa ni teléfonos de prueba; en modo prueba queda como borrador. Código: `src/fuera-horario.js`.
+
+## Captación por nivel de conciencia (modo prueba)
+
+Un módulo aparte de Sofía diagnostica a cada lead frío (nivel de conciencia 1 a 5, motivo y freno), deja un 20 % de
+control y planifica contenidos según su nivel. **No envía nada**: los toques quedan como borradores en la pestaña
+**Captación** del panel. Apagado por defecto (`CAPTACION_ENABLED`). Para ver el reparto de niveles de los chats que
+ya hay, sin IA y sin tocar nada: `npm run diagnostico-captacion`. Detalle, límites y material que falta:
+[`docs/captacion.md`](docs/captacion.md).
 
 ## Herramientas de administración (solo desde el VPS)
 

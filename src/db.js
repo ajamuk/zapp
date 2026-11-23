@@ -5,6 +5,7 @@ import { sembrarReglas } from './reglas.js';
 import { sembrarDocumentos } from './documentos.js';
 import { crearTabla as tablaPruebasClase } from './clase-prueba.js';
 import { crearTabla as tablaPreguntas } from './preguntas.js';
+import { crearTablas as tablasCaptacion } from './captacion.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
@@ -312,6 +313,7 @@ export function openDb(dbPath) {
   db.exec(INDICES);
   tablaPruebasClase(db);
   tablaPreguntas(db);
+  tablasCaptacion(db);
   sembrarReglas(db);
   sembrarDocumentos(db);
   return db;
