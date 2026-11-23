@@ -19,10 +19,12 @@ export const enmascarar = (numero) => { const d = soloDigitos(numero); return d 
  *  - { modo: 'activo', numero, digitos, locationId, clave }: se aplica.
  *  - { modo: 'invalido', motivos }: está a medias o es incoherente. Se bloquea todo (entrada y salida) hasta arreglarlo:
  *    una errata en el número no puede dejar a Sofía atendiendo el número de otro.
+ * `live` (MODE=live): enviar de verdad EXIGE el aislamiento. Sin configurar, en live queda inválido y el servicio no
+ * actúa; en modo prueba (shadow) sigue «apagado», como siempre. Los simuladores no pasan por aquí.
  */
-export function estadoAislamiento({ numero = config.aislamiento?.numero, locationId = config.aislamiento?.locationId, locationCliente = config.ghl.locationId } = {}) {
+export function estadoAislamiento({ numero = config.aislamiento?.numero, locationId = config.aislamiento?.locationId, locationCliente = config.ghl.locationId, live = config.mode === 'live' } = {}) {
   const n = String(numero || '').trim(); const loc = String(locationId || '').trim();
-  if (!n && !loc) return { modo: 'apagado' };
+  if (!n && !loc) return live ? { modo: 'invalido', motivos: ['MODE=live exige el aislamiento en un número propio (SOFIA_WA_NUMERO y SOFIA_WA_LOCATION_ID); sin él solo se puede usar MODE=shadow'] } : { modo: 'apagado' };
   const motivos = [];
   if (!n) motivos.push('falta SOFIA_WA_NUMERO');
   else if (!E164.test(n)) motivos.push('SOFIA_WA_NUMERO no está en formato internacional (+34…, solo cifras, sin espacios)');
@@ -62,25 +64,47 @@ export function evaluarEntrante(aisl, m, esperado = {}) {
   return { ok: true };
 }
 
-/** ¿Está este chat verificado para el número y la subcuenta actuales? (lo marca el último entrante que pasó el control) */
-export const chatVerificado = (aisl, conv) => aisl?.modo === 'activo' && Boolean(conv?.aislado_num) && conv.aislado_num === aisl.clave;
+/**
+ * Línea de WhatsApp por la que fue un mensaje, en cifras: en un entrante, a qué número se escribió (`to`); en un
+ * saliente, desde qué número salió (`from`). null si no es WhatsApp o GHL no lo indica; 'varias' si indica más de una.
+ */
+export function lineaDe(m) {
+  if (String(m?.tipo || '') !== 'TYPE_WHATSAPP') return null;
+  const l = destinatarios(String(m.direccion || '').toLowerCase() === 'inbound' ? m.para : m.de);
+  return l.length === 1 ? l[0] : l.length ? 'varias' : null;
+}
+
+/** ¿Consta que este mensaje fue por una línea de WhatsApp que no es la propia? */
+export const esDeOtraLinea = (aisl, m) => { const l = lineaDe(m); return aisl?.modo === 'activo' && Boolean(l) && l !== aisl.digitos; };
+
+/**
+ * ¿Demuestra este saliente, tal como lo devuelve GHL, que salió por WhatsApp desde el número propio? Solo esos cuentan
+ * como «el equipo ha escrito» o como un envío de Sofía confirmado. Los de otra línea, los de un conector y los que
+ * no dicen su emisor no cambian nada.
+ */
+export function salienteVerificado(aisl, m) {
+  return aisl?.modo === 'activo' && Boolean(m?.id) && m.locationId === aisl.locationId
+    && String(m.direccion || '').toLowerCase() === 'outbound' && lineaDe(m) === aisl.digitos;
+}
+
+/** ¿Está este chat verificado para el número y la subcuenta actuales? (lo marca su primer entrante, que pasó el control) */
+export const chatVerificado = (aisl, conv) => aisl?.modo === 'activo' && Boolean(conv?.aislado_num) && conv.aislado_num === aisl.clave && !conv.aislado_bloqueo;
 
 /** ¿Puede Sofía hacer algo en este chat? Sin aislamiento, siempre; mal configurado, nunca; activo, solo los verificados. */
 export function chatPermitido(aisl, conv) {
   if (!aisl || aisl.modo === 'apagado') return true;
-  if (String(conv?.id || '').startsWith('prueba-')) return true; // chats del simulador del panel: no salen a GHL
   return chatVerificado(aisl, conv);
 }
 
 /**
  * Cola heredada de antes del aislamiento (chats del número anterior): se quitan sus respuestas pendientes y se cancelan
  * sus seguimientos. Se puede repetir sin problema; se llama al arrancar. No toca GHL ni borra chats.
+ * Con la configuración inválida no se cancela nada (una errata no vacía la cola): basta con que nada puede salir.
  */
 export function cuarentena(db, aisl) {
-  if (!aisl || aisl.modo === 'apagado') return { respuestas: 0, seguimientos: 0 };
-  // Mal configurado: ningún chat cuenta como verificado
-  const clave = aisl.modo === 'activo' ? aisl.clave : '\u0000';
-  const fuera = "id NOT LIKE 'prueba-%' AND IFNULL(aislado_num, '') != ?";
+  if (aisl?.modo !== 'activo') return { respuestas: 0, seguimientos: 0 };
+  const clave = aisl.clave;
+  const fuera = "id NOT LIKE 'prueba-%' AND (IFNULL(aislado_num, '') != ? OR aislado_bloqueo IS NOT NULL)";
   const respuestas = db.prepare(`UPDATE conversations SET respond_at = NULL, respondiendo_desde = NULL, reintentos = 0
     WHERE (respond_at IS NOT NULL OR respondiendo_desde IS NOT NULL) AND ${fuera}`).run(clave).changes;
   const seguimientos = db.prepare(`UPDATE scheduled SET estado = 'cancelado', detalle = 'aislamiento: chat no verificado para el número propio'

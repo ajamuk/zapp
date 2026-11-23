@@ -89,12 +89,11 @@ const app = crearApp({ setter, repo, etiquetas, ghl, salud });
 const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
-  else if (aislamiento.modo === 'apagado') console.warn('[aislamiento] MODE=live SIN aislamiento: Sofía contesta todo lo que entre en la subcuenta, sea del número que sea (docs/aislamiento-whatsapp.md).');
 });
 // Claves que faltan o son cortas: se avisa en el registro y en las alertas del panel (sin enseñar la clave)
 const debiles = clavesDebiles();
 if (debiles.length) { debiles.forEach((a) => console.warn('[seguridad]', a)); registrarAlerta(repo.db, { clave: 'claves-debiles', tipo: 'servidor', titulo: 'Hay claves del servicio que faltan o son demasiado cortas', detalle: debiles.join('\n'), nivel: 'aviso' }); } else resolverAlerta(repo.db, 'claves-debiles');
-if (aislamiento.modo === 'invalido') registrarAlerta(repo.db, { clave: 'aislamiento', tipo: 'servidor', titulo: 'El aislamiento de WhatsApp está mal configurado: Sofía no recibe ni envía nada', detalle: aislamiento.motivos.join('\n'), nivel: 'error' }); else resolverAlerta(repo.db, 'aislamiento');
+if (aislamiento.modo === 'invalido') registrarAlerta(repo.db, { clave: 'aislamiento', tipo: 'servidor', titulo: 'Sofía no recibe ni envía nada: falta o está mal el aislamiento de WhatsApp', detalle: aislamiento.motivos.join('\n'), nivel: 'error' }); else resolverAlerta(repo.db, 'aislamiento');
 servidor.on('error', (e) => { console.error('No se puede abrir el puerto:', e.message); process.exit(1); });
 
 // Índice de socios desde AimHarder: cada 4 horas. Al arrancar solo se descargan las sedes con datos de más

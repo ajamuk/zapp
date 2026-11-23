@@ -57,13 +57,14 @@ export function parseWebhook(raw = {}) {
 }
 
 /**
- * Mensaje de GHL ya normalizado. `locationId` y `para` (el campo `to`: a qué número se envió) solo se usan para el
- * aislamiento; `para` no está en la documentación pública de GHL para WhatsApp, así que puede venir vacío.
+ * Mensaje de GHL ya normalizado. `locationId`, `para` (`to`: a qué número se envió) y `de` (`from`: desde cuál salió)
+ * solo se usan para el aislamiento. `to` y `from` no están en la documentación pública de GHL para WhatsApp, pero la
+ * API los devuelve con el número de la empresa en formato «+34 910 00 00 01» (comprobado en entrantes y salientes).
  */
 const normalizarMensaje = (m) => ({
   id: m.id, direccion: String(m.direction || '').toLowerCase(), tipo: String(m.messageType || ''), canal: canalDesdeTipo(m.messageType),
   texto: m.body || '', adjuntos: Array.isArray(m.attachments) ? m.attachments : [], userId: m.userId || null, source: m.source || null, fecha: m.dateAdded,
-  locationId: m.locationId || null, conversationId: m.conversationId || null, contactId: m.contactId || null, para: m.to ?? null,
+  locationId: m.locationId || null, conversationId: m.conversationId || null, contactId: m.contactId || null, para: m.to ?? null, de: m.from ?? null,
 });
 
 export class Ghl {

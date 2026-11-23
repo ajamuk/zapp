@@ -1,27 +1,50 @@
 # Sofía en un número de WhatsApp propio (aislamiento)
 
-Para que Sofía pueda enviar de verdad (`MODE=live`) sin tocar el número que ya atiende el equipo ni ninguna otra
-automatización, se le da un **número de WhatsApp exclusivo** y se activa el aislamiento. Con él:
+Para que Sofía pueda enviar de verdad sin tocar el número que ya atiende el equipo ni ninguna otra automatización, se
+le da un **número de WhatsApp exclusivo** y se activa el aislamiento. **`MODE=live` lo exige**: con `MODE=live` y sin
+aislamiento el servicio arranca (panel y simulador siguen funcionando) pero no recibe ni envía nada, y sale una alerta
+en el panel. En `MODE=shadow` sin aislamiento todo sigue como hasta ahora.
+
+Con el aislamiento activo:
 
 - **Entrada.** Solo se atiende un mensaje si GoHighLevel, consultado por su API, dice que es un WhatsApp **entrante**,
-  de **la subcuenta de Sofía** y **enviado a su número**. Lo que diga el aviso del workflow no cuenta, y el teléfono
-  del contacto (quién escribe) nunca se usa como si fuera el destino (a quién escribe).
+  de **la subcuenta de Sofía** y **enviado a su número** (campo `to`). Lo que diga el aviso del workflow no cuenta
+  —tampoco si trae un id de mensaje—, y el teléfono del contacto (quién escribe) nunca se usa como si fuera el destino.
 - **Falla en cerrado.** Si falta cualquiera de esos datos, GHL no responde o la configuración está a medias, el mensaje
   se descarta: no se crea el chat, no se llama a la IA y no se toca el contacto (ni etiquetas, ni notas, ni
   asignación, ni AimHarder, ni avisos al equipo). En el registro queda solo el motivo, sin teléfonos ni texto.
 - **Salida.** Todo envío de WhatsApp lleva el número propio como emisor (`fromNumber`). No sale nada por Instagram ni
   Messenger. Las **plantillas** (mensajes fuera de las 24 h) quedan **bloqueadas**: las envía un workflow de GHL y desde
   Sofía no se puede fijar con qué número salen; esos seguimientos quedan como «omitido» con el motivo.
-- **Cola heredada.** Los chats que ya había en la base (del número anterior) no están verificados: al arrancar se les
-  quita la respuesta pendiente y se cancelan sus seguimientos, y aunque alguien los fuerce desde el panel no sale nada
-  ni se toca su contacto. Un chat queda verificado cuando entra por él un mensaje que pasa el control.
+- **Mensajes del equipo.** Solo cuenta como «ha escrito una persona» (y aparta a Sofía) un saliente de WhatsApp que GHL
+  sitúa en el número propio (campo `from`). Un saliente de otra línea, la copia de un conector o uno que no diga su
+  emisor no se importa al chat ni pausa nada. El aviso de saliente del webhook, por sí solo, tampoco.
+- **Cola heredada.** Los chats que ya había en la base no están verificados y **no se adoptan nunca**: al arrancar se
+  les quita la respuesta pendiente y se cancelan sus seguimientos; no se consultan en GHL, no se les escribe aunque
+  alguien los fuerce desde el panel y, si ese mismo contacto escribe al número de Sofía, tampoco se atiende (su
+  historial y su estado —pausas, fase, alta— no son de esta línea).
 
-Sin las variables de abajo no cambia nada: el modo prueba y el resto del comportamiento siguen como estaban.
+## Una conversación, varias líneas: topología no admitida
+
+En GHL hay **una conversación por contacto y subcuenta**. Si el número de Sofía convive en la misma subcuenta con otra
+línea de WhatsApp, un contacto que hable con las dos tiene **un solo `conversationId`**, un solo contacto y unas solas
+etiquetas. Eso no se puede separar desde Sofía: sus etiquetas y notas las verían las automatizaciones de la otra línea,
+y al revés. Por eso **esa topología no se admite**:
+
+- Si en la conversación de GHL aparece algún WhatsApp de otra línea (un entrante con otro `to` o un saliente con otro
+  `from`), Sofía **no actúa en esa conversación**: si no tenía chat, no lo crea; si lo tenía, queda bloqueado
+  (`aislado_bloqueo`), sin respuesta pendiente ni seguimientos, y no vuelve a activarse solo aunque después escriban a
+  su número. Ningún mensaje de la otra línea entra en su historial ni cuenta como respuesta humana.
+- La detección mira los últimos 30 mensajes de la conversación que devuelve GHL. No sustituye a la separación real.
+
+**Lo que hay que hacer:** una **subcuenta de GHL solo para Sofía** con su único número. Ahí los contactos, las
+conversaciones y las etiquetas son nuevos y no hay nada que compartir. Compartir subcuenta con otra línea no es una
+configuración válida para `MODE=live`.
 
 ## Qué hace falta (pasos mínimos)
 
-1. **Número y subcuenta** (pendiente de confirmar por Carlos). Lo recomendable es una **subcuenta de GHL solo para
-   Sofía** con ese único número de WhatsApp conectado: así el aislamiento del servicio se suma al de GHL. Apuntar el
+1. **Número y subcuenta** (pendiente de confirmar por Carlos): una **subcuenta de GHL solo para Sofía** con ese único
+   número de WhatsApp conectado (ver «topología no admitida»). Apuntar el
    número en formato internacional (`+34…`) y el id de la subcuenta (Ajustes → Perfil del negocio, o la dirección del
    navegador: `/location/<id>/`).
 2. **Token de esa subcuenta.** Integración privada creada **en la subcuenta de Sofía**, con los permisos de
@@ -46,30 +69,35 @@ Sin las variables de abajo no cambia nada: el modo prueba y el resto del comport
       `[Borrador IA, no enviado] …` y el chat en el panel.
    2. Si no aparece: `journalctl -u codex-zapp -n 50 | grep aislamiento` dice el motivo, y
       `npm run verificar-aislamiento -- --contacto <id del contacto>` enseña qué devuelve GHL de ese mensaje.
-   3. Escribir desde el mismo móvil a **otro** número de la empresa: Sofía no debe dejar nota ni crear chat.
-   4. Añadir ese móvil a `TEST_PHONES` y repetir el paso 1: ahora contesta de verdad. Comprobar **en el móvil** que la
+   3. Añadir ese móvil a `TEST_PHONES` y repetir el paso 1: ahora contesta de verdad. Comprobar **en el móvil** que la
       respuesta llega desde el número de Sofía.
+   4. Contestar a mano desde GHL en ese chat: Sofía debe apartarse (chat en pausa, «humano escribió»).
+   5. Si se quiere probar el descarte escribiendo a **otro** número de la empresa, hacerlo con **otro móvil**: Sofía no
+      debe dejar nota ni crear chat. (Con el mismo móvil y en la misma subcuenta, esa conversación quedaría bloqueada.)
 6. **Pasar a `MODE=live`** solo con el visto bueno de Carlos y con los pasos anteriores comprobados.
 
 ## Lo que hay que saber antes
 
-- **El destinatario no está documentado por HighLevel.** En su especificación pública (repositorio
-  `GoHighLevel/highlevel-api-docs`, `apps/conversations.json` y `docs/webhook events/InboundMessage.md`, revisado el
-  23/11/2026 en el commit `0af86a4`), un mensaje trae `locationId`, `direction`, `messageType`, `conversationProviderId`…
-  pero **no** el número al que se envió; `to` solo aparece para el correo, y WhatsApp ni figura en la tabla de canales
-  del webhook `InboundMessage`. Sofía lee el campo `to` del mensaje si GHL lo devuelve. **Si no lo devuelve, lo descarta
-  todo**: es lo que se pidió (sin prueba no se atiende), pero significa que el paso 5 es el que dice si esto funciona
-  con la cuenta real. Si GHL no da ese dato, habrá que decidir otra prueba (por ejemplo `conversationProviderId`,
-  que sí está documentado) antes de poder usar `MODE=live`.
-- **El emisor.** `fromNumber` está documentado en «Send a new message» como «número usado como emisor», sin precisar
-  que valga para WhatsApp. Por eso el paso 5.4 se comprueba en el móvil, y por eso se recomienda la subcuenta con un
-  solo número.
+- **`to` y `from` no están documentados por HighLevel, pero la API los devuelve.** En su especificación pública
+  (repositorio `GoHighLevel/highlevel-api-docs`, `apps/conversations.json` y `docs/webhook events/InboundMessage.md`,
+  commit `0af86a4`, 23/11/2026) un mensaje trae `locationId`, `direction`, `messageType`… pero no el número de la
+  línea. Comprobado por API en la cuenta real, con un móvil de pruebas del equipo (3 entrantes y 10 salientes): `to` en
+  los entrantes y `from` en los salientes contienen el número de la empresa, **con espacios** («+34 910 00 00 01»).
+  Sofía compara solo las cifras, todas (con prefijo de país). Esa comprobación valida el contrato, no qué número será
+  el de Sofía. Al no estar documentados, GHL podría dejar de enviarlos: en ese caso Sofía deja de atender (falla en
+  cerrado) y se ve en el registro (`[aislamiento] entrante descartado (GHL no indica a qué número se envió)`).
+- **El emisor al enviar.** `fromNumber` está documentado en «Send a new message» como «número usado como emisor», sin
+  precisar que valga para WhatsApp. Por eso el paso 5.3 se comprueba en el móvil, y por eso la subcuenta con un solo
+  número.
 - **Sin plantillas** no hay mensajes pasadas 24 h desde el último mensaje del lead (recordatorios lejanos,
   «lo dejo para más adelante», lanzamientos a chats antiguos). Para recuperarlos haría falta un workflow de plantilla
   propio de la subcuenta de Sofía y revisar este bloqueo.
-- Si el número propio estuviera en la **misma subcuenta** que el actual, un contacto que ya tenía chat conserva su
-  historial anterior en la base: Sofía lo vería al contestar. Con subcuenta propia no ocurre.
-- Cambiar `SOFIA_WA_NUMERO` invalida lo verificado para el número anterior (los chats vuelven a necesitar un entrante).
+- **Escribir desde el móvil** (la app de WhatsApp del número, vía conector) no aparta a Sofía: esa copia no dice por
+  qué línea salió. Para pararla en un chat: contestar desde GHL, la etiqueta `parar ia` o «Pausar» en el panel.
+- **Las etiquetas son del contacto**, no de la línea: `parar ia`, `continuar ia` y el resto se siguen leyendo de GHL
+  en los chats propios. En una subcuenta solo de Sofía las pone su equipo; es otro motivo para no compartir subcuenta.
+- Cambiar `SOFIA_WA_NUMERO` deja sin verificar todos los chats del número anterior, y no se readoptan.
+- Un chat bloqueado por compartir conversación no se desbloquea desde el panel (hay que separar la topología).
 
 Código: `src/aislamiento.js` (reglas), `src/ghl.js` (emisor), `src/setter.js` (entrada y salida). Pruebas:
 `test/aislamiento.test.js`.
