@@ -302,9 +302,14 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
 
   const borrar = (ids) => pruebas().db.transaction(() => {
     for (const id of ids) {
-      // Los audios e imágenes de la prueba también se borran del disco
+      // Los audios e imágenes de la prueba también se borran del disco. Los archivos de Recursos (y cualquiera que use
+      // un chat real) son compartidos: un recurso enviado en la prueba guarda su misma ruta, y borrarla dejaba el
+      // recurso sin archivo (su URL pública daba 404 y Twilio rechazaba el envío).
       const base = opciones.medios?.base || carpetaMedios();
+      const compartido = (ruta) => Boolean(repo.db.prepare('SELECT 1 FROM recursos WHERE media_ruta = ? LIMIT 1').get(ruta)
+        || repo.db.prepare('SELECT 1 FROM messages WHERE media_ruta = ? LIMIT 1').get(ruta));
       for (const m of pruebas().db.prepare('SELECT media_ruta FROM messages WHERE conversation_id = ? AND media_ruta IS NOT NULL').all(id)) {
+        if (compartido(m.media_ruta)) continue;
         const abs = path.resolve(base, m.media_ruta);
         if (abs.startsWith(path.resolve(base) + path.sep)) for (const f of [abs, abs.replace(/\.[^.]+$/, '') + '.modelo.jpg']) fs.rmSync(f, { force: true });
       }

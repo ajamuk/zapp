@@ -122,3 +122,31 @@ test('simulación de fecha: desfase respecto a la hora real', () => {
   assert.ok(Math.abs(s.offset_ms - 3600e3) < 1000);
   assert.deepEqual(simular({ fecha: 'no es fecha' }), {});
 });
+
+test('Probar IA: borrar una prueba no borra el archivo de un recurso que Sofía envió en ella', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const recursos = await import('../src/recursos.js');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'medios-'));
+  const repo = crearRepo(openDb(':memory:'));
+  const pruebas = crearRepo(openDb(':memory:'));
+  const srv = crearApp({ setter: {}, repo, pruebas, complete: async () => { throw new Error('sin modelo'); }, medios: { base } }).listen(0);
+  await new Promise((r) => srv.once('listening', r));
+  const url = `http://127.0.0.1:${srv.address().port}/admin/probar`;
+  const api = async (ruta, method = 'GET', body) => (await fetch(url + ruta, { method, headers: { authorization: 'Bearer clave-test', 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })).json();
+  try {
+    const rec = recursos.crear(repo.db, { nombre: 'academy-video', descripcion: 'vídeo de una clase', mime: 'video/mp4', archivo: 'clase.mp4', datos: Buffer.from('mp4').toString('base64') }, { base });
+    const propio = path.join(path.dirname(rec.media_ruta), 'audio-de-la-prueba.ogg');
+    fs.writeFileSync(path.join(base, propio), 'ogg');
+    const { conv } = await api('/conversaciones', 'POST', { canal: 'whatsapp' });
+    pruebas.addMessage({ conversation_id: conv.id, autor: 'ia', texto: '[video: academy-video]', adjunto: 'video', media_ruta: rec.media_ruta, media_mime: 'video/mp4' });
+    pruebas.addMessage({ conversation_id: conv.id, autor: 'lead', texto: '', adjunto: 'audio', media_ruta: propio, media_mime: 'audio/ogg' });
+    await api(`/conversaciones/${conv.id}`, 'DELETE');
+    assert.ok(fs.existsSync(path.join(base, rec.media_ruta)), 'el archivo del recurso sigue en disco');
+    assert.ok(!fs.existsSync(path.join(base, propio)), 'el audio propio de la prueba sí se borra');
+  } finally {
+    srv.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
