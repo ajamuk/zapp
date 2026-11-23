@@ -71,10 +71,10 @@ Etiquetas de control en GHL: `parar ia` pausa la IA en ese contacto; `continuar 
 ## Aviso fuera de horario
 
 Si un lead escribe cuando Sofía está fuera de su horario (Ajustes → Horario de respuesta), recibe al momento un
-mensaje automático: «Ahora mismo no estamos atendiendo el WhatsApp. En cuanto lo leamos te contestamos…».
+mensaje automático: «Ahora mismo no estamos atendiendo los mensajes. En cuanto lo leamos te contestamos…».
 Sale una vez por cada cierre (aunque escriba varias veces esa noche) y Sofía le contesta de verdad en la apertura,
 sabiendo que ya recibió el aviso. Se configura en **Ajustes → Aviso fuera de horario**: activarlo, el texto
-(admite `{nombre}` y `{apertura}`, p. ej. «mañana a las 8:00») y los canales (por defecto solo WhatsApp).
+(admite `{nombre}` y `{apertura}`, p. ej. «mañana a las 8:00») y los canales (por defecto WhatsApp e Instagram).
 No sale a socios, chats en pausa ni teléfonos de prueba; en modo prueba queda como borrador. Código: `src/fuera-horario.js`.
 
 ## Herramientas de administración (solo desde el VPS)

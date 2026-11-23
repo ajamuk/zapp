@@ -83,13 +83,16 @@ test('aviso configurable: se apaga, cambia de texto y elige canal', async () => 
   await setter.handleWebhook(entrante('hola', 'w1'));
   assert.equal(llamadas.enviados[0], 'Hola Laura, te escribimos hoy a las 8:00.');
 
-  // Instagram viene apagado por defecto
+  // Instagram viene activado por defecto; se puede apagar por canal
   await setter.handleWebhook(entrante('hola', 'i1', { conversationId: 'c2', contactId: 'k2', canal: 'instagram', telefono: null }));
-  assert.equal(llamadas.enviados.length, 1);
+  assert.equal(llamadas.enviados.length, 2);
+  guardarAjustes(repo, { fueraHorario: { canales: { instagram: false } } });
+  await setter.handleWebhook(entrante('hola', 'i2', { conversationId: 'c4', contactId: 'k4', canal: 'instagram', telefono: null }));
+  assert.equal(llamadas.enviados.length, 2);
 
   guardarAjustes(repo, { fueraHorario: { activo: false } });
   await setter.handleWebhook(entrante('hola', 'w9', { conversationId: 'c3', contactId: 'k3' }));
-  assert.equal(llamadas.enviados.length, 1);
+  assert.equal(llamadas.enviados.length, 2);
 });
 
 test('en modo prueba el aviso queda como borrador; los teléfonos de prueba no tienen horario', async () => {
@@ -102,6 +105,13 @@ test('en modo prueba el aviso queda como borrador; los teléfonos de prueba no t
   const prueba = montar({ telefonosPrueba: ['600000000'] });
   await prueba.setter.handleWebhook(entrante('hola', 'w1'));
   assert.equal(prueba.llamadas.enviados.length, 0);
+});
+
+test('el texto por defecto anterior (solo WhatsApp) guardado se cambia por el nuevo', () => {
+  const { repo } = montar();
+  repo.guardarAjuste('fueraHorario', { activo: true, mensaje: '¡Hola! Ahora mismo no estamos atendiendo el WhatsApp. En cuanto lo leamos te contestamos y te ayudamos con todo lo que necesites 😊', canales: { whatsapp: true, instagram: false } });
+  assert.equal(leerAjustes(repo).fueraHorario.mensaje, MENSAJE_FUERA_HORARIO);
+  assert.doesNotMatch(MENSAJE_FUERA_HORARIO, /WhatsApp/);
 });
 
 test('textos del aviso', () => {
