@@ -33,7 +33,7 @@ Sofía escucha las notas de voz y ve las imágenes que manda el lead:
   adjuntar). Se publican en `PUBLIC_URL/r/<código>` (nginx deja pasar solo GET) para que GHL los descargue.
 - **Notas de voz** (`src/voz.js`, apagado por defecto): Sofía manda su respuesta como nota de voz de WhatsApp cuando
   se cumplen las normas de Ajustes → Notas de voz (solo teléfonos de prueba, solo si el lead mandó un audio, máximo
-  por conversación, largo máximo y tope de letras al mes). La voz es de ElevenLabs (`ELEVENLABS_API_KEY`,
+  por conversación, largo máximo y tope de letras al mes; las respuestas con enlaces o correos van siempre por escrito). La voz es de ElevenLabs (`ELEVENLABS_API_KEY`,
   `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`), se pasa a OGG/Opus con ffmpeg y se publica en
   `PUBLIC_URL/r/voz_<código>.ogg`. Sin clave, en modo prueba o si algo falla, sale el texto de siempre.
 - **Etiquetas → Avisar a Meta**: evento de la API de Conversiones al ponerse la etiqueta (`META_PIXEL_ID`,
