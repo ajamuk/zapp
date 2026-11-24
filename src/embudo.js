@@ -1,15 +1,19 @@
-// Embudo mensual por sede: leads nuevos → reservan prueba → asisten → primer pago.
+// Embudo mensual por sede. Cada sede tiene el suyo:
+//   Parla               leads nuevos → reservan prueba → asisten → primer pago
+//   Getafe y Las Rosas  leads nuevos → primer pago
 //
 // - Leads nuevos: contactos creados en GHL en el mes con la etiqueta de su sede (parla / getafe / las rosas,
 //   o "mpo <sede>"; si no hay, la del origen del contacto). Se descartan los que ya son socios (etiqueta
-//   "activo…" o "socio") y los que llevan una etiqueta de «no es un lead» del panel. Los interesados en
-//   El Cañaveral se cuentan aparte.
-// - Reservan, asisten y primer pago: el informe mensual de pruebas que saca metro-trial-crm del panel de
+//   "activo…" o "socio"), los que llevan una etiqueta de «no es un lead» del panel y los números de prueba.
+//   Los interesados en El Cañaveral se cuentan aparte.
+// - Primer pago (= alta): socios cuyo primer pago de toda su historia cae en el mes, hayan hecho o no clase de
+//   prueba. Sale del registro de socios de cada sede (clientes-analytics, un SQLite por sede que se rehace solo).
+// - Reservan y asisten (solo Parla): el informe mensual de pruebas que saca metro-trial-crm del panel de
 //   AimHarder (/opt/metro-trial-crm/data/aimharder-AAAA-MM.json). Reservan = pruebas no canceladas; asisten =
-//   marcadas como asistidas en AimHarder; primer pago = alta con primer pago posterior a la prueba.
-//   No hace ninguna petición a AimHarder: solo lee ese fichero.
+//   marcadas como asistidas. No hace ninguna petición a AimHarder: solo lee ese fichero.
 import fs from 'node:fs';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import { config } from './config.js';
 import { Ghl } from './ghl.js';
 import { plazasCanaveral } from './canaveral.js';
@@ -18,10 +22,13 @@ import { tagsNoLead } from './etiquetas.js';
 export const PLAZAS_APERTURA_CANAVERAL = 200;
 
 export const SEDES_EMBUDO = ['parla', 'getafe', 'las_rosas'];
+/** Pasos del embudo de cada sede, en orden. Solo Parla trabaja con clase de prueba. */
+export const PASOS_SEDE = { parla: ['leads', 'reservan', 'asisten', 'pagan'], getafe: ['leads', 'pagan'], las_rosas: ['leads', 'pagan'] };
 const CACHE_MS = 15 * 60 * 1000;
 const cache = new Map();
 
 const NOMBRES_SEDE = [['parla', ['parla', 'mpo parla']], ['getafe', ['getafe', 'mpo getafe']], ['las_rosas', ['las rosas', 'mpo las rosas']]];
+const NOMBRE_SEDE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas' };
 const CANAVERAL = /ca[ñn]averal/i;
 
 /**
@@ -115,6 +122,27 @@ export function pruebasPorSede(mes, dir = config.embudo.pruebasDir) {
   return { porSede: out, actualizado: fs.statSync(fichero).mtime.toISOString() };
 }
 
+/**
+ * Altas del mes por sede: socios cuyo primer pago histórico (`first_payment`, AAAA-MM-DD) cae en ese mes.
+ * `rutas`: { sede: fichero SQLite }. Una sede sin registro legible queda en null.
+ */
+export function altasPorSede(mes, rutas = config.embudo.sociosDb) {
+  const porSede = {}; let actualizado = null;
+  for (const sede of SEDES_EMBUDO) {
+    porSede[sede] = null;
+    const ruta = rutas?.[sede];
+    if (!ruta || !fs.existsSync(ruta)) continue;
+    let db;
+    try {
+      db = new Database(ruta, { readonly: true, fileMustExist: true, timeout: 2000 });
+      porSede[sede] = db.prepare("SELECT count(*) n FROM members WHERE first_payment LIKE ? AND id != '__undefined_client__'").get(`${mes}-%`).n;
+      const t = fs.statSync(ruta).mtime.toISOString();
+      if (!actualizado || t < actualizado) actualizado = t; // la más antigua: el dato es tan reciente como el peor registro
+    } catch (e) { console.error(`Embudo, socios de ${sede}:`, e.message); } finally { try { db?.close(); } catch { /* ya cerrada */ } }
+  }
+  return { porSede, actualizado };
+}
+
 /** Embudo completo del mes. Se guarda 15 minutos en memoria para no repetir llamadas a GHL. */
 /**
  * El Cañaveral (abre el 1 de febrero de 2027): aún no hay clases de prueba, así que su embudo es otro.
@@ -131,23 +159,32 @@ export function embudoCanaveral(repo, interesados, { ruta } = {}) {
   };
 }
 
-export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
+export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, socios, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
   let noLead = [];
   try { noLead = repo?.db ? tagsNoLead(repo.db) : []; } catch (e) { console.error('Embudo, etiquetas:', e.message); }
-  const clave = `${mes}|${dir || ''}|${noLead.join(',')}|${config.telefonosPrueba.join(',')}`;
-  const enCache = cache.get(clave);
-  if (enCache && ahora - enCache.t < CACHE_MS) return { ...enCache.valor, canaveral: embudoCanaveral(repo, enCache.valor.el_canaveral, { ruta: rutaCanaveral }) };
-
+  // Solo se guardan los leads (lo único que pregunta a GHL); pruebas y altas se leen de disco cada vez
+  const clave = `${mes}|${noLead.join(',')}|${config.telefonosPrueba.join(',')}`;
   let leads = null; let errorLeads = null;
-  try { leads = await leadsPorSede(ghl, mes, { noLead }); } catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
+  const enCache = cache.get(clave);
+  if (enCache && ahora - enCache.t < CACHE_MS) leads = enCache.leads;
+  else {
+    try { leads = await leadsPorSede(ghl, mes, { noLead }); cache.set(clave, { t: ahora, leads }); }
+    catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
+  }
   const pruebas = pruebasPorSede(mes, dir);
-  const sedes = SEDES_EMBUDO.map((sede) => ({
-    sede,
-    leads: leads ? leads[sede] : null,
-    reservan: pruebas ? pruebas.porSede[sede].reservan : null,
-    asisten: pruebas ? pruebas.porSede[sede].asisten : null,
-    pagan: pruebas ? pruebas.porSede[sede].pagan : null,
-  }));
+  const altas = altasPorSede(mes, socios);
+  const sedes = SEDES_EMBUDO.map((sede) => {
+    const pasos = PASOS_SEDE[sede];
+    const conPrueba = pasos.includes('reservan');
+    return {
+      sede, pasos,
+      leads: leads ? leads[sede] : null,
+      ...(conPrueba ? { reservan: pruebas ? pruebas.porSede[sede].reservan : null, asisten: pruebas ? pruebas.porSede[sede].asisten : null } : {}),
+      pagan: altas.porSede[sede],
+    };
+  });
+  const sinRegistro = SEDES_EMBUDO.filter((s) => altas.porSede[s] === null);
+  const faltaPruebas = !pruebas && sedes.some((x) => x.pasos.includes('reservan'));
   const valor = {
     mes, sedes,
     sin_sede: leads?.sin_sede ?? null,
@@ -155,9 +192,10 @@ export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = 
     el_canaveral: leads?.el_canaveral ?? null,
     no_leads: leads?.no_leads ?? 0, // contactos del mes marcados como «no es un lead»: fuera de todas las cifras
     pruebas_actualizadas: pruebas?.actualizado ?? null,
-    avisos: [errorLeads, pruebas ? null : 'Todavía no hay informe de pruebas de AimHarder para este mes.'].filter(Boolean),
+    altas_actualizadas: altas.actualizado,
+    avisos: [errorLeads, faltaPruebas ? 'Todavía no hay informe de pruebas de AimHarder para este mes.' : null,
+      sinRegistro.length ? `No se ha podido leer el registro de socios de ${sinRegistro.map((s) => NOMBRE_SEDE[s]).join(', ')}: falta su primer pago.` : null].filter(Boolean),
   };
-  if (!errorLeads) cache.set(clave, { t: ahora, valor });
   return { ...valor, canaveral: embudoCanaveral(repo, valor.el_canaveral, { ruta: rutaCanaveral }) };
 }
 

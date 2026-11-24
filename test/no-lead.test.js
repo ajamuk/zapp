@@ -92,7 +92,7 @@ test('embudo: los contactos de GHL con el tag no cuentan como leads nuevos', asy
 
   const { repo } = montar();
   limpiarCacheEmbudo();
-  const r = await embudo('2026-11', { ghl, repo, dir: '/no-existe' });
+  const r = await embudo('2026-11', { ghl, repo, dir: '/no-existe', socios: {} });
   assert.equal(r.no_leads, 2);
   assert.equal(r.sedes.find((s) => s.sede === 'parla').leads, 1);
 });
