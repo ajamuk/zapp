@@ -990,22 +990,31 @@ function pintarFiltros() {
 
 const normalizar = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k, v]) => (Array.isArray(v) ? v.length : v) && !(k === 'modo' && (c.etiquetas || []).length < 2)).map(([k, v]) => [k, Array.isArray(v) ? [...v].map(String).sort() : v]).sort());
 
-// Chats al día sin recargar la página: cada 30 s con la pestaña a la vista (y al volver a ella). La lista se
-// repinta sola; el chat abierto solo si ha cambiado y no estás escribiendo, reportando ni oyendo un audio en él.
-let refrescando = false;
-async function refrescarChats() {
-  if (refrescando || document.hidden || estado.seccion !== 'chats' || !estado.info || !$('#lista') || $('#q') === document.activeElement) return;
-  refrescando = true;
+// Chats al día sin recargar la página, con la pestaña a la vista (y al volver a ella): el chat abierto cada 5 s y
+// la lista cada 15 s. El chat solo se repinta si ha cambiado, y nunca mientras tecleas, reportas, programas un
+// mensaje u oyes un audio en él (lo que estés escribiendo al lead se conserva).
+let refrescandoHilo = false, refrescandoLista = false;
+async function refrescarHilo() {
+  const id = estado.conv; const hilo = $('#hilo');
+  if (refrescandoHilo || document.hidden || estado.seccion !== 'chats' || !id || !$('#msgs')) return;
+  const ocupado = () => hilo.querySelector('form:not(#fresp)') || Date.now() - (estado.tecleo || 0) < 4000 || $('#benv')?.disabled
+    || (hilo.contains(document.activeElement) && document.activeElement.matches('select, input, textarea:not(#rtxt)'))
+    || [...hilo.querySelectorAll('audio, video')].some((a) => !a.paused);
+  if (ocupado()) return;
+  refrescandoHilo = true;
   try {
-    await Promise.all([lista(), refrescarVistas()]);
-    const id = estado.conv; const hilo = $('#hilo');
-    if (!id || !$('#msgs') || hilo.querySelector('form') || hilo.contains(document.activeElement) || [...hilo.querySelectorAll('audio, video')].some((a) => !a.paused)) return;
     const d = await api('/panel/conversaciones/' + encodeURIComponent(id));
-    if (estado.conv === id && firmaHilo(d) !== estado.firmaHilo && !hilo.querySelector('form')) await abrir(id, { datos: d, mantener: true });
-  } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescando = false; }
+    if (estado.conv === id && $('#msgs') && firmaHilo(d) !== estado.firmaHilo && !ocupado()) await abrir(id, { datos: d, mantener: true });
+  } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescandoHilo = false; }
 }
-setInterval(refrescarChats, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarChats(); });
+async function refrescarChats() {
+  if (refrescandoLista || document.hidden || estado.seccion !== 'chats' || !estado.info || !$('#lista')) return;
+  refrescandoLista = true;
+  try { await Promise.all([lista(), refrescarVistas()]); } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescandoLista = false; }
+}
+setInterval(refrescarHilo, 5000);
+setInterval(refrescarChats, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refrescarChats(); refrescarHilo(); } });
 
 /** En escritorio, la zona de chats ocupa lo que queda de ventana (cambia al abrir los filtros o cambiar el tamaño). */
 function ajustarAltoChats() {
@@ -1063,7 +1072,7 @@ async function lista() {
 }
 
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
-const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
+const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
 
 async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
@@ -1125,7 +1134,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     if (conFoco) { t.focus(); t.setSelectionRange(...cursor); }
     const crecer = () => { t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight + 2) + 'px'; };
     if (t.value) crecer();
-    t.oninput = () => { estado.respTexto = t.value; crecer(); };
+    t.oninput = () => { estado.respTexto = t.value; estado.tecleo = Date.now(); crecer(); };
     t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
     $('#fresp').onsubmit = async (e) => {
       e.preventDefault();
