@@ -100,7 +100,9 @@ test('la copia del conector de un archivo que manda Sofía (con su pie) no la ap
   assert.ok(!hist().some((x) => x.startsWith('humano')));
 });
 
-test('un envío sin confirmar que sí salió: al reintentar se reconoce como de Sofía, sin pausa ni segunda respuesta', async () => {
+test('un envío sin confirmar que sí salió: al reintentar se reconoce como de Sofía, sin pausa ni segunda respuesta', async (t) => {
+  // Hora fija de día: con el reloj real, de madrugada el reintento se aplaza a la apertura y la prueba fallaba
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-17T10:00:00Z') });
   const { setter, repo, en, hist, ahora, avanzar } = montar({ respuestas: [['hola! qué sede te pilla mejor?'], ['otra']], realClock: true });
   en.lista = [msg('g1', 'inbound', 'TYPE_WHATSAPP', 'hola', hace(ahora(), 5))];
   await setter.handleWebhook(webhook('hola'));
