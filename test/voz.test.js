@@ -39,6 +39,9 @@ test('ajustes: se guardan validados y el identificador de voz raro se rechaza', 
   assert.deepEqual({ ...leerAjustes(repo).voz }, { ...voz.ajustesVoz(), activo: true, maxPorConversacion: 1, vozId: 'JBFqnCBsd6RMkjVDRZzb' });
   assert.throws(() => guardarAjustes(repo, { voz: { vozId: '../x' } }), /Voice ID/);
   assert.throws(() => guardarAjustes(repo, { voz: { maxCaracteres: 5 } }), /letras por nota/);
+  assert.equal(leerAjustes(repo).voz.velocidad, 100);
+  assert.equal(guardarAjustes(repo, { voz: { velocidad: 108 } }).voz.velocidad, 108);
+  assert.throws(() => guardarAjustes(repo, { voz: { velocidad: 300 } }), /velocidad/);
 });
 
 test('sintetizar: pide el MP3 a ElevenLabs, lo convierte a OGG y da una URL pública que solo abre notas de voz', async () => {
@@ -57,6 +60,14 @@ test('sintetizar: pide el MP3 a ElevenLabs, lo convierte a OGG y da una URL púb
     assert.equal(r.media_mime, 'audio/ogg');
     assert.deepEqual(fs.readdirSync(path.join(dir, 'voz')), [path.basename(r.media_ruta)], 'el MP3 intermedio se borra');
     assert.equal(voz.rutaDeCodigo(r.url.split('/').pop().replace('.ogg', '')), r.media_ruta);
+    // La velocidad se aplica al convertir (atempo); a 100 no se toca el audio
+    const vistos = [];
+    const espia = async (args) => { vistos.push(args.join(' ')); fs.writeFileSync(args.at(-1), 'ogg'); };
+    await voz.sintetizar('hola', { base: dir, fetchImpl, convertir: espia, velocidad: 108 });
+    await voz.sintetizar('hola', { base: dir, fetchImpl, convertir: espia });
+    assert.match(vistos[0], /-filter:a atempo=1\.08 /);
+    assert.doesNotMatch(vistos[1], /atempo/);
+    for (const f of fs.readdirSync(path.join(dir, 'voz'))) if (f !== path.basename(r.media_ruta)) fs.rmSync(path.join(dir, 'voz', f));
     for (const malo of ['voz_../../setter', 'voz_corto', 'otra-cosa', '']) assert.equal(voz.rutaDeCodigo(malo), null);
     await assert.rejects(() => voz.sintetizar('hola', { base: dir, fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'no' }), convertir }), /ElevenLabs → 401/);
     await assert.rejects(() => voz.sintetizar('hola', { base: dir, fetchImpl, convertir: async () => { throw new Error('ffmpeg: roto'); } }), /roto/);
@@ -92,6 +103,15 @@ test('con las normas cumplidas la respuesta sale como una sola nota de voz y que
   assert.deepEqual({ ...fila }, { texto: 'claro que sí 😊\nte espero el lunes', adjunto: 'audio', media_ruta: 'voz/abc.ogg', external_id: 'a1' });
   assert.equal(voz.uso(m.repo.db, 'c1', T0).enviadasConv, 1);
   assert.ok(voz.uso(m.repo.db, 'c1', T0).caracteresMes > 20);
+});
+
+test('si la respuesta va a salir por voz, Sofía lo sabe por el contexto y la escribe breve', () => {
+  const m = montar(); m.lead();
+  assert.match(m.setter.contexto(m.conv()), /te ha mandado una nota de voz.*muy breve/);
+  const texto = montar(); texto.lead(null);
+  assert.doesNotMatch(texto.setter.contexto(texto.conv()), /nota de voz, leída/);
+  const apagado = montar({ ajustes: { activo: false } }); apagado.lead();
+  assert.doesNotMatch(apagado.setter.contexto(apagado.conv()), /nota de voz, leída/);
 });
 
 test('apagado, sin audio del lead, en modo prueba o al llegar al máximo: sale el texto de siempre', async () => {
