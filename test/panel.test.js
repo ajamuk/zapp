@@ -175,3 +175,22 @@ test('panel: preguntas sin respuesta — listar, responder (con las iguales de o
     assert.equal((await (await api('/panel/preguntas?estado=pendiente')).json()).preguntas.length, 0);
   } finally { srv.close(); }
 });
+
+test('ajustes: los teléfonos de prueba se añaden y quitan desde el panel y el setter los ve sin reiniciar', async () => {
+  const { srv, api } = await servidor();
+  const { esTelefonoPrueba } = await import('../src/setter.js');
+  const guardar = (lista) => api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ telefonosPrueba: lista }) });
+  try {
+    const r = await (await guardar(['600 111 222', '+34 600-111-222', '0034611222333'])).json();
+    assert.deepEqual(r.telefonosPrueba, ['+34600111222', '+34611222333']); // limpios y sin repetidos
+    assert.ok(esTelefonoPrueba('+34600111222', config.telefonosPrueba));
+    assert.equal((await guardar(['hola'])).status, 400);
+    assert.equal((await guardar(['12345'])).status, 400);
+    const q = await (await guardar(['611222333'])).json();
+    assert.deepEqual(q.telefonosPrueba, ['+34611222333']);
+    assert.ok(!esTelefonoPrueba('+34600111222', config.telefonosPrueba));
+    // Guardar otros ajustes no toca la lista
+    await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ minDelay: 1, maxDelay: 2 }) });
+    assert.deepEqual((await (await api('/admin/panel/ajustes')).json()).telefonosPrueba, ['+34611222333']);
+  } finally { await guardar([]); srv.close(); }
+});
