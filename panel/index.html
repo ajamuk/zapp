@@ -421,6 +421,64 @@
   #avisos .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; background: #fff; color: var(--red); border: 1px solid #d9b8b8; border-left: 4px solid var(--red);
     border-radius: 8px; padding: 10px 12px; font: 14px/1.4 system-ui, sans-serif; box-shadow: 0 6px 24px #0003; }
   #avisos .toast button { all: unset; cursor: pointer; padding: 0 4px; color: var(--muted); font-size: 16px; line-height: 1.2; }
+
+  /* Chats compactos: lo que se usa (vistas, lista, conversación y caja de respuesta) cabe en la ventana sin bajar la página */
+  #main:has(.chats) > h2 { display: none; }
+  #main:has(.chats) .vistas { padding: 0; margin: 0 0 6px; gap: 4px; }
+  #raiz #main:has(.chats) .vistas button { min-height: 30px; padding: 3px 7px; font-size: 12px; }
+  #main:has(.chats) .vistas .n { min-width: 0; padding: 0 5px; font-size: 11px; }
+  .panel-filtros { margin-bottom: 6px; } .activos { margin-bottom: 6px; } .activos:empty { display: none; }
+  .col-lista { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  #raiz .col-lista .barra-filtros { flex: none; flex-wrap: nowrap; gap: 4px; margin: 0; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+  #raiz .col-lista .barra-filtros > * { min-height: 30px; padding: 3px 8px; font-size: 12.5px; }
+  #raiz .col-lista .barra-filtros input { flex: 1 1 0; min-width: 0; }
+  #raiz .col-lista .barra-filtros select { flex: none; width: 66px; padding-inline: 4px; }
+  .col-lista .lista { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+  #raiz .item { padding: 7px 12px; min-height: 0; }
+  .item .fila { align-items: baseline; } .item .fila .chip { border: 0; padding: 0; }
+  .item .ult { margin: 1px 0 4px; font-size: 12.5px; }
+  .item .chips { flex-wrap: nowrap; overflow: hidden; gap: 3px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  .item .chips > * { flex: none; font-size: 10.5px; padding: 1px 6px; }
+  .chats { gap: 10px; }
+  .hilo .cab { padding: 6px 12px; gap: 6px 10px; flex-wrap: nowrap; align-items: flex-start; }
+  .hilo .cab .quien { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; flex: 1; min-height: 32px; }
+  .hilo .cab .quien b { font-size: 15px; margin-right: 2px; }
+  .hilo .cab .motivo-pausa { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+  .hilo .cab .acciones-f { flex: none; flex-wrap: nowrap; gap: 6px; }
+  #raiz .hilo .cab button { min-height: 32px; padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+  .hilo .etq-hilo { padding: 4px 12px; gap: 4px; }
+  #raiz .hilo .etq-hilo select { min-height: 26px; padding: 1px 6px; font-size: 12.5px; }
+  #raiz .hilo .etq-hilo button.x { min-height: 24px; min-width: 22px; }
+  .hilo .msgs { padding: 10px 12px; gap: 4px; }
+  .burbuja { padding: 5px 10px; } .burbuja .meta { margin-top: 1px; font-size: 10.5px; }
+  .dia-sep { margin: 4px 0 1px; }
+  .hilo .resp { padding: 6px 12px; }
+  .hilo .resp textarea { min-height: 36px; padding: 6px 9px; resize: none; }
+  #raiz .hilo .resp button { min-height: 36px; padding: 4px 14px; }
+  .hilo .resp p:empty { display: none; }
+  .hilo .pie { padding: 8px 12px; } .pie-b { margin-bottom: 10px; }
+  @media (min-width: 1041px) {
+    .sofia { padding-top: 10px; padding-bottom: 8px; }
+    .sofia-cabecera { margin-bottom: 6px; } .sofia-cabecera h1 { font-size: 20px; }
+    #raiz #bsalir { min-height: 30px; padding: 2px 10px; font-size: 13px; }
+    .secciones { margin-bottom: 8px; gap: 4px; } .secciones a { min-height: 34px; padding: 5px 9px; font-size: 13.5px; }
+    .hilo:has(.pie) > .pie { padding: 10px 12px; }
+  }
+  @media (max-width: 1040px) {
+    .chats.con-hilo .col-lista { display: none; }
+    .col-lista { overflow: visible; }
+    /* Con un chat abierto, la conversación ocupa la pantalla: fuera cabecera y menú (se vuelve con «← Chats») */
+    .sofia:has(.chats.con-hilo) { padding-top: 8px; padding-bottom: 8px; }
+    .sofia:has(.chats.con-hilo) :is(.sofia-cabecera, .secciones) { display: none; }
+    .hilo { scroll-margin-top: 8px; }
+    .hilo .centro { flex: none; height: var(--alto-centro, calc(100dvh - 150px)); }
+    .hilo .msgs { flex: 1 1 auto; height: auto; min-height: 0; }
+    .hilo .cab { flex-wrap: wrap; }
+    .hilo .cab .quien { flex: 1 1 100%; }
+    .hilo .cab .acciones-f { width: 100%; } .hilo .cab .acciones-f button { flex: 1; }
+    #raiz .hilo .cab button { min-height: 34px; }
+    #raiz .hilo .cab .volver { flex: none; }
+  }
 </style>
 </head>
 <body>
@@ -829,19 +887,14 @@ async function chats() {
   const [vistas, opciones] = await Promise.all([api('/panel/vistas'), cargarOpciones()]);
   if (estado.seccion !== 'chats') return;
   estado.vistas = vistas;
-  if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = 'todos'; estado.crit = {}; }
+  if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = vistas.some((v) => v.id === 'leads') ? 'leads' : 'todos'; estado.crit = null; }
   estado.crit ??= { ...(vistas.find((v) => String(v.id) === String(estado.vista))?.criterios || {}) };
   $('#main').innerHTML = `<h2>Chats</h2>
     <div class="vistas" role="tablist" aria-label="Vistas de chats">${vistas.map((v) => `<button role="tab" data-v="${esc(v.id)}" aria-selected="${String(v.id) === String(estado.vista)}" class="${String(v.id) === String(estado.vista) ? 'activo' : ''} ${v.propia ? 'propia' : ''}" title="${v.propia ? 'Vista creada por vosotros' : 'Vista del sistema'}">${v.propia ? '★ ' : ''}${esc(v.nombre)} <span class="n">${v.total}</span></button>`).join('')}
       <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
-    <div class="barra-filtros">
-      <input id="q" type="search" aria-label="Buscar chat o mensaje" placeholder="Buscar nombre, teléfono o mensaje" value="${esc(estado.q)}">
-      <select id="bexp" aria-label="Exportar a CSV"><option value="">Exportar…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select>
-      <button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button>
-    </div>
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
     <div id="activos" class="activos"></div>
-    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="lista" id="lista"><div class="vacio">Cargando…</div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
+    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="col-lista"><div class="barra-filtros"><input id="q" type="search" aria-label="Buscar chat o mensaje" title="Buscar por nombre, teléfono o mensaje" placeholder="Buscar…" value="${esc(estado.q)}"><button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button><select id="bexp" aria-label="Exportar a CSV" title="Exportar a CSV"><option value="">CSV…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select></div><div class="lista" id="lista"><div class="vacio">Cargando…</div></div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
   // Cambiar de vista solo vuelve a pedir la lista (una consulta, no tres) y los contadores se ponen al día aparte
   $('#main').querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
     estado.vista = b.dataset.v; estado.crit = { ...(estado.vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.limite = 100;
@@ -924,7 +977,7 @@ function pintarFiltros() {
   });
   // Filtros activos como chips quitables
   const act = resumenCriterios(c, estado.opciones);
-  $('#activos').innerHTML = act.length ? act.map(([k, v, t]) => `<button type="button" class="activo-f" data-qk="${k}" data-qv="${esc(v)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ✕</button>`).join('') + (act.length > 1 ? '<button type="button" class="activo-f limpiar" id="qall">Quitar todos</button>' : '') : '';
+  $('#activos').innerHTML = act.length && cambiado ? act.map(([k, v, t]) => `<button type="button" class="activo-f" data-qk="${k}" data-qv="${esc(v)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ✕</button>`).join('') + (act.length > 1 ? '<button type="button" class="activo-f limpiar" id="qall">Quitar todos</button>' : '') : '';
   $('#activos').querySelectorAll('[data-qk]').forEach((b) => b.onclick = () => {
     const k = b.dataset.qk; let v = b.dataset.qv; if (['etiquetas', 'sin_etiquetas'].includes(k)) v = Number(v);
     aplicar(quitarCriterio(c, k, v));
@@ -956,11 +1009,17 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 /** En escritorio, la zona de chats ocupa lo que queda de ventana (cambia al abrir los filtros o cambiar el tamaño). */
 function ajustarAltoChats() {
   const ch = $('#ch'); if (!ch) return;
-  if (matchMedia('(max-width: 1040px)').matches) { ch.style.removeProperty('--alto-chats'); return; }
+  if (matchMedia('(max-width: 1040px)').matches) {
+    ch.style.removeProperty('--alto-chats');
+    // Móvil: mensajes y caja de respuesta caben en la pantalla; la ficha del lead queda debajo
+    const hilo = $('#hilo'), centro = hilo?.querySelector('.centro');
+    if (centro) hilo.style.setProperty('--alto-centro', `${Math.max(260, window.innerHeight - (estado.topHilo || 0) - (centro.getBoundingClientRect().top - hilo.getBoundingClientRect().top) - 8)}px`);
+    return;
+  }
   const arriba = ch.getBoundingClientRect().top + window.scrollY;
   // Si la ventana es baja (portátil pequeño), la zona ocupa la ventana entera: se baja la página una vez y cabe todo
-  const libre = window.innerHeight - arriba - 21;
-  ch.style.setProperty('--alto-chats', `${libre >= 480 ? libre : Math.max(420, window.innerHeight - 32)}px`);
+  const libre = window.innerHeight - arriba - 9;
+  ch.style.setProperty('--alto-chats', `${libre >= 400 ? libre : Math.max(400, window.innerHeight - 20)}px`);
 }
 window.addEventListener('resize', ajustarAltoChats);
 
@@ -1032,15 +1091,14 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   const borrador = estado.respTexto || '';
   const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
   const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
-  $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">Volver a chats</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
-      <div class="chips" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipsConv(c)}</div>${c.pause_reason ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.pause_reason)}</div>` : ''}</div>
+  $('#hilo').innerHTML = `<div class="cab"><div class="quien"><button class="volver" id="bv" aria-label="Volver a chats">← Chats</button><b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b>${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}${chipsConv(c)}${c.pause_reason ? `<div class="motivo-pausa">${esc(c.pause_reason)}</div>` : ''}</div>
       <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
     <div class="centro"><div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
       return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}${x.tipo === 'fuera_horario' ? ' · aviso automático fuera de horario' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
     ${!d.escribir ? '' : d.escribir.motivo ? `<p class="resp-no">✍️ ${esc(d.escribir.motivo)}</p>`
-      : `<form class="resp" id="fresp"><textarea id="rtxt" rows="2" maxlength="2000" placeholder="Escribe al lead… (Ctrl+Intro para enviar)" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><button class="primario" id="benv">Enviar</button><p>Le llega tal cual lo escribas.${c.ai_paused || c.derivado ? ' Sofía está en pausa en este chat.' : d.escribir.pausa ? ' Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
+      : `<form class="resp" id="fresp"><textarea id="rtxt" rows="1" maxlength="2000" placeholder="Escribe al lead (le llega tal cual)" title="Ctrl+Intro para enviar" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><button class="primario" id="benv">Enviar</button><p>${c.ai_paused || c.derivado ? 'Sofía está en pausa en este chat.' : d.escribir.pausa ? 'Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
@@ -1054,7 +1112,8 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Desde aquí puedes contestar al lead, revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
-  if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
+  if (!mantener && movil) { $('#hilo').scrollIntoView({ block: 'start' }); estado.topHilo = Math.max(0, $('#hilo').getBoundingClientRect().top); }
+  if (movil) { ajustarAltoChats(); $('#msgs').scrollTop = alFinal ? 1e9 : y; }
   // Ventana baja en escritorio: al abrir un chat, la zona de chats sube sola hasta ocupar la ventana
   else if (!mantener && $('#ch').getBoundingClientRect().bottom > window.innerHeight + 2) $('#ch').scrollIntoView({ block: 'start' });
   cargarMedios($('#msgs'));
@@ -1063,7 +1122,9 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   if ($('#fresp')) {
     const t = $('#rtxt');
     if (conFoco) { t.focus(); t.setSelectionRange(...cursor); }
-    t.oninput = () => { estado.respTexto = t.value; };
+    const crecer = () => { t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight + 2) + 'px'; };
+    if (t.value) crecer();
+    t.oninput = () => { estado.respTexto = t.value; crecer(); };
     t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
     $('#fresp').onsubmit = async (e) => {
       e.preventDefault();

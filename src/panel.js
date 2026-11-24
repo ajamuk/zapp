@@ -149,6 +149,7 @@ export function filtrosSql(criterios = {}) {
 }
 
 export const VISTAS_SISTEMA = [
+  { id: 'leads', nombre: 'Leads', criterios: { estado: ['leads'] } },
   { id: 'todos', nombre: 'Todos', criterios: {} },
   { id: 'ia_activa', nombre: 'IA activa', criterios: { estado: ['ia_activa'] } },
   { id: 'espera', nombre: 'Esperan respuesta', criterios: { espera: 'equipo', estado: ['leads'] } },
