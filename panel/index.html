@@ -723,7 +723,7 @@ async function resumen({ silencioso = false } = {}) {
       ${tarjeta(r.ahora.derivadas, 'Derivadas al equipo', 'violet')}
       ${tarjeta(r.ahora.pausadas, 'Con Sofía en pausa', 'amber')}
       ${tarjeta(r.ahora.altas_pendientes, 'Altas pendientes', 'amber')}
-      ${tarjeta(r.ahora.pruebas, 'Solicitudes de prueba en Parla')}
+      ${tarjeta(r.ahora.pruebas, 'Clases de prueba por hacer en Parla')}
     </div>
     ${r.serie.length > 1 ? `<h3>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h3><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead || 0} lead · ${x.ia || 0} Sofía">
       <i style="height:${(x.ia || 0) / max * 70}px;background:var(--green)"></i><i style="height:${(x.lead || 0) / max * 70}px;background:var(--muted)"></i></div>`).join('')}</div>` : ''}

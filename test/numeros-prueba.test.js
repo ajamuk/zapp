@@ -13,7 +13,7 @@ test('los chats de los números de prueba no cuentan en resumen, estadísticas n
     repo.updateConv(id, { prompt_v: 1, tipo: 'captacion', prueba_reservada: 1, derivado: 1 });
     repo.addMessage({ conversation_id: id, autor: 'lead', texto: 'hola' });
     repo.addMessage({ conversation_id: id, autor: 'ia', texto: 'hola', enviado: 1 });
-    repo.schedule(id, 'comercial-5h', new Date(Date.now() + 3600e3).toISOString());
+    repo.schedule(id, 'comercial-5h', new Date(Date.now() - 60e3).toISOString());
   };
   crear('real', '+34600111222'); crear('test', '+34 611 222 333'); crear('test2', '0034611222333');
   return conNumeros(['+34611222333'], () => {
