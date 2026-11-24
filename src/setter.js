@@ -5,7 +5,7 @@ import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
-import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
+import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, chatCaliente, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
@@ -474,7 +474,7 @@ export class Setter {
     if (!programar) return { registrado: true };
 
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
-    const { lectura } = retardoHumano([], { random: this.random });
+    const { lectura } = retardoHumano([], { random: this.random, caliente: chatCaliente(actual.last_ai_at, ahora), leido: String(evt.texto || '').length });
     let cuando = new Date(ahora.getTime() + lectura);
     // Los teléfonos de prueba del equipo no tienen horario: se prueba a Sofía a cualquier hora
     let aviso = null;

@@ -45,9 +45,28 @@ export function hoyLocal(date = new Date(), tz = config.tz) {
 
 export const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Retardo humano: espera aleatoria + tiempo de escritura según longitud. */
-export function retardoHumano(textos, { min = config.ai.minDelay, max = config.ai.maxDelay, velocidad = config.ai.typingSpeed, tope = config.ai.typingMax, random = Math.random } = {}) {
-  const lectura = (min + random() * (max - min)) * 1000;
-  const escritura = textos.map((t) => Math.min(tope * 1000, (t.length / Math.max(1, velocidad)) * 1000));
+/**
+ * Retardo humano. Devuelve, en milisegundos:
+ * - `lectura`: lo que tarda Sofía en ver el mensaje y ponerse a contestar. Al azar entre `min` y `max` (Ajustes),
+ *   más lo que se tarda en leer lo que ha escrito el lead (`leido`, en letras; unas 30 por segundo, 6 s como mucho).
+ *   Si la conversación está `caliente` (Sofía acaba de escribir y el lead contesta enseguida), se queda en el tramo
+ *   bajo de la franja: quien ya está en el chat contesta antes que quien tiene que abrirlo.
+ * - `escritura`: espera antes de cada burbuja, según su longitud y la velocidad de Ajustes. Cada una varía un ±20 %
+ *   para que no lleguen a intervalos clavados; las largas pasan del `tope` solo un poco (un 20 % del exceso, hasta
+ *   1,75 × tope) en vez de tardar todas lo mismo; y de la segunda en adelante hay una pausa corta entre burbuja y
+ *   burbuja, para que dos frases cortas no salgan pegadas.
+ */
+export function retardoHumano(textos, { min = config.ai.minDelay, max = config.ai.maxDelay, velocidad = config.ai.typingSpeed, tope = config.ai.typingMax, random = Math.random, caliente = false, leido = 0 } = {}) {
+  const franja = Math.max(0, max - min) * (caliente ? 0.4 : 1);
+  const lectura = (min + random() * franja + Math.min(6, Math.max(0, leido) / 30)) * 1000;
+  const escritura = textos.map((t, i) => {
+    const bruto = String(t).length / Math.max(1, velocidad);
+    const base = bruto <= tope ? bruto : Math.min(tope * 1.75, tope + (bruto - tope) * 0.2);
+    const pausa = i === 0 ? 0 : 0.8 + random() * 1.2; // entre burbujas: releer, pensar la siguiente
+    return Math.round((base * (0.8 + random() * 0.4) + pausa) * 1000);
+  });
   return { lectura, escritura };
 }
+
+/** ¿Está el chat «caliente»? Sofía escribió hace menos de 3 minutos: se supone que sigue con el chat abierto. */
+export const chatCaliente = (ultimoIa, ahora = new Date()) => { const t = ultimoIa ? ahora.getTime() - new Date(ultimoIa).getTime() : NaN; return t >= 0 && t < 3 * 60000; };
