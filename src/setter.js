@@ -987,7 +987,7 @@ export class Setter {
         continue;
       }
       try {
-        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
+        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), mime: r.mime, nombre: `${r.nombre}${String(r.media_ruta).match(/\.[a-z0-9]+$/i)?.[0] || ''}`, ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
         this.repo.addMessage({ ...msg, external_id: out?.messageId || null });
       } catch (e) {
         // GHL puede dejar el mensaje creado aunque devuelva un error: si aparece luego, es de Sofía

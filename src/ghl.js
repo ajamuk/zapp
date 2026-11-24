@@ -133,9 +133,19 @@ export class Ghl {
     return this.req('POST', '/conversations/messages', this.cuerpoEnvio(canal, { contactId, message: texto }));
   }
 
-  /** Archivo (imagen, vídeo, PDF…) por WhatsApp o Instagram. `url` debe ser pública (GHL la descarga). */
-  enviarAdjunto({ contactId, canal, url, texto = '' }) {
-    return this.req('POST', '/conversations/messages', this.cuerpoEnvio(canal, { contactId, attachments: [url], ...(texto ? { message: texto } : {}) }));
+  /**
+   * Archivo (imagen, vídeo, PDF…) por WhatsApp o Instagram. `url` debe ser pública.
+   * Por WhatsApp el archivo va en `whatsapp.media` (el formato de la bandeja de GHL): Meta descarga la URL y lo
+   * entrega con `texto` como pie. Con `attachments` a secas GHL acepta el envío, pero al lead solo le llega el texto.
+   */
+  enviarAdjunto({ contactId, canal, url, texto = '', mime = '', nombre = '' }) {
+    const resto = { contactId, ...(texto ? { message: texto } : {}) };
+    if (canal === 'whatsapp' && mime) {
+      const tipo = { image: 'image', video: 'video', audio: 'audio' }[String(mime).split('/')[0]] || 'document';
+      const archivo = nombre || decodeURIComponent(String(url).split('/').pop().split('?')[0]);
+      resto.whatsapp = { type: 'media', media: { url, type: tipo, name: archivo, mimeType: mime, ...(texto ? { caption: texto } : {}) } };
+    } else resto.attachments = [url];
+    return this.req('POST', '/conversations/messages', this.cuerpoEnvio(canal, resto));
   }
 
   /**

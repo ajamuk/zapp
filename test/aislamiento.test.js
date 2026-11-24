@@ -328,6 +328,18 @@ test('cliente de GHL: con aislamiento, todo envío lleva el número propio como 
   ]);
 });
 
+test('cliente de GHL: por WhatsApp el archivo va en whatsapp.media (con attachments a secas solo llega el texto)', async () => {
+  const { ghl, peticiones } = clienteGhl(AISL);
+  await ghl.enviarAdjunto({ contactId: 'k1', canal: 'whatsapp', url: 'https://ejemplo.invalid/r/abc.mp4', texto: 'pie', mime: 'video/mp4', nombre: 'clase.mp4' });
+  await ghl.enviarAdjunto({ contactId: 'k1', canal: 'whatsapp', url: 'https://ejemplo.invalid/r/abc.pdf', mime: 'application/pdf' });
+  assert.deepEqual(peticiones.map((p) => p.body), [
+    { type: 'WhatsApp', contactId: 'k1', message: 'pie', fromNumber: PROPIO,
+      whatsapp: { type: 'media', media: { url: 'https://ejemplo.invalid/r/abc.mp4', type: 'video', name: 'clase.mp4', mimeType: 'video/mp4', caption: 'pie' } } },
+    { type: 'WhatsApp', contactId: 'k1', fromNumber: PROPIO,
+      whatsapp: { type: 'media', media: { url: 'https://ejemplo.invalid/r/abc.pdf', type: 'document', name: 'abc.pdf', mimeType: 'application/pdf' } } },
+  ]);
+});
+
 test('cliente de GHL: con aislamiento no sale nada por Instagram, Messenger ni por plantilla (ni se toca el contacto)', async () => {
   const { ghl, peticiones } = clienteGhl(AISL);
   assert.throws(() => ghl.sendMessage({ contactId: 'k1', canal: 'instagram', texto: 'hola' }), /solo se envía por WhatsApp/);
