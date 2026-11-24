@@ -230,7 +230,25 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   });
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);
+    // ¿Se le puede escribir desde aquí? (cuadro de respuesta del panel; `motivo` vacío = sí)
+    if (d && setter?.motivoNoEscribir) d.escribir = { motivo: setter.motivoNoEscribir(d.conv), pausa: Boolean(leerAjustes(repo).pausarSiEquipoEscribe && setter.enviaDeVerdad(d.conv)) };
     return d ? res.json(d) : res.status(404).json({ error: 'no existe' });
+  });
+  // Contestar al lead desde el panel, como si se escribiera en el CRM
+  admin.post('/panel/conversaciones/:id/enviar', async (req, res) => {
+    const texto = typeof req.body?.texto === 'string' ? req.body.texto.trim() : '';
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    if (!texto) return res.status(400).json({ error: 'Escribe el mensaje.' });
+    if (texto.length > 2000) return res.status(400).json({ error: 'El mensaje es demasiado largo (máximo 2000 caracteres).' });
+    if (!setter?.enviarDelEquipo) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = await setter.enviarDelEquipo(req.params.id, texto);
+      res.json({ ok: true, pausada: Boolean(r?.pausada) });
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] envío del equipo:', e.message);
+      res.status(502).json({ error: 'GHL no ha aceptado el mensaje: no se ha enviado. Inténtalo otra vez o escríbelo en el CRM.' });
+    }
   });
   // ⚡ Forzar respuesta: Sofía contesta ya (respeta su horario)
   admin.post('/panel/conversaciones/:id/forzar', (req, res) => {

@@ -1259,6 +1259,40 @@ export class Setter {
     return this.enviaDeVerdad(conv) ? 'enviada al lead' : 'borrador (modo prueba)';
   }
 
+  /** ¿Por qué no se puede escribir a mano en este chat desde el panel? Cadena vacía si se puede. */
+  motivoNoEscribir(conv) {
+    if (!conv) return 'Ese chat no existe.';
+    if (String(conv.id).startsWith('prueba-')) return 'Es un chat de prueba: no sale a nadie.';
+    if (!this.ghl?.sendMessage) return 'El envío a GHL no está configurado.';
+    if (this.aislado() && this.aislamiento.modo !== 'activo') return 'El número de Sofía está mal configurado: no se envía nada.';
+    if (!this.permitido(conv)) return 'Este chat no es del número de Sofía: contéstalo en el CRM.';
+    if (!CANALES_NATIVOS.has(conv.channel) || (this.aislado() && conv.channel !== 'whatsapp')) return `Desde aquí solo se escribe por WhatsApp${this.aislado() ? '' : ' e Instagram'}: este chat contéstalo en el CRM.`;
+    if (fueraDeVentana(conv, this.now())) return 'Han pasado más de 24 h desde su último mensaje: solo se le puede escribir con plantilla (usa «Programar mensaje»).';
+    return '';
+  }
+
+  /**
+   * Una persona del equipo escribe al lead desde el panel. Sale siempre de verdad (también en modo prueba, como si
+   * se escribiera en el CRM) y, a partir de ahí, cuenta como cualquier mensaje del equipo: queda en el historial y
+   * Sofía se aparta del chat según los ajustes. Los motivos para no enviar llevan `usuario` (se enseñan tal cual).
+   */
+  enviarDelEquipo(convId, texto) {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoEscribir(conv);
+      if (motivo) { const e = new Error(motivo); e.usuario = true; throw e; }
+      let r;
+      try { r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto }); }
+      catch (e) {
+        // GHL a veces no confirma a tiempo un mensaje que sí ha salido: se mira antes de dar el error (y evitar un reenvío doble)
+        r = await this.confirmarEnvio(conv, texto);
+        if (!r) throw e;
+      }
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto, messageId: r?.messageId || null, userId: 'panel' }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
   /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */
   plazasCanaveral(sinConv = null) {
     return plazasCanaveral(this.repo, { sinConv }).total;
