@@ -758,14 +758,18 @@ async function embudo() {
   const pedido = estado.mes;
   const r = await api('/panel/embudo?mes=' + pedido);
   if (estado.seccion !== 'embudo' || estado.mes !== pedido || !$('#emb')) return;
-  const tot = PASOS.map(([k]) => r.sedes.reduce((s, x) => s + (x[k] || 0), 0));
-  const tarjetaSede = (titulo, valores) => {
+  // Cada sede trae sus pasos (Parla con clase de prueba; Getafe y Las Rosas, de lead a primer pago)
+  const suma = (k) => (r.sedes.some((x) => x[k] != null) ? r.sedes.reduce((s, x) => s + (x[k] || 0), 0) : null);
+  const tarjetaSede = (titulo, claves, datos) => {
+    const pasos = PASOS.filter(([k]) => claves.includes(k)); const valores = pasos.map(([k]) => datos[k]);
     const base = Math.max(1, valores[0] || 0, ...valores.map((v) => v || 0));
-    return `<div class="embudo"><h3>${esc(titulo)} <span class="chip verde">${pct(valores[3] || 0, valores[0] || 0)} conversión</span></h3>
-      ${PASOS.map(([, et, color], i) => {
+    return `<div class="embudo"><h3>${esc(titulo)} <span class="chip verde">${pct(valores.at(-1) || 0, valores[0] || 0)} conversión</span></h3>
+      ${pasos.map(([k, et, color], i) => {
         const v = valores[i];
+        // El primer pago cuenta todas las altas del mes (con o sin prueba): su tasa es sobre los leads, no sobre el paso anterior
+        const tasa = k === 'pagan' && i > 1 ? `${pct(v || 0, valores[0] || 0)} de los leads` : pct(v || 0, valores[i - 1] || 0);
         const ancho = v ? Math.max(14, (v / base) * 100) : 0;
-        return `${i ? `<div class="paso"><div class="tasa">↓ ${pct(v || 0, valores[i - 1] || 0)}</div></div>` : ''}
+        return `${i ? `<div class="paso"><div class="tasa">↓ ${tasa}</div></div>` : ''}
         <div class="paso"><div class="et">${et}</div><div class="pista">
           <div class="barra ${v ? '' : 'cero'}" style="width:${v ? ancho + '%' : '42px'};background:${color}" title="${et}: ${v ?? 'sin datos'}">${v ?? '–'}</div></div></div>`;
       }).join('')}</div>`;
@@ -783,13 +787,13 @@ async function embudo() {
   $('#emb').outerHTML = `
     ${r.avisos.map((a) => `<div class="aviso">${esc(a)}</div>`).join('')}
     <div class="embudos">
-      ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, PASOS.map(([k]) => x[k]))).join('')}
-      ${tarjetaSede('Total 3 sedes', tot)}
+      ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, x.pasos || PASOS.map(([k]) => k), x)).join('')}
+      ${tarjetaSede('Total 3 sedes', ['leads', 'pagan'], { leads: suma('leads'), pagan: suma('pagan') })}
       ${r.canaveral ? tarjetaCanaveral(r.canaveral) : ''}
     </div>
     <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios${r.no_leads ? ` ni <b>${r.no_leads}</b> marcado${r.no_leads === 1 ? '' : 's'} como «no es un lead»` : ''})${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
-    Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
-    Primer pago = alta pagada después de la clase de prueba.</p>`;
+    Primer pago = alta: socios cuyo primer pago de toda su historia es de este mes, hayan hecho o no clase de prueba (registro de socios de cada sede${r.altas_actualizadas ? `, datos del ${new Date(r.altas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}).
+    Reservas y asistencias de Parla: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.</p>`;
 }
 
 

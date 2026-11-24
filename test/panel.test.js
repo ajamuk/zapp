@@ -132,7 +132,7 @@ test('ajustes: se validan, se guardan y cambian el horario en memoria', async ()
 test('panel: embudo por sede pide la clave y valida el mes', async () => {
   const repo = crearRepo(openDb(':memory:'));
   const ghl = { req: async () => ({ contacts: [{ tags: ['parla'] }] }) };
-  const srv = crearApp({ setter: {}, repo, embudoOpciones: { ghl, dir: '/no-existe' } }).listen(0);
+  const srv = crearApp({ setter: {}, repo, embudoOpciones: { ghl, dir: '/no-existe', socios: {} } }).listen(0);
   await new Promise((r) => srv.once('listening', r));
   const base = `http://127.0.0.1:${srv.address().port}/admin/panel/embudo`;
   const h = { headers: { authorization: 'Bearer clave-test' } };

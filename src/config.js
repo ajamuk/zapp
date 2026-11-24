@@ -118,6 +118,12 @@ export const config = {
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),
+    // Registro de socios de cada sede (clientes-analytics, se rehace solo): de ahí sale el primer pago histórico
+    sociosDb: {
+      parla: env('EMBUDO_SOCIOS_PARLA', '/opt/clientes-analytics-parla/data/clientes.sqlite'),
+      getafe: env('EMBUDO_SOCIOS_GETAFE', '/opt/clientes-analytics/data/clientes.sqlite'),
+      las_rosas: env('EMBUDO_SOCIOS_LAS_ROSAS', '/opt/clientes-analytics-rosas/data/clientes.sqlite'),
+    },
   },
   telegram: {
     token: env('TELEGRAM_BOT_TOKEN'),
