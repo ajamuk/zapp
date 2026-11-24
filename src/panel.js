@@ -1,6 +1,8 @@
 import { knowledge } from './knowledge.js';
 import { deChats, sqlEsLead } from './etiquetas.js';
 import * as reglasSeg from './reglas.js';
+import fs from 'node:fs';
+import Database from 'better-sqlite3';
 import { config } from './config.js';
 
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
@@ -260,10 +262,65 @@ export function detalle(db, id) {
   };
 }
 
-export function altas(db, limite = 100) {
-  return db.prepare(`SELECT a.*, c.nombre, c.channel, c.sede FROM altas a LEFT JOIN conversations c ON c.id = a.conversation_id
-    WHERE a.conversation_id NOT LIKE 'prueba-%' ORDER BY a.id DESC LIMIT ?`).all(limite)
-    .map((a) => ({ ...a, datos: JSON.parse(a.datos) }));
+/**
+ * Busca en el registro de socios de cada sede (clientes-analytics, solo lectura) a quién corresponde cada alta, por
+ * correo o por las 9 últimas cifras del teléfono. Devuelve una función (sede, email, telefono) → { primer, ultimo } | null.
+ */
+function buscadorDePagos(rutas = config.embudo.sociosDb) {
+  const abiertas = {};
+  const u9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+  const buscar = (sede, email, telefono) => {
+    const ruta = rutas?.[sede];
+    if (!ruta) return null;
+    if (!(sede in abiertas)) {
+      try {
+        const bd = fs.existsSync(ruta) ? new Database(ruta, { readonly: true, fileMustExist: true, timeout: 2000 }) : null;
+        abiertas[sede] = bd && { bd, q: bd.prepare(`SELECT first_payment primer, last_payment ultimo FROM members
+          WHERE (@email != '' AND lower(email) = @email) OR (@tel != '' AND substr(replace(replace(replace(IFNULL(phone, ''), '+', ''), ' ', ''), '-', ''), -9) = @tel)
+          ORDER BY last_payment DESC LIMIT 1`) };
+      } catch (e) { console.error(`Altas, socios de ${sede}:`, e.message); abiertas[sede] = null; }
+    }
+    if (!abiertas[sede]) return null;
+    const tel = u9(telefono);
+    try { return abiertas[sede].q.get({ email: String(email || '').trim().toLowerCase(), tel: tel.length === 9 ? tel : '' }) || { primer: null, ultimo: null }; }
+    catch (e) { console.error(`Altas, socios de ${sede}:`, e.message); return null; }
+  };
+  buscar.cerrar = () => { for (const x of Object.values(abiertas)) { try { x?.bd.close(); } catch { /* ya cerrada */ } } };
+  return buscar;
+}
+
+/**
+ * Altas que ha tramitado Sofía, de la más reciente a la más antigua. Cada fila es un intento; lleva además:
+ *  - `pago`: 'pagada' (hay un pago en el registro de socios desde el día del alta), 'pendiente' (ficha sin pago
+ *    todavía) o null (no se sabe: sede sin registro, o el intento no llegó a guardar nada). Con `pago_fecha`
+ *    y `primer_pago` (true si es el primer pago de toda su historia, es decir, un alta nueva y no un exsocio).
+ *  - `superada`: hay un intento posterior del mismo chat (este ya no es el estado del alta).
+ *  - `de_prueba`: el chat es de un número de prueba.
+ */
+export function altas(db, limite = 100, { socios } = {}) {
+  const filas = db.prepare(`SELECT a.*, c.nombre, c.channel, c.sede, c.telefono,
+      EXISTS (SELECT 1 FROM altas b WHERE b.conversation_id = a.conversation_id AND b.id > a.id) superada,
+      ${sqlSinNumerosPrueba()} real
+    FROM altas a LEFT JOIN conversations c ON c.id = a.conversation_id
+    WHERE a.conversation_id NOT LIKE 'prueba-%' ORDER BY a.id DESC LIMIT ?`).all(limite);
+  const buscar = buscadorDePagos(socios);
+  try {
+    return filas.map(({ real, telefono, ...a }) => {
+      const datos = JSON.parse(a.datos);
+      const fila = { ...a, datos, superada: Boolean(a.superada), de_prueba: real === 0, pago: null, pago_fecha: null, primer_pago: false };
+      if (['preparada', 'pendiente', 'existente'].includes(a.estado) && !fila.de_prueba) {
+        const m = buscar(datos.sede, datos.email, datos.telefono || telefono);
+        if (m) {
+          const dia = String(a.created_at).slice(0, 10);
+          const pagada = m.ultimo && m.ultimo >= dia;
+          fila.pago = pagada ? 'pagada' : 'pendiente';
+          fila.pago_fecha = pagada ? (m.primer >= dia ? m.primer : m.ultimo) : null;
+          fila.primer_pago = Boolean(pagada && m.primer && m.primer >= dia);
+        }
+      }
+      return fila;
+    });
+  } finally { buscar.cerrar(); }
 }
 
 export function seguimientos(db) {
