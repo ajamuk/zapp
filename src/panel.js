@@ -59,18 +59,22 @@ export function resumen(db, dias = 1, momento = new Date()) {
       sum(IFNULL(tipo, '') != 'socio') leads
     FROM conversations c WHERE ${REALES} AND ${ES_LEAD} AND ${enPeriodo('c.created_at')}`);
   // Para saber cuántos se han dejado fuera (se enseña al pie del Resumen)
+  // «Socios que escribieron»: los que han mandado algo en el periodo, tuvieran ya chat o no (no solo los chats nuevos)
+  conversaciones.socios = uno(`SELECT count(DISTINCT m.conversation_id) n FROM messages m JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.autor = 'lead' AND c.tipo = 'socio' AND ${REALES} AND ${ES_LEAD} AND ${enPeriodo('m.created_at')}`).n;
   conversaciones.no_leads = uno(`SELECT count(*) n FROM conversations c WHERE ${REALES} AND NOT ${ES_LEAD} AND ${enPeriodo('c.created_at')}`).n;
   const mEsLead = sqlEsLead('m.conversation_id');
   const mensajes = uno(`SELECT
       sum(autor = 'lead') lead, sum(autor = 'ia' AND enviado = 1) ia, sum(autor = 'ia' AND enviado = 0) borradores, sum(autor = 'humano') equipo
     FROM messages m WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`);
   const atendidas = uno(`SELECT count(DISTINCT conversation_id) n FROM messages m
-    WHERE m.autor = 'ia' AND ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
+    WHERE m.autor = 'ia' AND m.enviado = 1 AND ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
   const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE ${sinPrueba('a.conversation_id')} AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
-  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE ${sinPrueba('s.conversation_id')} AND ${enPeriodo('s.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
+  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE ${sinPrueba('s.conversation_id')} AND ${enPeriodo('s.due_at')} AND datetime(s.due_at) <= datetime(?) GROUP BY estado`, momento.toISOString()).map((r) => [r.estado, r.n]));
   const ahora = uno(`SELECT sum(c.derivado = 1) derivadas, sum(c.ai_paused = 1 AND c.derivado = 0) pausadas,
-      sum(c.alta_estado = 'pendiente') altas_pendientes, sum(c.prueba_reservada = 1) pruebas
-    FROM conversations c WHERE ${REALES} AND ${ES_LEAD}`);
+      sum(c.alta_estado = 'pendiente') altas_pendientes,
+      sum(c.prueba_reservada = 1 AND (c.prueba_fecha IS NULL OR datetime(c.prueba_fecha) >= datetime(?))) pruebas
+    FROM conversations c WHERE ${REALES} AND ${ES_LEAD} AND IFNULL(c.tipo, '') != 'socio'`, momento.toISOString());
   const embudo = todos(`SELECT IFNULL(fase, 'sin fase') fase, count(*) n FROM conversations c
     WHERE ${REALES} AND ${ES_LEAD} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
@@ -78,7 +82,7 @@ export function resumen(db, dias = 1, momento = new Date()) {
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
   const intervalos = cortes.slice(0, -1).map(({ dia, utc }, i) => [dia, utc, cortes[i + 1].utc]);
   const serie = todos(`WITH dias(dia, desde, hasta) AS (VALUES ${intervalos.map(() => '(?, ?, ?)').join(', ')})
-    SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia') ia
+    SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia' AND m.enviado = 1) ia
     FROM dias d JOIN messages m ON m.created_at >= date(d.desde) AND m.created_at < date(d.hasta, '+1 day')
       AND datetime(m.created_at) >= d.desde AND datetime(m.created_at) < d.hasta
     WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
