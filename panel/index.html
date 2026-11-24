@@ -1346,15 +1346,24 @@ async function altas() {
   $('#main').innerHTML = '<h2>Altas</h2><div class="vacio">Cargando…</div>';
   const filas = await api('/panel/altas');
   if (estado.seccion !== 'altas') return;
-  const COLOR = { preparada: 'verde', fallida: 'rojo', rechazada: 'rojo' };
+  // Lo que significa cada estado de un intento de alta, en cristiano
+  const ESTADO = { preparada: ['Hecha en AimHarder', 'verde'], pendiente: ['Para el equipo', 'ambar'], existente: ['Exsocio: para el equipo', 'ambar'],
+    simulada: ['Ensayo, sin guardar', ''], fallida: ['Fallida', 'rojo'], rechazada: ['Faltan datos o no valen', 'rojo'], no_configurado: ['Sin configurar', 'rojo'] };
+  const fechaPago = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const pago = (a) => a.pago === 'pagada' ? `<span class="chip verde" title="${a.primer_pago ? 'Primer pago de toda su historia: alta nueva' : 'Ya había pagado antes: exsocio que vuelve'}">Pagada el ${fechaPago(a.pago_fecha)}${a.primer_pago ? '' : ' · exsocio'}</span>`
+    : a.pago === 'pendiente' ? '<span class="chip ambar">Pendiente de pago</span>' : '<span class="ayuda">–</span>';
   const i = estado.info;
   const aviso = !i.credenciales_alta ? 'Falta configurar el acceso para tramitar altas en AimHarder.' :
     i.alta_en_pruebas ? 'El guardado de altas en AimHarder está desactivado.' : '';
+  const vigentes = filas.filter((a) => !a.superada && !a.de_prueba);
+  const n = (f) => vigentes.filter(f).length;
   $('#main').innerHTML = `<h2>Altas</h2>${aviso ? `<div class="aviso">${aviso}</div>` : ''}
-    ${filas.length ? `<div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Detalle</th></tr>${filas.map((a) => `<tr>
-      <td>${hora(a.created_at)}</td><td><a href="#chats/${encodeURIComponent(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo)}</a><br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
-      <td>${esc(SEDES[a.datos.sede] || a.datos.sede)} · ${esc(a.datos.tarifa)}</td><td>${esc(a.datos.fecha_inicio)}</td>
-      <td><span class="chip ${COLOR[a.estado] || 'ambar'}">${esc(a.estado)}</span></td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay altas</div>'}`;
+    ${filas.length ? `<div class="tarjetas">${tarjeta(n((a) => a.pago === 'pagada'), 'Pagadas', 'green')}${tarjeta(n((a) => a.pago === 'pendiente'), 'Pendientes de pago', 'amber')}${tarjeta(n((a) => ['pendiente', 'existente'].includes(a.estado) && a.pago !== 'pagada'), 'Para terminar el equipo', 'amber')}${tarjeta(n((a) => ['fallida', 'no_configurado'].includes(a.estado)), 'Fallidas sin resolver', 'red')}</div>
+    <div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Detalle</th></tr>${filas.map((a) => `<tr ${a.superada ? 'style="opacity:.55" title="Hay un intento posterior de este mismo chat"' : ''}>
+      <td>${hora(a.created_at)}</td><td><a href="#chats/${encodeURIComponent(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo || a.nombre || 'Sin nombre')}</a>${a.de_prueba ? ' <span class="chip">prueba</span>' : ''}<br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
+      <td>${esc(SEDES[a.datos.sede] || a.datos.sede || '–')} · ${esc(a.datos.tarifa || '–')}</td><td>${esc(a.datos.fecha_inicio)}</td>
+      <td><span class="chip ${(ESTADO[a.estado] || [])[1] ?? 'ambar'}">${esc((ESTADO[a.estado] || [a.estado])[0])}</span></td><td>${pago(a)}</td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>
+    <p class="nota">Cada fila es un intento de alta de Sofía (las últimas 100); las atenuadas tienen un intento posterior del mismo chat. Pago: se busca al lead por correo o teléfono en el registro de socios de su sede; «Pagada» es que hay un pago desde el día del alta. Las tarjetas no cuentan intentos superados ni números de prueba.</p>` : '<div class="vacio">Todavía no hay altas</div>'}`;
 }
 
 // ---------- Preguntas que Sofía no sabe responder ----------
