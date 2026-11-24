@@ -105,6 +105,15 @@ test('con las normas cumplidas la respuesta sale como una sola nota de voz y que
   assert.ok(voz.uso(m.repo.db, 'c1', T0).caracteresMes > 20);
 });
 
+test('si la respuesta va a salir por voz, Sofía lo sabe por el contexto y la escribe breve', () => {
+  const m = montar(); m.lead();
+  assert.match(m.setter.contexto(m.conv()), /te ha mandado una nota de voz.*muy breve/);
+  const texto = montar(); texto.lead(null);
+  assert.doesNotMatch(texto.setter.contexto(texto.conv()), /nota de voz, leída/);
+  const apagado = montar({ ajustes: { activo: false } }); apagado.lead();
+  assert.doesNotMatch(apagado.setter.contexto(apagado.conv()), /nota de voz, leída/);
+});
+
 test('apagado, sin audio del lead, en modo prueba o al llegar al máximo: sale el texto de siempre', async () => {
   const apagado = montar({ ajustes: { activo: false } }); apagado.lead();
   await apagado.setter.enviar(apagado.conv(), ['hola']);

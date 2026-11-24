@@ -647,11 +647,25 @@ export class Setter {
       `- Alta: ${conv.alta_estado || 'no iniciada'}. ${this.textoPrueba(conv)}`,
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
       this.notaAvisoFuera(conv),
+      this.notaVoz(conv),
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,
     ].filter(Boolean).join('\n');
+  }
+
+  /** Si la respuesta de este turno puede salir como nota de voz, Sofía lo sabe y la escribe para ser oída: breve. */
+  notaVoz(conv) {
+    const ajustes = leerAjustes(this.repo).voz;
+    if (!this.enviaDeVerdad(conv) || !ajustes.activo || !this.voz || !this.ghl?.enviarAdjunto) return '';
+    const ultimo = this.repo.db.prepare("SELECT adjunto FROM messages WHERE conversation_id = ? AND autor = 'lead' ORDER BY id DESC LIMIT 1").get(conv.id);
+    const d = this.voz.decidirVoz({
+      ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId: this.voz.vozElegida(ajustes), esPrueba: this.esDePrueba(conv),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes: ['hola'], ...this.voz.uso(this.repo.db, conv.id, this.now()),
+    });
+    if (!d.voz) return '';
+    return '- El lead te ha mandado una nota de voz y tu respuesta le va a llegar también como nota de voz, leída tal cual la escribas. Escríbela para ser oída: muy breve (dos o tres frases cortas, unas 200 letras como mucho, 15 segundos), una sola idea y, si hace falta, una pregunta al final. Nada de listas ni de varios precios u horarios seguidos: da solo el dato que te pide. Si necesitas pasar un enlace o muchos datos, escríbelos con normalidad (entonces irá por escrito).';
   }
 
   /** Si lo último que recibió el lead fue el aviso automático de fuera de horario, Sofía lo sabe al volver. */
