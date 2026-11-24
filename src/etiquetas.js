@@ -2,6 +2,10 @@
 // escrito en lenguaje natural. Al ponerse pueden ejecutar acciones (pausar/reanudar/forzar a Sofía, derivar,
 // avisar al equipo) y se copian a GHL como tag.
 //
+// Acción «no es un lead» (acciones.no_lead): para lo que entra y no es un lead (proveedores, spam, números
+// equivocados…). Pausa a Sofía, corta los seguimientos y los lanzamientos, y el chat deja de contar en el
+// Resumen, las Estadísticas y el Embudo. Se pone a mano en el panel o como tag en GHL.
+//
 // Reglas (JSON en etiquetas.reglas; basta con que se cumpla una):
 //   { tipo: 'texto', quien: 'lead'|'nosotros'|'cualquiera', operador: 'contiene'|'exacto'|'empieza'|'termina', patron }
 //   { tipo: 'adjunto', quien, media: 'imagen'|'audio'|'video'|'documento'|'cualquiera' }
@@ -40,6 +44,15 @@ export function listar(db, { conUso = false } = {}) {
   return filas.map((e) => ({ ...e, chats: uso[e.id] || 0 }));
 }
 
+/** Condición SQL: el chat `col` no lleva ninguna etiqueta de «no es un lead». */
+export const sqlEsLead = (col = 'c.id') => `NOT EXISTS (SELECT 1 FROM conv_etiquetas nl JOIN etiquetas ne ON ne.id = nl.etiqueta_id
+  WHERE nl.conversation_id = ${col} AND json_extract(ne.acciones, '$.no_lead'))`;
+/** ¿Lleva el chat alguna etiqueta de «no es un lead»? */
+export const esNoLead = (db, convId) => Boolean(db.prepare(`SELECT 1 FROM conv_etiquetas nl JOIN etiquetas ne ON ne.id = nl.etiqueta_id
+  WHERE nl.conversation_id = ? AND json_extract(ne.acciones, '$.no_lead')`).get(convId));
+/** Nombres (como tags de GHL, en minúsculas) de las etiquetas de «no es un lead». */
+export const tagsNoLead = (db) => listar(db).filter((e) => e.acciones.no_lead).map((e) => clave(e.nombre));
+
 export const obtener = (db, id) => deFila(db.prepare('SELECT * FROM etiquetas WHERE id = ?').get(id));
 export const porNombre = (db, nombre) => deFila(db.prepare('SELECT * FROM etiquetas WHERE nombre = ? COLLATE NOCASE').get(String(nombre).trim()));
 
@@ -56,11 +69,14 @@ export function validar(datos = {}, db, id = null) {
   const ids = (l) => [...new Set((Array.isArray(l) ? l : []).map(Number).filter((x) => Number.isInteger(x) && x !== id))];
   const solo = ids(datos.solo_si); const nunca = ids(datos.nunca_si).filter((x) => !solo.includes(x));
   const a = datos.acciones && typeof datos.acciones === 'object' ? datos.acciones : {};
+  const noLead = Boolean(a.no_lead); // no es un lead: siempre pausa a Sofía
+  const pausar = Boolean(a.pausar_ia) || noLead;
   const acciones = {
-    pausar_ia: Boolean(a.pausar_ia), reanudar_ia: Boolean(a.reanudar_ia) && !a.pausar_ia,
-    forzar_respuesta: Boolean(a.forzar_respuesta) && !a.pausar_ia, derivar: Boolean(a.derivar),
+    pausar_ia: pausar, reanudar_ia: Boolean(a.reanudar_ia) && !pausar,
+    forzar_respuesta: Boolean(a.forzar_respuesta) && !pausar, derivar: Boolean(a.derivar) && !noLead,
     avisar: Boolean(a.avisar), ghl: true, // siempre sincronizada con GHL
-    meta: validarMeta(a.meta),
+    no_lead: noLead,
+    meta: noLead ? null : validarMeta(a.meta),
   };
   return { nombre, color, criterio_ia: criterio, reglas, solo_si: solo, nunca_si: nunca, acciones, activa: datos.activa !== false };
 }
@@ -198,10 +214,21 @@ export class Etiquetador {
     const conv = this.repo.getConv(convId);
     const r = this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etiquetaId);
     if (r.changes) await this.safe(async () => this.alQuitar?.(convId, etiquetaId));
+    if (r.changes) this.alDesmarcar(conv, etq);
     if (r.changes && etq && conv?.contact_id && this.permitido(conv) && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
       await this.safe(() => this.ghl?.removeTags(conv.contact_id, [clave(etq.nombre)]));
     }
     return { quitada: r.changes > 0 };
+  }
+
+  /**
+   * Al quitar una etiqueta de «no es un lead» (se marcó por error): si Sofía sigue en pausa por esa etiqueta,
+   * vuelve a atender el chat. Si la pausa es por otro motivo (el equipo escribió, derivado…), no se toca.
+   */
+  alDesmarcar(conv, etq) {
+    if (!conv || !etq?.acciones.no_lead) return;
+    const actual = this.repo.getConv(conv.id);
+    if (actual?.ai_paused && !actual.derivado && actual.pause_reason === `etiqueta «${etq.nombre}»`) this.repo.updateConv(conv.id, { ai_paused: 0, pause_reason: null });
   }
 
   async acciones(conv, etq, origen, porInactividad = false) {
@@ -268,7 +295,7 @@ export class Etiquetador {
         if (estaEnGhl && !enElChat) { if ((await this.poner(conv.id, etq.id, 'ghl')).puesta) out.puestas++; }
         else if (estaEnGhl && enElChat && !actuales.get(etq.id)) this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
         else if (!estaEnGhl && enElChat && actuales.get(etq.id) && recientes.has(etq.id)) { /* esperar a la siguiente sincronización */ }
-        else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; await this.safe(async () => this.alQuitar?.(conv.id, etq.id)); }
+        else if (!estaEnGhl && enElChat && actuales.get(etq.id)) { this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id); out.quitadas++; await this.safe(async () => this.alQuitar?.(conv.id, etq.id)); this.alDesmarcar(conv, etq); }
         else if (!estaEnGhl && enElChat) { if (await this.subirAGhl(conv, etq)) out.subidas++; }
       }
     }

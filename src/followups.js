@@ -6,6 +6,7 @@ import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
+import { esNoLead, sqlEsLead } from './etiquetas.js';
 import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
@@ -103,10 +104,11 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
 }
 
 /** ¿Por qué no debe salir ahora? (null = puede salir) */
-function motivoParaNoEnviar(s, regla, conv, ajustes, ahora) {
+function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false) {
   const deSofia = QUIEN_DEPENDE_DE_SOFIA.includes(s.tipo);
   const delEquipo = s.tipo === 'manual' || s.tipo === 'lanzamiento';
   if (s.tipo === 'manual') return null; // lo ha escrito una persona para este chat: sale siempre
+  if (noLead) return 'marcado como «no es un lead»'; // ni seguimientos ni lanzamientos
   // Lanzamientos: nunca a socios, a quien ya tiene el alta, a chats derivados ni a quien pidió no recibir mensajes
   if (s.tipo === 'lanzamiento') {
     if (conv.tipo === 'socio' || conv.alta_estado === 'preparada') return 'ya es cliente';
@@ -175,7 +177,7 @@ export async function procesarSeguimientos(setter) {
         continue;
       }
     }
-    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora);
+    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id));
     if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
     // Los mensajes a mano salen a su hora exacta; el resto, dentro del horario de Sofía
     if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
@@ -211,7 +213,7 @@ export async function procesarSeguimientos(setter) {
       // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale
       if (!sigueEnMarcha.get(s.id)) continue;
       const fresco = repo.getConv(conv.id);
-      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now()) : 'el chat ya no existe';
+      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now(), esNoLead(repo.db, fresco.id)) : 'el chat ya no existe';
       if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       // Si el lead escribe mientras Sofía «escribe» la primera burbuja, el seguimiento ya no sale
@@ -309,13 +311,14 @@ export function programarManual(repo, convId, texto, cuando, ahora = new Date())
 
 const lista = (x) => (typeof x === 'string' ? JSON.parse(x) : x) || [];
 
-/** Chats que recibirían un lanzamiento (activos en los últimos N días, sin las etiquetas excluidas, sin socios). */
+/** Chats que recibirían un lanzamiento (activos en los últimos N días, sin las etiquetas excluidas, sin socios ni «no es un lead»). */
 export function destinatarios(db, { dias_actividad = 30, canales = ['whatsapp'], excluir_etiquetas = [], solo_etiquetas = [] }) {
   const can = lista(canales); const exc = lista(excluir_etiquetas).map(Number); const solo = lista(solo_etiquetas).map(Number);
   if (!can.length) return [];
   return db.prepare(`SELECT c.id, c.channel, c.nombre, c.last_inbound_at FROM conversations c
     WHERE c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio' AND c.derivado = 0
       AND IFNULL(c.alta_estado, '') != 'preparada' AND IFNULL(c.pause_reason, '') NOT LIKE 'el lead escribió%'
+      AND ${sqlEsLead('c.id')}
       AND c.channel IN (${can.map(() => '?').join(',')})
       AND datetime(c.last_inbound_at) >= datetime('now', ?)
       ${exc.length ? `AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id IN (${exc.map(() => '?').join(',')}))` : ''}
