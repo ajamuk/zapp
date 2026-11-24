@@ -1,11 +1,23 @@
 import { knowledge } from './knowledge.js';
 import { deChats, sqlEsLead } from './etiquetas.js';
 import * as reglasSeg from './reglas.js';
+import { config } from './config.js';
 
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
 const PRUEBAS = "c.id NOT LIKE 'prueba-%'";
 // Los chats marcados con una etiqueta de «no es un lead» (proveedores, spam, equivocados) no cuentan en ninguna cifra
 const ES_LEAD = sqlEsLead('c.id');
+/**
+ * Los chats de los números de prueba (Ajustes → «Números de prueba») se ven en Chats, pero no cuentan en el Resumen,
+ * las Estadísticas ni el rendimiento. Se compara por las 9 últimas cifras, como hace el setter. Devuelve SQL para
+ * `conversations` (sin `col`, por su propio teléfono) o para una tabla que lleva `conversation_id`.
+ */
+export function sqlSinNumerosPrueba(col = null, alias = 'c', lista = config.telefonosPrueba) {
+  const nums = [...new Set((lista || []).map((t) => String(t).replace(/\D/g, '').slice(-9)).filter((t) => t.length === 9))];
+  if (!nums.length) return '1';
+  const tel = (a) => `substr(replace(replace(replace(replace(replace(replace(IFNULL(${a}telefono, ''), '+', ''), ' ', ''), '-', ''), '.', ''), '(', ''), ')', ''), -9) IN (${nums.map((n) => `'${n}'`).join(', ')})`;
+  return col ? `IFNULL(${col}, '') NOT IN (SELECT id FROM conversations WHERE ${tel('')})` : `NOT (${tel(alias + '.')})`;
+}
 
 const fmtMadrid = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' });
 const partesMadrid = (d) => Object.fromEntries(fmtMadrid.formatToParts(d).map((x) => [x.type, x.value]));
@@ -38,27 +50,29 @@ export function resumen(db, dias = 1, momento = new Date()) {
   // Comparación por fecha para usar el índice y por instante para aceptar ambos formatos UTC de SQLite e ISO.
   const uno = (sql, ...p) => db.prepare(sql).get(...p);
   const todos = (sql, ...p) => db.prepare(sql).all(...p);
+  const REALES = `${PRUEBAS} AND ${sqlSinNumerosPrueba()}`;
+  const sinPrueba = (col) => `${col} NOT LIKE 'prueba-%' AND ${sqlSinNumerosPrueba(col)}`;
   const enPeriodo = (col) => `(${col} >= '${ts.slice(0, 10)}' AND datetime(${col}) >= '${ts}')`;
 
   const conversaciones = uno(`SELECT count(*) n,
       sum(IFNULL(tipo, '') = 'socio') socios,
       sum(IFNULL(tipo, '') != 'socio') leads
-    FROM conversations c WHERE ${PRUEBAS} AND ${ES_LEAD} AND ${enPeriodo('c.created_at')}`);
+    FROM conversations c WHERE ${REALES} AND ${ES_LEAD} AND ${enPeriodo('c.created_at')}`);
   // Para saber cuántos se han dejado fuera (se enseña al pie del Resumen)
-  conversaciones.no_leads = uno(`SELECT count(*) n FROM conversations c WHERE ${PRUEBAS} AND NOT ${ES_LEAD} AND ${enPeriodo('c.created_at')}`).n;
+  conversaciones.no_leads = uno(`SELECT count(*) n FROM conversations c WHERE ${REALES} AND NOT ${ES_LEAD} AND ${enPeriodo('c.created_at')}`).n;
   const mEsLead = sqlEsLead('m.conversation_id');
   const mensajes = uno(`SELECT
       sum(autor = 'lead') lead, sum(autor = 'ia' AND enviado = 1) ia, sum(autor = 'ia' AND enviado = 0) borradores, sum(autor = 'humano') equipo
-    FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} AND ${enPeriodo('m.created_at')}`);
+    FROM messages m WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`);
   const atendidas = uno(`SELECT count(DISTINCT conversation_id) n FROM messages m
-    WHERE m.autor = 'ia' AND m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
-  const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE a.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
-  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE s.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('s.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
+    WHERE m.autor = 'ia' AND ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
+  const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE ${sinPrueba('a.conversation_id')} AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
+  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE ${sinPrueba('s.conversation_id')} AND ${enPeriodo('s.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
   const ahora = uno(`SELECT sum(c.derivado = 1) derivadas, sum(c.ai_paused = 1 AND c.derivado = 0) pausadas,
       sum(c.alta_estado = 'pendiente') altas_pendientes, sum(c.prueba_reservada = 1) pruebas
-    FROM conversations c WHERE ${PRUEBAS} AND ${ES_LEAD}`);
+    FROM conversations c WHERE ${REALES} AND ${ES_LEAD}`);
   const embudo = todos(`SELECT IFNULL(fase, 'sin fase') fase, count(*) n FROM conversations c
-    WHERE ${PRUEBAS} AND ${ES_LEAD} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
+    WHERE ${REALES} AND ${ES_LEAD} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
       sum(tokens_cache_write) cache_escritura, sum(tokens_out) salida, avg(ms) ms
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
@@ -67,7 +81,7 @@ export function resumen(db, dias = 1, momento = new Date()) {
     SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia') ia
     FROM dias d JOIN messages m ON m.created_at >= date(d.desde) AND m.created_at < date(d.hasta, '+1 day')
       AND datetime(m.created_at) >= d.desde AND datetime(m.created_at) < d.hasta
-    WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
+    WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
   return { dias: d, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
 }
 
@@ -278,7 +292,7 @@ export function rendimiento(db, dias = 90) {
       sum(c.prueba_reservada = 1) prueba, sum(IFNULL(c.alta_estado, '') IN ('preparada', 'pendiente')) alta, sum(c.derivado = 1) derivados,
       sum(c.retomar IS NOT NULL) mas_adelante,
       min(c.created_at) desde, max(c.created_at) hasta
-    FROM conversations c WHERE c.prompt_v IS NOT NULL AND c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio'
+    FROM conversations c WHERE c.prompt_v IS NOT NULL AND c.id NOT LIKE 'prueba-%' AND ${sqlSinNumerosPrueba()} AND IFNULL(c.tipo, '') != 'socio'
       AND datetime(c.created_at) >= datetime('now', ?) GROUP BY c.prompt_v ORDER BY c.prompt_v DESC`).all(`-${Math.max(1, Math.min(365, Number(dias) || 90))} days`);
   const notas = Object.fromEntries(db.prepare("SELECT version, nota FROM documentos WHERE doc = 'prompt'").all().map((d) => [d.version, d.nota]));
   return filas.map((f) => ({ ...f, nota: notas[f.v] || '', errores: db.prepare("SELECT count(*) n FROM ai_runs WHERE prompt_v = ? AND error IS NOT NULL").get(f.v).n }));
@@ -298,7 +312,7 @@ const enMadrid = (iso) => {
  */
 export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
   const d = Math.max(1, Math.min(365, Number(dias) || 30));
-  const filtro = [PRUEBAS, ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
+  const filtro = [PRUEBAS, sqlSinNumerosPrueba(), ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
   const p = {};
   if (sede) { filtro.push(sede === 'sin_sede' ? 'c.sede IS NULL' : 'c.sede = @sede'); p.sede = sede; }
   if (canal) { filtro.push('c.channel = @canal'); p.canal = canal; }

@@ -74,6 +74,10 @@ export async function leadsPorSede(ghl, mes, { noLead = [] } = {}) {
   const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0, ...(noLead.length ? { no_leads: 0 } : {}) };
   const fuera = new Set(noLead);
   const marcado = (tags = []) => fuera.size > 0 && tags.some((t) => fuera.has(String(t).toLowerCase().trim().replace(/\s+/g, ' ')));
+  // Los contactos de los números de prueba (Ajustes) no son leads: ni se cuentan aparte
+  const u9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+  const numsPrueba = new Set(config.telefonosPrueba.map(u9).filter((t) => t.length === 9));
+  const dePrueba = (tel) => numsPrueba.has(u9(tel));
   let searchAfter;
   for (let pagina = 0; pagina < 50; pagina++) {
     const r = await ghl.req('POST', '/contacts/search', {
@@ -85,6 +89,7 @@ export async function leadsPorSede(ghl, mes, { noLead = [] } = {}) {
     const contactos = r?.contacts || [];
     for (const c of contactos) {
       if (esSocio(c.tags)) continue;
+      if (dePrueba(c.phone)) continue;
       if (marcado(c.tags)) { cuenta.no_leads++; continue; }
       cuenta[sedeDeContacto(c) || 'sin_sede']++;
     }
@@ -129,7 +134,7 @@ export function embudoCanaveral(repo, interesados, { ruta } = {}) {
 export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
   let noLead = [];
   try { noLead = repo?.db ? tagsNoLead(repo.db) : []; } catch (e) { console.error('Embudo, etiquetas:', e.message); }
-  const clave = `${mes}|${dir || ''}|${noLead.join(',')}`;
+  const clave = `${mes}|${dir || ''}|${noLead.join(',')}|${config.telefonosPrueba.join(',')}`;
   const enCache = cache.get(clave);
   if (enCache && ahora - enCache.t < CACHE_MS) return { ...enCache.valor, canaveral: embudoCanaveral(repo, enCache.valor.el_canaveral, { ruta: rutaCanaveral }) };
 

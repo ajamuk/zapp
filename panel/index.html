@@ -2077,7 +2077,7 @@ async function ajustes() {
   let telefonos = [...(a.telefonosPrueba || [])];
   const pintarTel = (msg = '') => {
     $('#telp').innerHTML = `<div style="flex:1;min-width:0"><div class="t">Teléfonos del equipo para probar a Sofía</div>
-      <div class="d">Sofía los trata siempre como lead (aunque sean socios), les contesta a cualquier hora${i.modo === 'live' ? '' : ' y, en modo prueba, son los únicos a los que escribe de verdad'}. Desde uno de ellos, el mensaje <code>${esc(a.palabraReinicio || '#reset')}</code> reinicia la conversación.</div>
+      <div class="d">Sofía los trata siempre como lead (aunque sean socios), les contesta a cualquier hora${i.modo === 'live' ? '' : ' y, en modo prueba, son los únicos a los que escribe de verdad'}. Desde uno de ellos, el mensaje <code>${esc(a.palabraReinicio || '#reset')}</code> reinicia la conversación. Sus chats se ven en Chats, pero no cuentan en el Resumen ni en las Estadísticas.</div>
       <div class="chips-f" style="margin-top:8px">${telefonos.map((t) => `<span class="tel"><span>${esc(t)}</span><button type="button" class="x" data-telq="${esc(t)}" aria-label="Quitar ${esc(t)}">✕</button></span>`).join('') || '<span class="ayuda">Ninguno todavía</span>'}</div>
       <form id="ftel" class="fila-f" style="margin-top:8px;gap:6px"><input id="teln" type="tel" inputmode="tel" maxlength="24" placeholder="600 111 222" aria-label="Teléfono de prueba nuevo" style="width:180px"><button class="primario">Añadir</button><span id="telok" role="status">${msg}</span></form></div>`;
     const guardar = async (lista, ok) => {
