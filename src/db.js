@@ -339,6 +339,7 @@ const COLUMNAS_NUEVAS = {
     aislado_bloqueo: 'TEXT',      // motivo por el que Sofía no actúa en este chat con el aislamiento activo (p. ej. compartido con otra línea)
     aislado_num: 'TEXT',          // «subcuenta:número» propio para el que se verificó su último entrante (aislamiento.js)
     aviso_fuera_at: 'TEXT',       // último aviso automático de fuera de horario (uno por cada cierre)
+    fase_max: 'TEXT',             // fase más avanzada a la que ha llegado el chat (la actual puede ser «cerrada»)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -373,6 +374,8 @@ function migrar(db) {
     const existen = new Set(db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name));
     for (const [col, tipo] of Object.entries(cols)) if (!existen.has(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
   }
+  // Chats anteriores a guardar la fase más avanzada: se parte de la que tienen ahora
+  db.exec("UPDATE conversations SET fase_max = fase WHERE fase_max IS NULL AND fase IS NOT NULL AND fase != 'cerrada'");
   // Recursos anteriores al texto propio: conservan el que salía hasta ahora, a la vista y editable en el panel
   db.exec(`UPDATE recursos SET pie = CASE WHEN nombre LIKE '%-tarifas' THEN 'aquí tienes las tarifas'
     WHEN nombre LIKE '%-horarios' THEN 'y aquí los horarios' ELSE 'te lo dejo por aquí' END WHERE pie IS NULL`);
