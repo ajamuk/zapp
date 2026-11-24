@@ -33,6 +33,8 @@ const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
 /** ¿Es el mensaje de reinicio? Tiene que ser el mensaje entero (sin distinguir mayúsculas ni espacios de más). */
 export const esReinicio = (texto, palabra) => Boolean(palabra) && String(texto || '').trim().toLowerCase() === String(palabra).trim().toLowerCase();
+// Tope de lo que Sofía espera «escuchando» un audio (los más largos se contestan como si durasen esto)
+const MAX_ESCUCHA_S = 600;
 export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
 
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
@@ -432,6 +434,8 @@ export class Setter {
     if (pararLead) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `el lead escribió «${pararLead}»`, respond_at: null });
     // Audios e imágenes: se descargan y los audios se transcriben antes de que Sofía conteste
     let transcripcion = null;
+    const llegada = this.now().getTime();
+    let duracionAudio = 0;
     if (evt.adjuntos?.length || evt.subida) {
       // Mientras se descarga y transcribe, el bucle no contesta este chat (si no, diría «no he podido oír el audio»)
       this.mediosEnCurso ??= new Map();
@@ -441,6 +445,7 @@ export class Setter {
       finally { const n = this.mediosEnCurso.get(conv.id) - 1; if (n > 0) this.mediosEnCurso.set(conv.id, n); else this.mediosEnCurso.delete(conv.id); }
       if (m) {
         adjunto = m.adjunto; transcripcion = m.transcripcion;
+        if (m.adjunto === 'audio') duracionAudio = Math.min(MAX_ESCUCHA_S, Math.max(0, Number(m.duracion) || 0));
         this.repo.updateMessage(ins.lastInsertRowid, { adjunto: m.adjunto, media_ruta: m.media_ruta, media_mime: m.media_mime, transcripcion: m.transcripcion, media_error: m.media_error, ...(evt.texto ? {} : { texto: `[${m.adjunto}]` }) });
       }
     }
@@ -475,7 +480,13 @@ export class Setter {
 
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
     const { lectura } = retardoHumano([], { random: this.random, caliente: chatCaliente(actual.last_ai_at, ahora), leido: String(evt.texto || '').length });
-    let cuando = new Date(ahora.getTime() + lectura);
+    // Un audio se escucha entero, a su velocidad, antes de ponerse a contestar: la espera normal empieza cuando
+    // termina. Empieza a oírlo al llegar (lo que tarde en transcribirse no se suma) y varios audios se oyen seguidos.
+    this.oyendoHasta ??= new Map();
+    let finEscucha = this.oyendoHasta.get(conv.id) || 0;
+    if (duracionAudio) { finEscucha = Math.max(finEscucha, llegada) + duracionAudio * 1000; this.oyendoHasta.set(conv.id, finEscucha); }
+    if (finEscucha <= ahora.getTime()) this.oyendoHasta.delete(conv.id);
+    let cuando = new Date(Math.max(ahora.getTime(), finEscucha) + lectura);
     // Los teléfonos de prueba del equipo no tienen horario: se prueba a Sofía a cualquier hora
     let aviso = null;
     if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) {

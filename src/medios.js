@@ -163,8 +163,22 @@ export async function imagenParaModelo(ruta, { ejecutarImpl = ejecutar } = {}) {
 }
 
 /**
+ * Segundos que dura un audio. Lo mide ffprobe; si no puede, se estima por la transcripción (unas 2,5 palabras
+ * por segundo). Devuelve 0 si no hay forma de saberlo.
+ */
+export async function duracionAudio(ruta, { transcripcion = '', ejecutarImpl = ejecutar } = {}) {
+  try {
+    const ffprobe = String(config.media.ffmpeg || 'ffmpeg').replace(/ffmpeg(?!.*ffmpeg)/, 'ffprobe');
+    const s = Number(await ejecutarImpl(ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', ruta], { timeout: 15000 }));
+    if (s > 0 && Number.isFinite(s)) return Math.round(s * 10) / 10;
+  } catch { /* se estima */ }
+  const palabras = String(transcripcion || '').trim().split(/\s+/).filter(Boolean).length;
+  return Math.round((palabras / 2.5) * 10) / 10;
+}
+
+/**
  * Procesa los adjuntos de un mensaje del lead: descarga, guarda y (audios) transcribe.
- * Devuelve { adjunto, media_ruta, media_mime, transcripcion, media_error }.
+ * Devuelve { adjunto, media_ruta, media_mime, transcripcion, media_error } y, en los audios, `duracion` (segundos).
  */
 export async function procesarAdjuntos(adjuntos = [], opciones = {}) {
   const url = adjuntos.map((a) => (typeof a === 'string' ? a : a?.url)).find(Boolean);
@@ -175,7 +189,11 @@ export async function procesarAdjuntos(adjuntos = [], opciones = {}) {
     out.adjunto = tipoDe(mime, url);
     out.media_mime = mime || null;
     out.media_ruta = guardar(buffer, { mime, url, base: opciones.base });
-    if (out.adjunto === 'audio') out.transcripcion = await (opciones.transcribirImpl || transcribir)(path.join(opciones.base || carpetaMedios(), out.media_ruta));
+    if (out.adjunto === 'audio') {
+      const abs = path.join(opciones.base || carpetaMedios(), out.media_ruta);
+      try { out.transcripcion = await (opciones.transcribirImpl || transcribir)(abs); }
+      finally { out.duracion = await (opciones.duracionImpl || duracionAudio)(abs, { transcripcion: out.transcripcion }).catch(() => 0); }
+    }
   } catch (e) {
     out.media_error = e.message;
     console.error('[medios]', e.message);
