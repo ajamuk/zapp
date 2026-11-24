@@ -2,10 +2,9 @@
 //   Parla               leads nuevos → reservan prueba → asisten → primer pago
 //   Getafe y Las Rosas  leads nuevos → primer pago
 //
-// - Leads nuevos: contactos creados en GHL en el mes con la etiqueta de su sede (parla / getafe / las rosas,
-//   o "mpo <sede>"; si no hay, la del origen del contacto). Se descartan los que ya son socios (etiqueta
-//   "activo…" o "socio"), los que llevan una etiqueta de «no es un lead» del panel y los números de prueba.
-//   Los interesados en El Cañaveral se cuentan aparte.
+// - Leads nuevos: chats que Sofía ha abierto en el mes (hora de Madrid), por la sede que tiene anotada el chat.
+//   No cuentan los socios, los marcados con una etiqueta de «no es un lead» ni los números de prueba. Los que aún
+//   no tienen sede van aparte (`sin_sede`) y los interesados en El Cañaveral también.
 // - Primer pago (= alta): socios cuyo primer pago de toda su historia cae en el mes, hayan hecho o no clase de
 //   prueba. Sale del registro de socios de cada sede (clientes-analytics, un SQLite por sede que se rehace solo).
 // - Reservan y asisten (solo Parla): el informe mensual de pruebas que saca metro-trial-crm del panel de
@@ -15,44 +14,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
-import { Ghl } from './ghl.js';
 import { plazasCanaveral } from './canaveral.js';
-import { tagsNoLead } from './etiquetas.js';
+import { sqlEsLead } from './etiquetas.js';
+import { sqlSinNumerosPrueba } from './panel.js';
 
 export const PLAZAS_APERTURA_CANAVERAL = 200;
 
 export const SEDES_EMBUDO = ['parla', 'getafe', 'las_rosas'];
 /** Pasos del embudo de cada sede, en orden. Solo Parla trabaja con clase de prueba. */
 export const PASOS_SEDE = { parla: ['leads', 'reservan', 'asisten', 'pagan'], getafe: ['leads', 'pagan'], las_rosas: ['leads', 'pagan'] };
-const CACHE_MS = 15 * 60 * 1000;
-const cache = new Map();
 
-const NOMBRES_SEDE = [['parla', ['parla', 'mpo parla']], ['getafe', ['getafe', 'mpo getafe']], ['las_rosas', ['las rosas', 'mpo las rosas']]];
 const NOMBRE_SEDE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas' };
-const CANAVERAL = /ca[ñn]averal/i;
-
-/**
- * Sede de un contacto de GHL según sus etiquetas, o null. El Cañaveral (próxima apertura) se reconoce por
- * cualquier etiqueta que lo nombre («el cañaveral», «mpo-el-canaveral-interesado»…), pero solo si no tiene
- * otra sede: quien ya tiene Parla, Getafe o Las Rosas cuenta allí.
- */
-export function sedeDeEtiquetas(tags = []) {
-  const t = tags.map((x) => String(x).toLowerCase().trim());
-  for (const [sede, nombres] of NOMBRES_SEDE) if (t.some((x) => nombres.includes(x))) return sede;
-  if (t.some((x) => CANAVERAL.test(x))) return 'el_canaveral';
-  return null;
-}
-
-/** Si no hay etiqueta de sede, la del origen del contacto («Web nueva · Getafe», «El Cañaveral · aviso…»). */
-export function sedeDeContacto(c = {}) {
-  const porTags = sedeDeEtiquetas(c.tags || []);
-  if (porTags) return porTags;
-  const o = String(c.source || '').toLowerCase();
-  if (CANAVERAL.test(o)) return 'el_canaveral';
-  return NOMBRES_SEDE.find(([, n]) => o.includes(n[0]))?.[0] || null;
-}
-
-const esSocio = (tags = []) => tags.some((x) => /^(activo|socio)\b/i.test(String(x).trim()));
 
 /** Medianoche en Madrid del día 1 de un mes, como instante UTC (respeta el horario de verano). */
 function medianocheMadrid(a, m) {
@@ -73,35 +45,18 @@ export function mesActual(ahora = new Date()) {
 }
 
 /**
- * Cuenta los leads nuevos del mes por sede, paginando la búsqueda de contactos de GHL. `noLead`: tags (en
- * minúsculas) que marcan un contacto como «no es un lead»; esos se cuentan aparte en `no_leads`.
+ * Leads nuevos del mes por sede, de los chats de Sofía: { parla, getafe, las_rosas, el_canaveral, sin_sede, no_leads }.
+ * `no_leads` son los chats del mes marcados como «no es un lead», que quedan fuera de las demás cifras.
  */
-export async function leadsPorSede(ghl, mes, { noLead = [] } = {}) {
+export function leadsDeSofia(db, mes) {
   const { desde, hasta } = rangoMes(mes);
-  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0, ...(noLead.length ? { no_leads: 0 } : {}) };
-  const fuera = new Set(noLead);
-  const marcado = (tags = []) => fuera.size > 0 && tags.some((t) => fuera.has(String(t).toLowerCase().trim().replace(/\s+/g, ' ')));
-  // Los contactos de los números de prueba (Ajustes) no son leads: ni se cuentan aparte
-  const u9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
-  const numsPrueba = new Set(config.telefonosPrueba.map(u9).filter((t) => t.length === 9));
-  const dePrueba = (tel) => numsPrueba.has(u9(tel));
-  let searchAfter;
-  for (let pagina = 0; pagina < 50; pagina++) {
-    const r = await ghl.req('POST', '/contacts/search', {
-      locationId: config.ghl.locationId, pageLimit: 100,
-      filters: [{ field: 'dateAdded', operator: 'range', value: { gte: desde.toISOString(), lt: hasta.toISOString() } }],
-      sort: [{ field: 'dateAdded', direction: 'asc' }],
-      ...(searchAfter ? { searchAfter } : {}),
-    });
-    const contactos = r?.contacts || [];
-    for (const c of contactos) {
-      if (esSocio(c.tags)) continue;
-      if (dePrueba(c.phone)) continue;
-      if (marcado(c.tags)) { cuenta.no_leads++; continue; }
-      cuenta[sedeDeContacto(c) || 'sin_sede']++;
-    }
-    searchAfter = contactos.at(-1)?.searchAfter;
-    if (contactos.length < 100 || !searchAfter) break;
+  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0, no_leads: 0 };
+  const filas = db.prepare(`SELECT IFNULL(c.sede, '') sede, ${sqlEsLead('c.id')} lead, count(*) n FROM conversations c
+    WHERE c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio' AND ${sqlSinNumerosPrueba()}
+      AND datetime(c.created_at) >= datetime(?) AND datetime(c.created_at) < datetime(?) GROUP BY 1, 2`).all(desde.toISOString(), hasta.toISOString());
+  for (const f of filas) {
+    if (!f.lead) cuenta.no_leads += f.n;
+    else cuenta[['parla', 'getafe', 'las_rosas', 'el_canaveral'].includes(f.sede) ? f.sede : 'sin_sede'] += f.n;
   }
   return cuenta;
 }
@@ -143,7 +98,7 @@ export function altasPorSede(mes, rutas = config.embudo.sociosDb) {
   return { porSede, actualizado };
 }
 
-/** Embudo completo del mes. Se guarda 15 minutos en memoria para no repetir llamadas a GHL. */
+/** Embudo completo del mes. Todo se lee en el momento: chats de Sofía, registro de socios e informe de pruebas. */
 /**
  * El Cañaveral (abre el 1 de febrero de 2027): aún no hay clases de prueba, así que su embudo es otro.
  * Interesados del mes (GHL) → plazas de apertura anotadas → primer pago. Las plazas y los pagos son el acumulado
@@ -159,18 +114,10 @@ export function embudoCanaveral(repo, interesados, { ruta } = {}) {
   };
 }
 
-export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, socios, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
-  let noLead = [];
-  try { noLead = repo?.db ? tagsNoLead(repo.db) : []; } catch (e) { console.error('Embudo, etiquetas:', e.message); }
-  // Solo se guardan los leads (lo único que pregunta a GHL); pruebas y altas se leen de disco cada vez
-  const clave = `${mes}|${noLead.join(',')}|${config.telefonosPrueba.join(',')}`;
+export async function embudo(mes = mesActual(), { dir, socios, repo = null, rutaCanaveral } = {}) {
   let leads = null; let errorLeads = null;
-  const enCache = cache.get(clave);
-  if (enCache && ahora - enCache.t < CACHE_MS) leads = enCache.leads;
-  else {
-    try { leads = await leadsPorSede(ghl, mes, { noLead }); cache.set(clave, { t: ahora, leads }); }
-    catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
-  }
+  try { if (repo?.db) leads = leadsDeSofia(repo.db, mes); else errorLeads = 'No se han podido leer los leads de Sofía.'; }
+  catch (e) { errorLeads = 'No se han podido leer los leads de Sofía.'; console.error('Embudo, leads:', e.message); }
   const pruebas = pruebasPorSede(mes, dir);
   const altas = altasPorSede(mes, socios);
   const sedes = SEDES_EMBUDO.map((sede) => {
@@ -199,4 +146,3 @@ export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, socios, 
   return { ...valor, canaveral: embudoCanaveral(repo, valor.el_canaveral, { ruta: rutaCanaveral }) };
 }
 
-export function limpiarCacheEmbudo() { cache.clear(); }
