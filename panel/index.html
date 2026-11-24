@@ -2078,24 +2078,26 @@ async function recursos() {
     <p class="intro">Archivos que Sofía puede enviar cuando encajan en la conversación (horarios en PDF, fotos del box, un vídeo, cómo llegar…). Lee el nombre y «cuándo enviarlo» para decidir. Un seguimiento también puede adjuntar uno. En modo prueba no se envían: queda el borrador.</p>
     <div id="rform"></div>
     ${lista.length ? `<div class="rec-grid">${lista.map((r) => `<article class="rec ${r.activo ? '' : 'inactiva'}">${vista(r)}<div class="rec-body"><b>${esc(r.nombre)}</b> <span class="chip">${esc(r.tipo)}</span>${r.activo ? '' : ' <span class="chip ambar">no se envía</span>'}
-      <p class="ayuda">Cuándo: ${esc(r.descripcion)}</p><p class="ayuda">${(r.tamano / 1024 / 1024).toFixed(1)} MB</p>
+      <p class="ayuda">Cuándo: ${esc(r.descripcion)}</p><p class="ayuda">${r.pie ? `Texto que lo acompaña: «${esc(r.pie)}»` : 'Va sin texto'}</p><p class="ayuda">${(r.tamano / 1024 / 1024).toFixed(1)} MB</p>
       <div class="acciones-f"><button class="mini" data-red="${r.id}">Editar</button><button class="mini" data-ract="${r.id}" data-on="${r.activo ? 0 : 1}">${r.activo ? 'Desactivar' : 'Activar'}</button><button class="mini peligro" data-rbor="${r.id}">Borrar</button></div></div></article>`).join('')}</div>` : '<div class="vacio">Todavía no hay recursos. Sube por ejemplo el horario de cada sede en imagen o PDF.</div>'}`;
   cargarMedios($('#main'));
   const form = (r) => {
     $('#rform').innerHTML = `<form class="editor" id="frec"><section><h3>${r ? `Editar «${esc(r.nombre)}»` : 'Subir recurso'}</h3>
       <input name="n" placeholder="Nombre. Ej: Horario Parla" maxlength="60" value="${esc(r?.nombre || '')}" style="width:100%;margin-bottom:8px" required>
       <textarea name="d" rows="2" maxlength="500" placeholder="Cuándo enviarlo. Ej: cuando pregunte por horarios de Parla" required style="width:100%">${esc(r?.descripcion || '')}</textarea>
+      <input name="p" maxlength="1000" placeholder="Texto que lo acompaña por WhatsApp (opcional). Vacío = va sin texto" value="${esc(r?.pie || '')}" style="width:100%;margin-top:8px">
+      <p class="ayuda">Sale debajo de la imagen o del vídeo, tal cual lo escribas.</p>
       ${r ? '' : '<p><input type="file" name="f" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,application/pdf,audio/*" required></p><p class="ayuda">Imagen, vídeo MP4, PDF o audio. Máximo 25 MB.</p>'}
       <div class="acciones-f"><button class="primario">${r ? 'Guardar' : 'Subir'}</button><button type="button" id="rcanc">Cancelar</button></div><p class="error"></p></section></form>`;
     $('#rcanc').onclick = () => { $('#rform').innerHTML = ''; };
     $('#frec').onsubmit = async (e) => {
       e.preventDefault(); const f = e.target; const b = f.querySelector('.primario'); b.disabled = true; b.textContent = r ? 'Guardando…' : 'Subiendo…';
       try {
-        if (r) await api(`/panel/recursos/${r.id}`, { method: 'PUT', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value }) });
+        if (r) await api(`/panel/recursos/${r.id}`, { method: 'PUT', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, pie: f.p.value }) });
         else {
           const file = f.f.files[0]; if (file.size > 25 * 1024 * 1024) throw new Error('Como mucho 25 MB.');
           const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(file); });
-          await api('/panel/recursos/adjunto', { method: 'POST', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, datos, mime: file.type, archivo: file.name }) });
+          await api('/panel/recursos/adjunto', { method: 'POST', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, pie: f.p.value, datos, mime: file.type, archivo: file.name }) });
         }
         recursos();
       } catch (err) { f.querySelector('.error').textContent = err.message; b.disabled = false; b.textContent = r ? 'Guardar' : 'Subir'; }

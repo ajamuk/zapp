@@ -356,6 +356,9 @@ const COLUMNAS_NUEVAS = {
     coste_usd: 'REAL',            // coste calculado al hacer la llamada, con el modelo que respondió (NULL en filas antiguas)
     respaldo: 'INTEGER NOT NULL DEFAULT 0', // 1 = respondió el modelo de respaldo porque el principal se negó
   },  // archivo que se adjunta al enviarlo
+  recursos: {
+    pie: 'TEXT',                   // texto que acompaña al archivo por WhatsApp ('' = va sin texto)
+  },
   scheduled: {
     tipo: 'TEXT',                  // silencio | etiqueta | cita | largo-plazo | manual | lanzamiento
     texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
@@ -370,6 +373,9 @@ function migrar(db) {
     const existen = new Set(db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name));
     for (const [col, tipo] of Object.entries(cols)) if (!existen.has(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
   }
+  // Recursos anteriores al texto propio: conservan el que salía hasta ahora, a la vista y editable en el panel
+  db.exec(`UPDATE recursos SET pie = CASE WHEN nombre LIKE '%-tarifas' THEN 'aquí tienes las tarifas'
+    WHEN nombre LIKE '%-horarios' THEN 'y aquí los horarios' ELSE 'te lo dejo por aquí' END WHERE pie IS NULL`);
   db.exec(`UPDATE scheduled SET tipo = CASE WHEN regla_id LIKE 'largo-plazo%' THEN 'largo-plazo' ELSE 'silencio' END WHERE tipo IS NULL`);
 }
 
