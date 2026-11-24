@@ -15,6 +15,7 @@ import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
+import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
 
@@ -62,9 +63,9 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - aislamiento: estado de aislamiento.js (el servicio real pasa el de la configuración; simuladores y tests, ninguno)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, voz = vozReal, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, voz, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
   }
 
   // ---------- Aislamiento en el número propio (aislamiento.js) ----------
@@ -916,6 +917,26 @@ export class Setter {
     }
     const ids = [];
     const pausadaAlEmpezar = Boolean(this.repo.getConv(conv.id)?.ai_paused);
+    // Nota de voz en vez de texto, si las normas de Ajustes lo piden. Si no se puede generar o enviar, sale el texto.
+    const antesVoz = Date.now();
+    const nota = await this.notaDeVoz(conv, mensajes);
+    if (nota) {
+      await this.sleep(Math.max(0, escritura[0] - yaEsperadoMs - (Date.now() - antesVoz)));
+      if (control?.cancelado) return null;
+      const msg = { conversation_id: conv.id, autor: 'ia', texto: mensajes.join('\n'), adjunto: 'audio', media_ruta: nota.media_ruta, media_mime: nota.media_mime };
+      try {
+        const r = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: nota.url, mime: nota.media_mime, nombre: 'nota-de-voz.ogg' });
+        this.repo.addMessage({ ...msg, external_id: r?.messageId || null });
+        await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'ia', texto: msg.texto }));
+        this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
+        return [r?.messageId || null];
+      } catch (e) {
+        // GHL puede dejar el audio creado aunque devuelva un error: si aparece luego, es de Sofía. La respuesta
+        // sale igualmente por escrito (mejor repetida en voz y texto que sin contestar).
+        this.anotarSinConfirmar(conv.id, { texto: msg.texto, url: nota.url, extra: { adjunto: msg.adjunto, media_ruta: msg.media_ruta, media_mime: msg.media_mime } });
+        console.error('[voz]', `GHL no aceptó la nota de voz, sale el texto: ${e.message}`);
+      }
+    }
     for (let i = 0; i < mensajes.length; i++) {
       await this.sleep(i === 0 ? Math.max(0, escritura[0] - yaEsperadoMs) : escritura[i]);
       // Alguien del equipo ha escrito mientras Sofía «escribía»: no se mandan las burbujas que faltan
@@ -938,6 +959,24 @@ export class Setter {
     }
     this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
     return ids;
+  }
+
+  /**
+   * Nota de voz de esta respuesta ({ media_ruta, media_mime, url }) si las normas de Ajustes dicen que va por voz;
+   * null si va por texto, también cuando ElevenLabs o la conversión fallan.
+   */
+  async notaDeVoz(conv, mensajes) {
+    const ajustes = leerAjustes(this.repo).voz;
+    if (!ajustes.activo || !this.voz || !this.ghl.enviarAdjunto) return null;
+    const ultimo = this.repo.db.prepare("SELECT adjunto FROM messages WHERE conversation_id = ? AND autor = 'lead' ORDER BY id DESC LIMIT 1").get(conv.id);
+    const vozId = this.voz.vozElegida(ajustes);
+    const d = this.voz.decidirVoz({
+      ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId, esPrueba: this.esDePrueba(conv),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes, ...this.voz.uso(this.repo.db, conv.id, this.now()),
+    });
+    if (!d.voz) return null;
+    try { return await this.voz.sintetizar(d.texto, { vozId, base: this.medios?.base }); }
+    catch (e) { console.error('[voz]', `no se ha podido generar la nota de voz, sale el texto: ${e.message}`); return null; }
   }
 
   /** ¿Está en GHL, recién enviado y sin registrar aquí, un saliente con ese texto? Devuelve { messageId } o null. */

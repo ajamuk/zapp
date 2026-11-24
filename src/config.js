@@ -108,6 +108,13 @@ export const config = {
     reserva: env('TRANSCRIPTOR_RESERVA', '/usr/local/bin/cfmp-whisper-transcribe'),
     ffmpeg: env('FFMPEG', 'ffmpeg'),
   },
+  // Notas de voz de Sofía con ElevenLabs (src/voz.js). Sin clave no se genera ninguna; las normas van en Ajustes.
+  voz: {
+    apiKey: env('ELEVENLABS_API_KEY'),
+    vozId: env('ELEVENLABS_VOICE_ID'),                       // «Voice ID» de la voz (se puede cambiar en Ajustes)
+    modelo: env('ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
+    baseUrl: env('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io'),
+  },
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),

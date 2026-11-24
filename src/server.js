@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
 import { dentroDeHorario, siguienteApertura } from './horario.js';
@@ -16,6 +16,7 @@ import * as reglasSeg from './reglas.js';
 import * as reportes from './reportes.js';
 import * as documentos from './documentos.js';
 import * as recursosMod from './recursos.js';
+import * as vozMod from './voz.js';
 import * as alertas from './alertas.js';
 import * as meta from './meta.js';
 import * as actividad from './actividad.js';
@@ -125,6 +126,9 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   // Recursos públicos para que GHL los descargue al enviarlos (código aleatorio; solo los activos)
   app.get('/r/:token', (req, res) => {
     const r = recursosMod.porToken(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
+    // Notas de voz de Sofía (/r/voz_<código>.ogg): Meta las descarga de aquí al enviarlas
+    const voz = r ? null : vozMod.rutaDeCodigo(String(req.params.token).replace(/\.ogg$/i, ''));
+    if (voz) { const base = medios?.base || carpetaMedios(); if (!existsSync(path.join(base, voz))) return res.status(404).end(); res.type(vozMod.MIME_VOZ); return res.sendFile(path.resolve(base, voz), { headers: { 'Cache-Control': 'public, max-age=3600' } }); }
     if (!r) return res.status(404).end();
     res.set('Cache-Control', 'public, max-age=3600');
     return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios());
@@ -508,7 +512,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     estados: Object.keys(panel.ESTADOS),
   }));
 
-  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), canaveral: plazasCanaveral(repo) }));
+  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), canaveral: plazasCanaveral(repo), vozEstado: { clave: vozMod.hayClave(), vozPorDefecto: Boolean(config.voz.vozId), caracteresMes: vozMod.uso(db).caracteresMes } }));
   admin.put('/panel/ajustes', (req, res) => {
     try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
   });
