@@ -2,7 +2,8 @@
 //
 // - Leads nuevos: contactos creados en GHL en el mes con la etiqueta de su sede (parla / getafe / las rosas,
 //   o "mpo <sede>"; si no hay, la del origen del contacto). Se descartan los que ya son socios (etiqueta
-//   "activo…" o "socio"). Los interesados en El Cañaveral se cuentan aparte.
+//   "activo…" o "socio") y los que llevan una etiqueta de «no es un lead» del panel. Los interesados en
+//   El Cañaveral se cuentan aparte.
 // - Reservan, asisten y primer pago: el informe mensual de pruebas que saca metro-trial-crm del panel de
 //   AimHarder (/opt/metro-trial-crm/data/aimharder-AAAA-MM.json). Reservan = pruebas no canceladas; asisten =
 //   marcadas como asistidas en AimHarder; primer pago = alta con primer pago posterior a la prueba.
@@ -12,6 +13,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { Ghl } from './ghl.js';
 import { plazasCanaveral } from './canaveral.js';
+import { tagsNoLead } from './etiquetas.js';
 
 export const PLAZAS_APERTURA_CANAVERAL = 200;
 
@@ -63,10 +65,15 @@ export function mesActual(ahora = new Date()) {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(ahora);
 }
 
-/** Cuenta los leads nuevos del mes por sede, paginando la búsqueda de contactos de GHL. */
-export async function leadsPorSede(ghl, mes) {
+/**
+ * Cuenta los leads nuevos del mes por sede, paginando la búsqueda de contactos de GHL. `noLead`: tags (en
+ * minúsculas) que marcan un contacto como «no es un lead»; esos se cuentan aparte en `no_leads`.
+ */
+export async function leadsPorSede(ghl, mes, { noLead = [] } = {}) {
   const { desde, hasta } = rangoMes(mes);
-  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0 };
+  const cuenta = { parla: 0, getafe: 0, las_rosas: 0, el_canaveral: 0, sin_sede: 0, ...(noLead.length ? { no_leads: 0 } : {}) };
+  const fuera = new Set(noLead);
+  const marcado = (tags = []) => fuera.size > 0 && tags.some((t) => fuera.has(String(t).toLowerCase().trim().replace(/\s+/g, ' ')));
   let searchAfter;
   for (let pagina = 0; pagina < 50; pagina++) {
     const r = await ghl.req('POST', '/contacts/search', {
@@ -78,6 +85,7 @@ export async function leadsPorSede(ghl, mes) {
     const contactos = r?.contacts || [];
     for (const c of contactos) {
       if (esSocio(c.tags)) continue;
+      if (marcado(c.tags)) { cuenta.no_leads++; continue; }
       cuenta[sedeDeContacto(c) || 'sin_sede']++;
     }
     searchAfter = contactos.at(-1)?.searchAfter;
@@ -119,12 +127,14 @@ export function embudoCanaveral(repo, interesados, { ruta } = {}) {
 }
 
 export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = Date.now(), repo = null, rutaCanaveral } = {}) {
-  const clave = `${mes}|${dir || ''}`;
+  let noLead = [];
+  try { noLead = repo?.db ? tagsNoLead(repo.db) : []; } catch (e) { console.error('Embudo, etiquetas:', e.message); }
+  const clave = `${mes}|${dir || ''}|${noLead.join(',')}`;
   const enCache = cache.get(clave);
   if (enCache && ahora - enCache.t < CACHE_MS) return { ...enCache.valor, canaveral: embudoCanaveral(repo, enCache.valor.el_canaveral, { ruta: rutaCanaveral }) };
 
   let leads = null; let errorLeads = null;
-  try { leads = await leadsPorSede(ghl, mes); } catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
+  try { leads = await leadsPorSede(ghl, mes, { noLead }); } catch (e) { errorLeads = 'No se han podido leer los leads de GHL.'; console.error('Embudo GHL:', e.message); }
   const pruebas = pruebasPorSede(mes, dir);
   const sedes = SEDES_EMBUDO.map((sede) => ({
     sede,
@@ -138,6 +148,7 @@ export async function embudo(mes = mesActual(), { ghl = new Ghl(), dir, ahora = 
     sin_sede: leads?.sin_sede ?? null,
     // El Cañaveral aún no abre: sus interesados se cuentan aparte y no entran en el total ni en la conversión
     el_canaveral: leads?.el_canaveral ?? null,
+    no_leads: leads?.no_leads ?? 0, // contactos del mes marcados como «no es un lead»: fuera de todas las cifras
     pruebas_actualizadas: pruebas?.actualizado ?? null,
     avisos: [errorLeads, pruebas ? null : 'Todavía no hay informe de pruebas de AimHarder para este mes.'].filter(Boolean),
   };

@@ -1,9 +1,11 @@
 import { knowledge } from './knowledge.js';
-import { deChats } from './etiquetas.js';
+import { deChats, sqlEsLead } from './etiquetas.js';
 import * as reglasSeg from './reglas.js';
 
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
 const PRUEBAS = "c.id NOT LIKE 'prueba-%'";
+// Los chats marcados con una etiqueta de «no es un lead» (proveedores, spam, equivocados) no cuentan en ninguna cifra
+const ES_LEAD = sqlEsLead('c.id');
 
 const fmtMadrid = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' });
 const partesMadrid = (d) => Object.fromEntries(fmtMadrid.formatToParts(d).map((x) => [x.type, x.value]));
@@ -41,19 +43,22 @@ export function resumen(db, dias = 1, momento = new Date()) {
   const conversaciones = uno(`SELECT count(*) n,
       sum(IFNULL(tipo, '') = 'socio') socios,
       sum(IFNULL(tipo, '') != 'socio') leads
-    FROM conversations c WHERE ${PRUEBAS} AND ${enPeriodo('c.created_at')}`);
+    FROM conversations c WHERE ${PRUEBAS} AND ${ES_LEAD} AND ${enPeriodo('c.created_at')}`);
+  // Para saber cuántos se han dejado fuera (se enseña al pie del Resumen)
+  conversaciones.no_leads = uno(`SELECT count(*) n FROM conversations c WHERE ${PRUEBAS} AND NOT ${ES_LEAD} AND ${enPeriodo('c.created_at')}`).n;
+  const mEsLead = sqlEsLead('m.conversation_id');
   const mensajes = uno(`SELECT
       sum(autor = 'lead') lead, sum(autor = 'ia' AND enviado = 1) ia, sum(autor = 'ia' AND enviado = 0) borradores, sum(autor = 'humano') equipo
-    FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')}`);
+    FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} AND ${enPeriodo('m.created_at')}`);
   const atendidas = uno(`SELECT count(DISTINCT conversation_id) n FROM messages m
-    WHERE m.autor = 'ia' AND m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')}`).n;
+    WHERE m.autor = 'ia' AND m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
   const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE a.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
   const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE s.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('s.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
   const ahora = uno(`SELECT sum(c.derivado = 1) derivadas, sum(c.ai_paused = 1 AND c.derivado = 0) pausadas,
       sum(c.alta_estado = 'pendiente') altas_pendientes, sum(c.prueba_reservada = 1) pruebas
-    FROM conversations c WHERE ${PRUEBAS}`);
+    FROM conversations c WHERE ${PRUEBAS} AND ${ES_LEAD}`);
   const embudo = todos(`SELECT IFNULL(fase, 'sin fase') fase, count(*) n FROM conversations c
-    WHERE ${PRUEBAS} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
+    WHERE ${PRUEBAS} AND ${ES_LEAD} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
       sum(tokens_cache_write) cache_escritura, sum(tokens_out) salida, avg(ms) ms
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
@@ -62,7 +67,7 @@ export function resumen(db, dias = 1, momento = new Date()) {
     SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia') ia
     FROM dias d JOIN messages m ON m.created_at >= date(d.desde) AND m.created_at < date(d.hasta, '+1 day')
       AND datetime(m.created_at) >= d.desde AND datetime(m.created_at) < d.hasta
-    WHERE m.conversation_id NOT LIKE 'prueba-%' GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
+    WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${mEsLead} GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
   return { dias: d, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
 }
 
@@ -70,7 +75,7 @@ export function resumen(db, dias = 1, momento = new Date()) {
 
 /**
  * Criterios combinables (todos opcionales; dentro de cada lista basta con uno):
- *  estado: ['ia_activa'|'pausadas'|'derivadas'|'seguimiento'|'prueba'|'alta'|'socios'|'leads']
+ *  estado: ['ia_activa'|'pausadas'|'derivadas'|'seguimiento'|'prueba'|'alta'|'socios'|'leads'|'no_leads']
  *  etiquetas: [ids], modo: 'alguna'|'todas'   ·   sin_etiquetas: [ids]   ·   sin_ninguna: true
  *  sede: ['parla'|...|'sin_sede']   ·   canal: ['whatsapp'|'instagram']   ·   fase: ['f1 apertura'|...|'sin_fase']
  *  actividad: días (último mensaje en los últimos N días)   ·   espera: 'equipo' (último mensaje del lead) | 'lead'
@@ -84,7 +89,8 @@ export const ESTADOS = {
   prueba: 'c.prueba_reservada = 1',
   alta: 'c.alta_estado IS NOT NULL',
   socios: "c.tipo = 'socio'",
-  leads: "IFNULL(c.tipo, '') != 'socio'",
+  leads: `IFNULL(c.tipo, '') != 'socio' AND ${ES_LEAD}`,
+  no_leads: `NOT ${ES_LEAD}`,
 };
 
 const lista = (v) => (Array.isArray(v) ? v : v == null || v === '' ? [] : String(v).split(',')).map((x) => String(x).trim()).filter(Boolean);
@@ -286,12 +292,12 @@ const enMadrid = (iso) => {
 };
 
 /**
- * Estadísticas de los chats nuevos (leads, sin socios) en los últimos `dias`: por día y canal, mapa de cuándo
+ * Estadísticas de los chats nuevos (leads, sin socios ni marcados como «no es un lead») en los últimos `dias`: por día y canal, mapa de cuándo
  * entran (día de la semana × hora), embudo, por canal y sede, y etiquetas más puestas.
  */
 export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
   const d = Math.max(1, Math.min(365, Number(dias) || 30));
-  const filtro = [PRUEBAS, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
+  const filtro = [PRUEBAS, ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
   const p = {};
   if (sede) { filtro.push(sede === 'sin_sede' ? 'c.sede IS NULL' : 'c.sede = @sede'); p.sede = sede; }
   if (canal) { filtro.push('c.channel = @canal'); p.canal = canal; }

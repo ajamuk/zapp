@@ -663,6 +663,7 @@ async function resumen({ silencioso = false } = {}) {
     </div>
     ${r.serie.length > 1 ? `<h3>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h3><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead || 0} lead · ${x.ia || 0} Sofía">
       <i style="height:${(x.ia || 0) / max * 70}px;background:var(--green)"></i><i style="height:${(x.lead || 0) / max * 70}px;background:var(--muted)"></i></div>`).join('')}</div>` : ''}
+    ${r.conversaciones.no_leads ? `<p class="nota">No se cuentan <b>${r.conversaciones.no_leads}</b> chat${r.conversaciones.no_leads === 1 ? '' : 's'} de este periodo marcado${r.conversaciones.no_leads === 1 ? '' : 's'} como «no es un lead».</p>` : ''}
     <h3>Fase de los leads <span class="ayuda">con actividad en el periodo</span></h3>
     ${r.embudo.length ? `<table><tr><th>Fase</th><th>Leads</th></tr>${r.embudo.map((e) => `<tr><td>${esc(e.fase)}</td><td>${e.n}</td></tr>`).join('')}</table>` : '<div class="vacio">Sin datos todavía</div>'}
     <h3>IA</h3>
@@ -722,7 +723,7 @@ async function embudo() {
       ${tarjetaSede('Total 3 sedes', tot)}
       ${r.canaveral ? tarjetaCanaveral(r.canaveral) : ''}
     </div>
-    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
+    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios${r.no_leads ? ` ni <b>${r.no_leads}</b> marcado${r.no_leads === 1 ? '' : 's'} como «no es un lead»` : ''})${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
     Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
     Primer pago = alta pagada después de la clase de prueba.</p>`;
 }
@@ -790,7 +791,7 @@ async function prepararTextos(items, pedir, pintar) {
 }
 
 // ---------- Chats: vistas y filtros ----------
-const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
+const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)', no_leads: 'No son leads' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
 const vacios = (c) => !Object.keys(c || {}).filter((k) => k !== 'modo').length;
 const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía', ghl: 'desde GHL' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
@@ -1077,6 +1078,7 @@ const ACCIONES = [
   ['forzar_respuesta', '⚡ Forzar respuesta', 'Sofía contesta ya (respeta su horario). No actúa con reglas de inactividad.'],
   ['derivar', '🙋 Derivar al equipo', 'Pausa a Sofía y marca el chat como derivado.'],
   ['avisar', '🔔 Avisar al equipo', 'Manda un aviso por Telegram cuando se pone.'],
+  ['no_lead', '🚫 No es un lead', 'Para proveedores, spam o números equivocados: Sofía no le escribe más (ni seguimientos ni lanzamientos) y el chat deja de contar en Resumen, Estadísticas y Embudo.'],
 ];
 const REGLA_NUEVA = { texto: { tipo: 'texto', quien: 'lead', operador: 'contiene', patron: '' }, adjunto: { tipo: 'adjunto', quien: 'lead', media: 'cualquiera' }, inactividad: { tipo: 'inactividad', horas: 24 }, fase: { tipo: 'fase', fase: 'f5 cierre' }, sede: { tipo: 'sede', sede: 'parla' } };
 
@@ -1204,6 +1206,8 @@ function editorEtiqueta(e) {
       leer();
       if (c.dataset.acc === 'pausar_ia' && c.checked) { d.acciones.reanudar_ia = false; d.acciones.forzar_respuesta = false; }
       if ((c.dataset.acc === 'reanudar_ia' || c.dataset.acc === 'forzar_respuesta') && c.checked) d.acciones.pausar_ia = false;
+      // «No es un lead» siempre pausa a Sofía y no se combina con reanudar, forzar ni derivar
+      if (d.acciones.no_lead) Object.assign(d.acciones, { pausar_ia: true, reanudar_ia: false, forzar_respuesta: false, derivar: false });
       pintar();
     });
     const salir = () => { estado.editEtq = null; etiquetas(); };
