@@ -4,7 +4,6 @@ import { openDb, repo as crearRepo } from '../src/db.js';
 import * as etq from '../src/etiquetas.js';
 import * as panel from '../src/panel.js';
 import { destinatarios } from '../src/followups.js';
-import { leadsPorSede, embudo, limpiarCacheEmbudo } from '../src/embudo.js';
 
 // Etiquetas con la acción «no es un lead»: Sofía no trabaja ese chat y no cuenta en ninguna cifra.
 
@@ -83,16 +82,3 @@ test('poner el tag en GHL también marca el chat', async () => {
   assert.equal(repo.getConv('proveedor').ai_paused, 1);
 });
 
-test('embudo: los contactos de GHL con el tag no cuentan como leads nuevos', async () => {
-  const contactos = [{ tags: ['parla'] }, { tags: ['parla', 'no es lead'] }, { tags: ['getafe', 'No es lead'] }, { tags: ['getafe'] }];
-  const ghl = { req: async () => ({ contacts: contactos }) };
-  assert.deepEqual(await leadsPorSede(ghl, '2026-11', { noLead: ['no es lead'] }), { parla: 1, getafe: 1, las_rosas: 0, el_canaveral: 0, sin_sede: 0, no_leads: 2 });
-  // Sin etiquetas de ese tipo, todo sigue como antes
-  assert.deepEqual(await leadsPorSede(ghl, '2026-11'), { parla: 2, getafe: 2, las_rosas: 0, el_canaveral: 0, sin_sede: 0 });
-
-  const { repo } = montar();
-  limpiarCacheEmbudo();
-  const r = await embudo('2026-11', { ghl, repo, dir: '/no-existe', socios: {} });
-  assert.equal(r.no_leads, 2);
-  assert.equal(r.sedes.find((s) => s.sede === 'parla').leads, 1);
-});

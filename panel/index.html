@@ -791,7 +791,7 @@ async function embudo() {
       ${tarjetaSede('Total 3 sedes', ['leads', 'pagan'], { leads: suma('leads'), pagan: suma('pagan') })}
       ${r.canaveral ? tarjetaCanaveral(r.canaveral) : ''}
     </div>
-    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios${r.no_leads ? ` ni <b>${r.no_leads}</b> marcado${r.no_leads === 1 ? '' : 's'} como «no es un lead»` : ''})${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
+    <p class="nota">Leads nuevos: chats que Sofía ha abierto este mes, por la sede anotada en el chat (sin contar socios, números de prueba${r.no_leads ? ` ni <b>${r.no_leads}</b> marcado${r.no_leads === 1 ? '' : 's'} como «no es un lead»` : ''})${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más aún no tienen sede` : ''}.
     Primer pago = alta: socios cuyo primer pago de toda su historia es de este mes, hayan hecho o no clase de prueba (registro de socios de cada sede${r.altas_actualizadas ? `, datos del ${new Date(r.altas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}).
     Reservas y asistencias de Parla: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.</p>`;
 }

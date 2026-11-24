@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { openDb, repo as crearRepo } from '../src/db.js';
 import { config } from '../src/config.js';
 import * as panel from '../src/panel.js';
-import { leadsPorSede } from '../src/embudo.js';
 
 const conNumeros = (lista, fn) => { const antes = [...config.telefonosPrueba]; config.telefonosPrueba.splice(0, antes.length, ...lista); return Promise.resolve().then(fn).finally(() => config.telefonosPrueba.splice(0, config.telefonosPrueba.length, ...antes)); };
 
@@ -31,12 +30,4 @@ test('los chats de los números de prueba no cuentan en resumen, estadísticas n
     assert.equal(panel.resumen(db, 1).conversaciones.n, 3);
     assert.equal(panel.estadisticas(db, { dias: 30 }).total, 3);
   }));
-});
-
-test('el embudo no cuenta los contactos de los números de prueba', () => {
-  const ghl = { req: async () => ({ contacts: [{ tags: ['parla'], phone: '+34600111222' }, { tags: ['parla'], phone: '+34611222333' }] }) };
-  return conNumeros(['611222333'], async () => {
-    const c = await leadsPorSede(ghl, '2026-11');
-    assert.equal(c.parla + c.getafe + c.las_rosas + c.el_canaveral + c.sin_sede, 1);
-  });
 });

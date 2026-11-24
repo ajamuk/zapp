@@ -131,8 +131,10 @@ test('ajustes: se validan, se guardan y cambian el horario en memoria', async ()
 
 test('panel: embudo por sede pide la clave y valida el mes', async () => {
   const repo = crearRepo(openDb(':memory:'));
-  const ghl = { req: async () => ({ contacts: [{ tags: ['parla'] }] }) };
-  const srv = crearApp({ setter: {}, repo, embudoOpciones: { ghl, dir: '/no-existe', socios: {} } }).listen(0);
+  repo.upsertConv({ id: 'e1', contact_id: 'ke1', channel: 'whatsapp', nombre: 'E', telefono: '+34600123123' });
+  repo.updateConv('e1', { sede: 'parla' });
+  repo.db.prepare("UPDATE conversations SET created_at = '2026-09-10 10:00:00' WHERE id = 'e1'").run();
+  const srv = crearApp({ setter: {}, repo, embudoOpciones: { dir: '/no-existe', socios: {} } }).listen(0);
   await new Promise((r) => srv.once('listening', r));
   const base = `http://127.0.0.1:${srv.address().port}/admin/panel/embudo`;
   const h = { headers: { authorization: 'Bearer clave-test' } };
