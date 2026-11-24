@@ -1,5 +1,5 @@
 // Alertas del sistema (como las «alertas operativas» de Zapp): algo no funciona y hay que mirarlo. Se guardan en la
-// tabla `alertas`, una por problema (clave), se avisa por Telegram la primera vez y se resuelven solas cuando la
+// tabla `alertas`, una por problema (clave), se avisa por Telegram la primera vez (solo las de nivel error) y se resuelven solas cuando la
 // comprobación vuelve a ir bien. El panel las enseña en Resumen.
 import fs from 'node:fs';
 import { config } from './config.js';
@@ -11,7 +11,8 @@ export function registrar(db, { clave, tipo, titulo, detalle = '', nivel = 'erro
     return { nueva: false, id: abierta.id };
   }
   const r = db.prepare('INSERT INTO alertas (clave, tipo, nivel, titulo, detalle) VALUES (?, ?, ?, ?, ?)').run(clave, tipo, nivel, titulo, String(detalle).slice(0, 1000));
-  Promise.resolve(avisar?.(`⚠️ ZAPP · ${titulo}${detalle ? `\n${String(detalle).slice(0, 300)}` : ''}`)).catch(() => {});
+  // Por Telegram solo lo grave (Sofía deja de atender). Los de nivel «aviso» se quedan en el panel.
+  if (nivel === 'error') Promise.resolve(avisar?.(`⚠️ ZAPP · ${titulo}${detalle ? `\n${String(detalle).slice(0, 300)}` : ''}`)).catch(() => {});
   return { nueva: true, id: Number(r.lastInsertRowid) };
 }
 

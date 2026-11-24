@@ -249,7 +249,7 @@ export class Etiquetador {
     if (Object.keys(patch).length) this.repo.updateConv(conv.id, patch);
     if (origen !== 'ghl') await this.subirAGhl(conv, etq);
     if (a.meta?.evento) await this.safe(() => (this.enviarMeta || enviarEvento)(this.db, this.repo.getConv(conv.id) || conv, a.meta));
-    if (a.avisar) {
+    if (a.avisar && conv.tipo !== 'socio') { // los chats de socios no avisan por Telegram
       const quien = { manual: 'a mano', regla: 'por regla', ia: 'por Sofía' }[origen] || origen;
       await this.safe(() => this.avisar?.(`Etiqueta «${etq.nombre}» (${quien}) en ${conv.nombre || conv.telefono || 'un chat'}${conv.sede ? ` · ${conv.sede}` : ''}`, { sede: conv.sede }));
     }
