@@ -23,10 +23,10 @@ function validarTexto(d, db, id = null) {
   if (otro && otro.id !== id) throw new Error('Ya hay un recurso con ese nombre.');
   const descripcion = String(d.descripcion || '').trim().slice(0, 500);
   if (!descripcion) throw new Error('Explica cuándo debe enviarlo Sofía.');
-  return { nombre, descripcion };
+  return { nombre, descripcion, pie: String(d.pie ?? '').trim().slice(0, 1000) };
 }
 
-/** Sube un recurso nuevo. d: { nombre, descripcion, datos (base64), mime, archivo } */
+/** Sube un recurso nuevo. d: { nombre, descripcion, pie, datos (base64), mime, archivo } */
 export function crear(db, d, { base = carpetaMedios() } = {}) {
   const t = validarTexto(d, db);
   const mime = String(d.mime || '').toLowerCase();
@@ -35,8 +35,8 @@ export function crear(db, d, { base = carpetaMedios() } = {}) {
   if (!buffer.length) throw new Error('El archivo está vacío.');
   if (buffer.length > MAX) throw new Error('Como mucho 25 MB.');
   const media_ruta = guardar(buffer, { mime, url: d.archivo || '', base });
-  const r = db.prepare('INSERT INTO recursos (nombre, descripcion, tipo, media_ruta, mime, tamano, token) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(t.nombre, t.descripcion, tipoDe(mime, d.archivo), media_ruta, mime, buffer.length, crypto.randomBytes(18).toString('base64url'));
+  const r = db.prepare('INSERT INTO recursos (nombre, descripcion, pie, tipo, media_ruta, mime, tamano, token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(t.nombre, t.descripcion, t.pie, tipoDe(mime, d.archivo), media_ruta, mime, buffer.length, crypto.randomBytes(18).toString('base64url'));
   return obtener(db, r.lastInsertRowid);
 }
 
@@ -44,7 +44,7 @@ export function actualizar(db, id, d) {
   const r = obtener(db, id);
   if (!r) return null;
   const t = validarTexto({ ...r, ...d }, db, id);
-  db.prepare('UPDATE recursos SET nombre = ?, descripcion = ?, activo = ? WHERE id = ?').run(t.nombre, t.descripcion, d.activo === false ? 0 : d.activo === true ? 1 : r.activo, id);
+  db.prepare('UPDATE recursos SET nombre = ?, descripcion = ?, pie = ?, activo = ? WHERE id = ?').run(t.nombre, t.descripcion, t.pie, d.activo === false ? 0 : d.activo === true ? 1 : r.activo, id);
   return obtener(db, id);
 }
 
@@ -73,13 +73,11 @@ export function nombreImagenInfo(tipo, sede, familia) {
 }
 
 /**
- * Texto que acompaña al archivo. WhatsApp (Twilio) rechaza con un 400 los adjuntos que van sin texto, así que
- * por ese canal siempre llevan uno corto, con el tono de Sofía.
+ * Texto que acompaña al archivo por WhatsApp (va como pie de la imagen o del vídeo): el que tenga puesto el
+ * recurso en el panel. Vacío = el archivo va solo, sin texto.
  */
 export function pieDeArchivo(r) {
-  if (/-tarifas$/i.test(r.nombre)) return 'aquí tienes las tarifas';
-  if (/-horarios$/i.test(r.nombre)) return 'y aquí los horarios';
-  return 'te lo dejo por aquí';
+  return String(r?.pie ?? '').trim();
 }
 
 /** Bloque de contexto para Sofía con los recursos que puede enviar (las imágenes de tarifas/horarios van solas). */

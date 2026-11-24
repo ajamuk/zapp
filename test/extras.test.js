@@ -46,7 +46,7 @@ test('alertas: se abren, se agrupan, avisan una vez y se resuelven solas', async
 test('recursos: Sofía los ve, los envía por URL pública en real y solo como borrador en prueba', async () => {
   const db = openDb(':memory:'); const repo = crearRepo(db); const base = tmp();
   assert.throws(() => recursos.crear(db, { nombre: 'x', descripcion: 'y', datos: 'eA==', mime: 'text/plain' }, { base }), /Formato/);
-  const r = recursos.crear(db, { nombre: 'Horario Parla', descripcion: 'cuando pregunte por horarios de Parla', datos: PNG.toString('base64'), mime: 'image/png', archivo: 'h.png' }, { base });
+  const r = recursos.crear(db, { nombre: 'Horario Parla', descripcion: 'cuando pregunte por horarios de Parla', pie: ' este es el horario de Parla ', datos: PNG.toString('base64'), mime: 'image/png', archivo: 'h.png' }, { base });
   assert.match(recursos.urlPublica(r), /\/r\/[\w-]{20,}\.png$/);
   assert.match(recursos.contextoIA(db), /«Horario Parla» \(imagen\): cuando pregunte/);
   const enviados = []; const notas = [];
@@ -59,8 +59,15 @@ test('recursos: Sofía los ve, los envía por URL pública en real y solo como b
   }
   assert.equal(enviados.length, 1);
   assert.equal(enviados[0].url, recursos.urlPublica(r));
-  assert.ok(enviados[0].texto, 'por WhatsApp el archivo siempre lleva texto (sin él, Twilio lo rechaza)');
-  assert.equal(recursos.pieDeArchivo({ nombre: 'parla-academy-tarifas' }), 'aquí tienes las tarifas');
+  assert.equal(enviados[0].texto, 'este es el horario de Parla', 'el texto que acompaña es el del recurso');
+  assert.equal(recursos.pieDeArchivo(recursos.actualizar(db, r.id, { activo: true })), 'este es el horario de Parla', 'activar o desactivar no lo toca');
+  assert.equal(recursos.pieDeArchivo(recursos.actualizar(db, r.id, { pie: '' })), '', 'vacío = el archivo va sin texto');
+  // Los recursos anteriores al texto propio conservan el que salía hasta ahora
+  const fichero = path.join(tmp(), 'viejo.db'); const antes = openDb(fichero);
+  antes.prepare("INSERT INTO recursos (nombre, descripcion, tipo, media_ruta, token) VALUES ('parla-academy-tarifas', 'd', 'imagen', 'x.png', 'tk1'), ('video-clase', 'd', 'video', 'x.mp4', 'tk2')").run();
+  antes.close();
+  const viejos = openDb(fichero).prepare('SELECT pie FROM recursos ORDER BY nombre').all().map((x) => x.pie);
+  assert.deepEqual(viejos, ['aquí tienes las tarifas', 'te lo dejo por aquí']);
   assert.match(notas.at(-1), /adjuntaría el archivo «Horario Parla»/);
   const m = db.prepare("SELECT * FROM messages WHERE conversation_id = 'ctrue' AND adjunto = 'imagen'").get();
   assert.equal(m.media_ruta, r.media_ruta);
