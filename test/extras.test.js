@@ -232,3 +232,41 @@ test('resumen legible de las instrucciones: se guarda con la versión', async ()
   assert.equal(n, 1); // segunda vez, de caché
   assert.equal(db.prepare("SELECT count(*) n FROM ai_runs WHERE motivo = 'resumen-instrucciones'").get().n, 1);
 });
+
+test('estadísticas: borradores, chats cerrados y días naturales de Madrid', () => {
+  const db = openDb(':memory:'); const repo = crearRepo(db);
+  const crear = (id, extra = {}, creado = null) => {
+    repo.upsertConv({ id, contact_id: id, channel: 'whatsapp', nombre: id, telefono: '6001' + id.length });
+    repo.updateConv(id, { tipo: 'captacion', ...extra });
+    if (creado) db.prepare('UPDATE conversations SET created_at = ? WHERE id = ?').run(creado, id);
+    repo.addMessage({ conversation_id: id, autor: 'lead', texto: 'hola' });
+  };
+  const momento = new Date('2026-11-24T18:00:00Z');
+  // Solo borrador (no enviado): Sofía no ha contestado, y lo que diga después el lead no es «seguir hablando»
+  crear('borrador', {}, '2026-11-24 10:00:00');
+  repo.addMessage({ conversation_id: 'borrador', autor: 'ia', texto: 'hola', enviado: 0 });
+  repo.addMessage({ conversation_id: 'borrador', autor: 'lead', texto: '¿hola?' });
+  // Cerrado en la apertura («no me interesa»): no llegó a presentación ni a cierre
+  crear('cerrado-pronto', { fase: 'cerrada', fase_max: 'f1 apertura' }, '2026-11-23 10:00:00');
+  // Cerrado después de llegar a cierre: sí cuenta
+  crear('cerrado-tarde', { fase: 'cerrada', fase_max: 'f5 cierre' }, '2026-11-23 10:00:00');
+  // Hace 7 días y pico: fuera de «7 días» (hoy y los 6 anteriores en Madrid)
+  crear('viejo', {}, '2026-11-17 20:00:00');
+  // El primer día de la ventana, 00:30 de Madrid (23:30 UTC de la víspera)
+  crear('borde', {}, '2026-11-17 23:30:00');
+  const e = estadisticas(db, { dias: 7, momento });
+  assert.equal(e.total, 4);
+  assert.deepEqual(e.porDia.map((d) => d.fecha), ['2026-11-18', '2026-11-23', '2026-11-24']);
+  const paso = Object.fromEntries(e.embudo);
+  assert.deepEqual([paso['Sofía contestó'], paso['El lead siguió hablando'], paso['Llegó a presentación'], paso['Llegó a cierre']], [0, 0, 1, 1]);
+});
+
+test('la fase más avanzada se guarda aunque el chat se cierre, y los chats antiguos la heredan', async () => {
+  const { Setter } = await import('../src/setter.js');
+  const db = openDb(':memory:'); const repo = crearRepo(db);
+  repo.upsertConv({ id: 'a', contact_id: 'ka', channel: 'whatsapp', nombre: 'A', telefono: '+34600000001' });
+  const setter = new Setter({ repo, live: false, ghl: { addTags: async () => {}, removeTags: async () => {} }, aimharder: {}, complete: async () => ({}) });
+  const efectos = () => ({ tags: new Set(), herramientas: [] });
+  for (const fase of ['f3 presentación', 'f2 diagnóstico', 'cerrada']) await setter.aplicarRespuesta(repo.getConv('a'), { fase, mensajes: [] }, efectos());
+  assert.deepEqual([repo.getConv('a').fase, repo.getConv('a').fase_max], ['cerrada', 'f3 presentación']);
+});

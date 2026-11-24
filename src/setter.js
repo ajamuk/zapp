@@ -826,6 +826,8 @@ export class Setter {
   async aplicarRespuesta(conv, r, efectos) {
     const patch = {};
     if (r.fase) patch.fase = r.fase;
+    // La fase más avanzada alcanzada se guarda aparte: «cerrada» no dice hasta dónde llegó el chat
+    if (r.fase && r.fase !== 'cerrada' && TAGS.embudo.indexOf(r.fase) > TAGS.embudo.indexOf(conv.fase_max)) patch.fase_max = r.fase;
     // Si Sofía no dice la sede pero en este turno ha consultado precios, horarios o recibo de una sola, es esa
     const consultadas = [...new Set((efectos.herramientas || []).map((h) => h.entrada?.sede && normalizarSede(h.entrada.sede)).filter(Boolean))];
     const sede = r.sede && r.sede !== 'desconocida' ? normalizarSede(r.sede) : (!conv.sede && consultadas.length === 1 ? consultadas[0] : null);

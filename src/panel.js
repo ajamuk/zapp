@@ -288,7 +288,7 @@ export function seguimientos(db) {
 export function rendimiento(db, dias = 90) {
   const filas = db.prepare(`SELECT c.prompt_v v, count(*) chats,
       sum(EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead'
-        AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia'))) contestan,
+        AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia' AND x.enviado = 1))) contestan,
       sum(c.prueba_reservada = 1) prueba, sum(IFNULL(c.alta_estado, '') IN ('preparada', 'pendiente')) alta, sum(c.derivado = 1) derivados,
       sum(c.retomar IS NOT NULL) mas_adelante,
       min(c.created_at) desde, max(c.created_at) hasta
@@ -310,15 +310,17 @@ const enMadrid = (iso) => {
  * Estadísticas de los chats nuevos (leads, sin socios ni marcados como «no es un lead») en los últimos `dias`: por día y canal, mapa de cuándo
  * entran (día de la semana × hora), embudo, por canal y sede, y etiquetas más puestas.
  */
-export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
-  const d = Math.max(1, Math.min(365, Number(dias) || 30));
-  const filtro = [PRUEBAS, sqlSinNumerosPrueba(), ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
+export function estadisticas(db, { dias = 30, sede = '', canal = '', momento = new Date() } = {}) {
+  const d = Math.max(1, Math.min(365, Math.floor(Number(dias)) || 30));
+  // Días naturales de Madrid contando hoy, como el Resumen y como los dibuja el panel
+  const desde = cortesMadrid(d, momento)[0].utc;
+  const filtro = [PRUEBAS, sqlSinNumerosPrueba(), ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `(c.created_at >= '${desde.slice(0, 10)}' AND datetime(c.created_at) >= '${desde}')`];
   const p = {};
   if (sede) { filtro.push(sede === 'sin_sede' ? 'c.sede IS NULL' : 'c.sede = @sede'); p.sede = sede; }
   if (canal) { filtro.push('c.channel = @canal'); p.canal = canal; }
-  const chats = db.prepare(`SELECT c.id, c.created_at, c.channel, c.sede, c.fase, c.prueba_reservada, c.alta_estado, c.derivado, c.retomar,
-      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'ia') atendido,
-      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead' AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia')) contesta
+  const chats = db.prepare(`SELECT c.id, c.created_at, c.channel, c.sede, c.fase, c.fase_max, c.prueba_reservada, c.alta_estado, c.derivado, c.retomar,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'ia' AND m.enviado = 1) atendido,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead' AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia' AND x.enviado = 1)) contesta
     FROM conversations c WHERE ${filtro.join(' AND ')}`).all(p);
   const porDia = {}; const mapa = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (const c of chats) {
@@ -327,8 +329,9 @@ export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
     porDia[t.fecha][c.channel] = (porDia[t.fecha][c.channel] || 0) + 1;
     mapa[t.dia][t.hora]++;
   }
-  const ORDEN = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
-  const llego = (c, f) => ORDEN.indexOf(c.fase) >= ORDEN.indexOf(f) || c.prueba_reservada || c.alta_estado;
+  const ORDEN = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre'];
+  // Un chat «cerrado» cuenta por la fase más avanzada a la que llegó, no por estar cerrado
+  const llego = (c, f) => ORDEN.indexOf(c.fase_max || (c.fase === 'cerrada' ? '' : c.fase)) >= ORDEN.indexOf(f) || c.prueba_reservada || c.alta_estado;
   const embudo = [
     ['Chats nuevos', chats.length], ['Sofía contestó', chats.filter((c) => c.atendido).length], ['El lead siguió hablando', chats.filter((c) => c.contesta).length],
     ['Llegó a presentación', chats.filter((c) => llego(c, 'f3 presentación')).length], ['Llegó a cierre', chats.filter((c) => llego(c, 'f5 cierre')).length],
