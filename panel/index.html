@@ -167,6 +167,7 @@
   #raiz .activo-f { min-height: 30px; padding: 3px 10px; border-radius: 99px; font-size: 12px; background: #e4f1df; border-color: #b9d4af; }
   #raiz .activo-f.limpiar { background: transparent; }
   .ayuda { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .tel { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--panel2); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-right: 5px; vertical-align: middle; }
   /* Etiquetas */
   .etq { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, #fff); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -2065,11 +2066,31 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Palabras para que vuelva</div><div class="d">Si el equipo las escribe en un chat, Sofía vuelve a contestar ahí. Ej: #sofia</div></div><input id="prea" value="${esc((a.palabrasReanudar || []).join(', '))}" style="width:280px" aria-label="Palabras para reanudar a Sofía"></div>
     <div class="ajuste"><div><div class="t">Chats nuevos que empiezan en pausa</div><div class="d">Sofía no contesta los chats nuevos de ese canal hasta que alguien la active en el chat.</div></div><div class="fila-f"><label class="check"><input type="checkbox" id="pwa" ${a.canalesPausa?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="pig" ${a.canalesPausa?.instagram ? 'checked' : ''}> Instagram</label></div></div>
     <div class="guardar-aj" id="gaj"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"><span class="ayuda">Los cambios no se aplican hasta que pulses Guardar.</span></span></div>
+    <h3>Números de prueba</h3>
+    <div class="ajuste tel-prueba" id="telp"></div>
     <h3>Sistema</h3>
     <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
     <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.credenciales_alta ? 'Integración por navegador' : 'Faltan las credenciales de AimHarder.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'Prueba' : 'Automática'}</span></div>
     <div class="ajuste"><div><div class="t">Modelo</div><div class="d">${i.modelo_configurado ? 'Redacta las respuestas de Sofía.' : 'Falta la clave de Anthropic.'}</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
   $('#main').querySelectorAll('[data-dmodo]').forEach((s) => s.onchange = () => { $(`[data-dfr="${s.dataset.dmodo}"]`).hidden = s.value !== 'franja'; });
+  // Números de prueba: se guardan al momento (no esperan al botón Guardar)
+  let telefonos = [...(a.telefonosPrueba || [])];
+  const pintarTel = (msg = '') => {
+    $('#telp').innerHTML = `<div style="flex:1;min-width:0"><div class="t">Teléfonos del equipo para probar a Sofía</div>
+      <div class="d">Sofía los trata siempre como lead (aunque sean socios), les contesta a cualquier hora${i.modo === 'live' ? '' : ' y, en modo prueba, son los únicos a los que escribe de verdad'}. Desde uno de ellos, el mensaje <code>${esc(a.palabraReinicio || '#reset')}</code> reinicia la conversación.</div>
+      <div class="chips-f" style="margin-top:8px">${telefonos.map((t) => `<span class="tel"><span>${esc(t)}</span><button type="button" class="x" data-telq="${esc(t)}" aria-label="Quitar ${esc(t)}">✕</button></span>`).join('') || '<span class="ayuda">Ninguno todavía</span>'}</div>
+      <form id="ftel" class="fila-f" style="margin-top:8px;gap:6px"><input id="teln" type="tel" inputmode="tel" maxlength="24" placeholder="600 111 222" aria-label="Teléfono de prueba nuevo" style="width:180px"><button class="primario">Añadir</button><span id="telok" role="status">${msg}</span></form></div>`;
+    const guardar = async (lista, ok) => {
+      try { telefonos = (await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ telefonosPrueba: lista }) })).telefonosPrueba; pintarTel(`<span style="color:var(--green)">${ok}</span>`); }
+      catch (e) { if ($('#telok')) $('#telok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+    };
+    $('#telp').querySelectorAll('[data-telq]').forEach((b) => b.onclick = () => { b.disabled = true; guardar(telefonos.filter((t) => t !== b.dataset.telq), 'Quitado'); });
+    $('#ftel').onsubmit = (e) => { e.preventDefault(); const v = $('#teln').value.trim(); if (!v) return $('#teln').focus();
+      const k = v.replace(/\D/g, '').slice(-9); if (telefonos.some((t) => t.replace(/\D/g, '').slice(-9) === k)) { $('#telok').innerHTML = '<span class="error">Ese número ya está en la lista</span>'; return; }
+      guardar([...telefonos, v], 'Añadido'); };
+  };
+  pintarTel();
+  for (const ev of ['input', 'change']) $('#telp').addEventListener(ev, (e) => e.stopPropagation()); // no cuenta como «cambios sin guardar»
   const sinGuardar = () => { if (!$('#gaj') || $('#gaj').classList.contains('pendiente')) return; $('#gaj').classList.add('pendiente'); $('#ok').innerHTML = '<b style="color:var(--amber)">Tienes cambios sin guardar</b>'; };
   $('#main').oninput = $('#main').onchange = sinGuardar;
   $('#bg').onclick = async () => {

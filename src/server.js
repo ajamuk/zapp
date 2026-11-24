@@ -530,7 +530,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     estados: Object.keys(panel.ESTADOS),
   }));
 
-  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), canaveral: plazasCanaveral(repo), vozEstado: { clave: vozMod.hayClave(), vozPorDefecto: Boolean(config.voz.vozId), caracteresMes: vozMod.uso(db).caracteresMes } }));
+  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), palabraReinicio: config.palabraReinicio, canaveral: plazasCanaveral(repo), vozEstado: { clave: vozMod.hayClave(), vozPorDefecto: Boolean(config.voz.vozId), caracteresMes: vozMod.uso(db).caracteresMes } }));
   admin.put('/panel/ajustes', (req, res) => {
     try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
   });
