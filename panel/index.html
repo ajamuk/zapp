@@ -53,6 +53,11 @@
   .hilo { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; min-height: 0; overflow: hidden; }
   .hilo .cab { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
   .hilo .msgs { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .hilo .centro { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .hilo .resp { border-top: 1px solid var(--line); padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: end; }
+  .hilo .resp textarea { font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 7px 9px; resize: vertical; min-height: 42px; max-height: 200px; }
+  .hilo .resp p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+  .hilo .resp-no { border-top: 1px solid var(--line); padding: 8px 14px; margin: 0; font-size: 12px; color: var(--muted); }
   .burbuja { max-width: 75%; padding: 7px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
   .burbuja .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
   .b-lead { align-self: flex-start; background: var(--panel2); }
@@ -998,7 +1003,7 @@ async function lista() {
 }
 
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
-const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado])]);
+const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
 
 async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
@@ -1020,6 +1025,11 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   const antes = $('#msgs'); const y = antes?.scrollTop ?? 0;
   const alFinal = !mantener || !antes || antes.scrollHeight - antes.scrollTop - antes.clientHeight < 80;
   const c = d.conv;
+  // Lo que se estaba escribiendo al lead no se pierde cuando el chat se refresca solo
+  const rAntes = $('#rtxt'); const conFoco = rAntes && document.activeElement === rAntes; const cursor = rAntes ? [rAntes.selectionStart, rAntes.selectionEnd] : null;
+  if (rAntes && estado.respConv === id) estado.respTexto = rAntes.value;
+  if (estado.respConv !== id) { estado.respConv = id; estado.respTexto = ''; }
+  const borrador = estado.respTexto || '';
   const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
   const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
   $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">Volver a chats</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
@@ -1027,8 +1037,10 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
       <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
-    <div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
+    <div class="centro"><div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
       return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}${x.tipo === 'fuera_horario' ? ' · aviso automático fuera de horario' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
+    ${!d.escribir ? '' : d.escribir.motivo ? `<p class="resp-no">✍️ ${esc(d.escribir.motivo)}</p>`
+      : `<form class="resp" id="fresp"><textarea id="rtxt" rows="2" maxlength="2000" placeholder="Escribe al lead… (Ctrl+Intro para enviar)" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><button class="primario" id="benv">Enviar</button><p>Le llega tal cual lo escribas.${c.ai_paused || c.derivado ? ' Sofía está en pausa en este chat.' : d.escribir.pausa ? ' Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
@@ -1039,7 +1051,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
         ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
-    ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
+    ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Desde aquí puedes contestar al lead, revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
   if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
@@ -1048,6 +1060,19 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   cargarMedios($('#msgs'));
   $('#msgs').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/panel/conversaciones/${encodeURIComponent(id)}`, Number(b.dataset.rep)));
   $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); recargar(); });
+  if ($('#fresp')) {
+    const t = $('#rtxt');
+    if (conFoco) { t.focus(); t.setSelectionRange(...cursor); }
+    t.oninput = () => { estado.respTexto = t.value; };
+    t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
+    $('#fresp').onsubmit = async (e) => {
+      e.preventDefault();
+      const texto = t.value.trim(); if (!texto || $('#benv').disabled) return;
+      $('#benv').disabled = true; $('#benv').textContent = 'Enviando…'; $('#rerr').textContent = '';
+      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto }) }); estado.respTexto = ''; if ($('#rtxt')) $('#rtxt').value = ''; await recargar(); $('#rtxt')?.focus(); }
+      catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; if ($('#benv')) { $('#benv').disabled = false; $('#benv').textContent = 'Enviar'; } }
+    };
+  }
   $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id, { datos: d, mantener: true }).then(() => $('#ptxt')?.focus()); };
   $('#banprueba') && ($('#banprueba').onclick = async () => {
     const b = $('#banprueba'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Se cancelan sus recordatorios'; return; }
