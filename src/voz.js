@@ -22,6 +22,7 @@ export function ajustesVoz(g = {}) {
     maxCaracteres: g.maxCaracteres ?? 350,        // respuestas más largas se quedan en texto (350 letras ≈ 25 s)
     topeMensual: g.topeMensual ?? 25000,          // letras al mes (el plan Starter de ElevenLabs trae unas 30.000)
     vozId: typeof g.vozId === 'string' ? g.vozId : '', // vacío = la de ELEVENLABS_VOICE_ID
+    velocidad: g.velocidad ?? 100,                // % de la velocidad con la que habla la voz (100 = tal cual sale)
   };
 }
 
@@ -33,6 +34,7 @@ export function validarVoz(actual, cambio = {}) {
   entero('maxPorConversacion', 1, 50, 'el máximo por conversación');
   entero('maxCaracteres', 50, 1500, 'el máximo de letras por nota');
   entero('topeMensual', 0, 5000000, 'el tope mensual de letras');
+  entero('velocidad', 80, 130, 'la velocidad');
   n.vozId = String(n.vozId ?? '').trim();
   if (n.vozId && !/^[A-Za-z0-9]{10,40}$/.test(n.vozId)) throw new Error('Notas de voz: el identificador de la voz no parece válido (es el «Voice ID» de ElevenLabs)');
   return n;
@@ -94,7 +96,7 @@ const ffmpeg = (args) => new Promise((ok, mal) => {
  * Genera la nota de voz de un texto. Devuelve { media_ruta, media_mime, url }. Lanza un error si ElevenLabs o la
  * conversión fallan (quien llama envía entonces el texto).
  */
-export async function sintetizar(texto, { vozId = config.voz.vozId, base = carpetaMedios(), fetchImpl = fetch, convertir = ffmpeg } = {}) {
+export async function sintetizar(texto, { vozId = config.voz.vozId, velocidad = 100, base = carpetaMedios(), fetchImpl = fetch, convertir = ffmpeg } = {}) {
   if (!config.voz.apiKey) throw new Error('falta ELEVENLABS_API_KEY');
   if (!vozId) throw new Error('falta elegir la voz');
   const r = await fetchImpl(`${config.voz.baseUrl}/v1/text-to-speech/${encodeURIComponent(vozId)}?output_format=mp3_44100_128`, {
@@ -113,8 +115,10 @@ export async function sintetizar(texto, { vozId = config.voz.vozId, base = carpe
   const salida = path.join(dir, `${codigo}.ogg`);
   try {
     fs.writeFileSync(entrada, mp3, { mode: 0o600 });
-    // OGG/Opus mono a 48 kHz: el formato de las notas de voz de WhatsApp
-    await convertir(['-y', '-loglevel', 'error', '-i', entrada, '-vn', '-c:a', 'libopus', '-b:a', '32k', '-ac', '1', '-ar', '48000', '-application', 'voip', salida]);
+    // OGG/Opus mono a 48 kHz: el formato de las notas de voz de WhatsApp. La velocidad se cambia aquí (sin tocar el
+    // tono) porque el modelo de ElevenLabs no hace caso de la suya.
+    const tempo = Number(velocidad) > 0 && Number(velocidad) !== 100 ? ['-filter:a', `atempo=${(Number(velocidad) / 100).toFixed(2)}`] : [];
+    await convertir(['-y', '-loglevel', 'error', '-i', entrada, '-vn', ...tempo, '-c:a', 'libopus', '-b:a', '32k', '-ac', '1', '-ar', '48000', '-application', 'voip', salida]);
     if (!fs.existsSync(salida) || !fs.statSync(salida).size) throw new Error('la conversión a nota de voz no ha dejado archivo');
   } catch (e) {
     fs.rmSync(salida, { force: true });

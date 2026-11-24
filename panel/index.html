@@ -1989,6 +1989,7 @@ async function ajustes() {
       <div class="dia-h"><b>Letras por nota, como mucho</b><input type="number" id="vzm" min="50" max="1500" value="${a.voz?.maxCaracteres ?? 350}" style="width:80px" aria-label="Máximo de letras por nota de voz"> <span class="ayuda">las respuestas más largas van por escrito (350 ≈ 25 segundos)</span></div>
       <div class="dia-h"><b>Tope de letras al mes</b><input type="number" id="vzt" min="0" value="${a.voz?.topeMensual ?? 25000}" style="width:100px" aria-label="Tope mensual de letras"> <span class="ayuda">al llegar, todo va por escrito hasta el mes siguiente</span></div>
       <div class="dia-h"><b>Voz (Voice ID)</b><input type="text" id="vzi" maxlength="40" value="${esc(a.voz?.vozId || '')}" placeholder="${a.vozEstado?.vozPorDefecto ? 'la del servidor' : 'pega aquí el Voice ID'}" style="width:230px" aria-label="Voice ID de ElevenLabs"></div>
+      <div class="dia-h"><b>Velocidad</b><input type="number" id="vzv" min="80" max="130" value="${a.voz?.velocidad ?? 100}" style="width:80px" aria-label="Velocidad de la voz en tanto por ciento"> <span class="ayuda">% · 100 es la voz tal cual; 108 va un poco más rápida</span></div>
     </div></details>
     <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Espera al azar antes de contestar, en segundos, como una persona que ve el mensaje y lo lee (en Zapp: 15 a 50)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" aria-label="Retraso mínimo" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" aria-label="Retraso máximo" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
@@ -2020,7 +2021,7 @@ async function ajustes() {
         pausarSiEquipoEscribe: $('#peq').checked, canaveralPlazasOcupadas: Number($('#pcan').value) || 0, palabrasParar: $('#ppar').value, palabrasReanudar: $('#prea').value,
         canalesPausa: { whatsapp: $('#pwa').checked, instagram: $('#pig').checked }, horarioDias,
         fueraHorario: { activo: $('#fha').checked, mensaje: $('#fhm').value, canales: { whatsapp: $('#fhw').checked, instagram: $('#fhi').checked } },
-        voz: { activo: $('#vza').checked, soloPruebas: $('#vzp').checked, soloSiLeadAudio: $('#vzl').checked, maxPorConversacion: Number($('#vzc').value), maxCaracteres: Number($('#vzm').value), topeMensual: Number($('#vzt').value), vozId: $('#vzi').value },
+        voz: { activo: $('#vza').checked, soloPruebas: $('#vzp').checked, soloSiLeadAudio: $('#vzl').checked, maxPorConversacion: Number($('#vzc').value), maxCaracteres: Number($('#vzm').value), topeMensual: Number($('#vzt').value), vozId: $('#vzi').value, velocidad: Number($('#vzv').value) },
       }) });
       $('#gaj').classList.remove('pendiente');
       $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>';

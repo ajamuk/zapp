@@ -975,7 +975,7 @@ export class Setter {
       ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes, ...this.voz.uso(this.repo.db, conv.id, this.now()),
     });
     if (!d.voz) return null;
-    try { return await this.voz.sintetizar(d.texto, { vozId, base: this.medios?.base }); }
+    try { return await this.voz.sintetizar(d.texto, { vozId, velocidad: ajustes.velocidad, base: this.medios?.base }); }
     catch (e) { console.error('[voz]', `no se ha podido generar la nota de voz, sale el texto: ${e.message}`); return null; }
   }
 
