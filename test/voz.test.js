@@ -27,7 +27,8 @@ test('normas: apagado por defecto y cada norma corta el paso', () => {
   assert.equal(voz.decidirVoz({ ...base, ultimoLeadAudio: false }).motivo, 'el lead no ha mandado un audio');
   assert.equal(voz.decidirVoz({ ...base, enviadasConv: 2 }).motivo, 'máximo por conversación');
   assert.equal(voz.decidirVoz({ ...base, mensajes: ['a'.repeat(400)] }).motivo, 'respuesta demasiado larga');
-  for (const t of ['son 59 € al mes', 'la clase es a las 18:30', 'mira https://crossfitmpo.com', 'escribe a hola@box.es']) assert.equal(voz.decidirVoz({ ...base, mensajes: [t] }).motivo, 'lleva enlaces, precios u horas', t);
+  for (const t of ['mira https://crossfitmpo.com', 'escribe a hola@box.es']) assert.equal(voz.decidirVoz({ ...base, mensajes: [t] }).motivo, 'lleva enlaces o correos', t);
+  for (const t of ['son 59 € al mes', 'la clase es el miércoles a las 18:30']) assert.equal(voz.decidirVoz({ ...base, mensajes: [t] }).voz, true, t);
   assert.equal(voz.decidirVoz({ ...base, caracteresMes: 24990 }).motivo, 'tope mensual');
 });
 

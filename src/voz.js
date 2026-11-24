@@ -47,8 +47,8 @@ export function textoHablado(mensajes = []) {
     .filter(Boolean).map((m) => (/[.!?…:]$/.test(m) ? m : `${m}.`)).join(' ');
 }
 
-// Lo que conviene leer y no oír: enlaces, correos, precios y horas
-const MEJOR_ESCRITO = /https?:\/\/|www\.|\S+@\S+\.\S+|\d\s*(€|euros?\b)|\b([01]?\d|2[0-3])[:.][0-5]\d\b/i;
+// Lo que hay que poder leer y pulsar, y no tiene sentido oír: enlaces y correos. Precios y horas sí se dicen de viva voz.
+const MEJOR_ESCRITO = /https?:\/\/|www\.|\S+@\S+\.\S+/i;
 
 /**
  * ¿Sale esta respuesta como nota de voz? Función pura: recibe las normas y los datos del chat.
@@ -65,7 +65,7 @@ export function decidirVoz({ ajustes, canal, clave, vozId, esPrueba, ultimoLeadA
   const texto = textoHablado(mensajes);
   if (!texto) return no('sin texto');
   if (texto.length > ajustes.maxCaracteres) return no('respuesta demasiado larga');
-  if (MEJOR_ESCRITO.test(mensajes.join('\n'))) return no('lleva enlaces, precios u horas');
+  if (MEJOR_ESCRITO.test(mensajes.join('\n'))) return no('lleva enlaces o correos');
   if (caracteresMes + texto.length > ajustes.topeMensual) return no('tope mensual');
   return { voz: true, motivo: 'normas cumplidas', texto };
 }
