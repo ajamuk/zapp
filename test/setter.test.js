@@ -49,7 +49,7 @@ test('webhook de GHL se normaliza', () => {
   assert.deepEqual([o.evento, o.canal, o.userId], ['outbound', 'instagram', 'u1']);
 });
 
-test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa', async () => {
+test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y no se avisa por Telegram', async () => {
   const { setter, repo, llamadas } = montar({ socio: true });
   const r = await setter.handleWebhook(entrante('no puedo reservar en la app'));
   assert.equal(r.socio, true);
@@ -57,7 +57,7 @@ test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa',
   assert.equal(c.tipo, 'socio');
   assert.equal(c.ai_paused, 1);
   assert.ok(llamadas.tags.includes('socio') && llamadas.tags.includes('getafe'));
-  assert.equal(llamadas.avisos.length, 1);
+  assert.equal(llamadas.avisos.length, 0);
   assert.equal(repo.dueResponses('2100-01-01').length, 0);
 });
 

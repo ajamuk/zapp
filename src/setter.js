@@ -547,7 +547,7 @@ export class Setter {
       const etiquetas = [TAGS.tipo.socio, TAGS.tareas.gestion_socio, sede && TAGS.sedes[sede]?.tag].filter(Boolean);
       await this.safe(() => this.ghl.addTags(conv.contact_id, etiquetas));
       if (sede) await this.safe(() => this.ghl.assign(conv.contact_id, config.ghl.users[sede]));
-      await this.avisar?.(`Socio escribe${sede ? ` (${SEDE_NOMBRE[sede]})` : ''}: «${(evt.texto || '').slice(0, 200)}»`, { sede });
+      // Sin aviso por Telegram: los socios los lleva el equipo desde GHL (etiqueta + asignación). Telegram es solo para leads.
       return 'socio';
     }
     this.repo.updateConv(conv.id, { tipo: 'captacion' });
@@ -1180,7 +1180,8 @@ export class Setter {
         efectos.tags.add(tarea);
         this.repo.updateConv(conv.id, { derivado: 1, ai_paused: 1, pause_reason: `derivado: ${input.motivo}` });
         this.repo.cancelScheduled(conv.id, 'derivado');
-        await this.avisar?.(`Derivado (${input.motivo})${conv.sede ? ` · ${SEDE_NOMBRE[conv.sede]}` : ''}: ${input.resumen}`, { sede: conv.sede });
+        // Los temas de socio no van a Telegram: quedan en GHL con su etiqueta de tarea
+        if (input.motivo !== 'gestion_socio' && conv.tipo !== 'socio') await this.avisar?.(`Derivado (${input.motivo})${conv.sede ? ` · ${SEDE_NOMBRE[conv.sede]}` : ''}: ${input.resumen}`, { sede: conv.sede });
         return { ok: true, nota: 'Avisa al lead de que lo revisa una persona del equipo y que le escribirá por aquí. No sigas vendiendo.' };
       }
       default: return { ok: false, error: `Herramienta desconocida: ${nombre}` };
