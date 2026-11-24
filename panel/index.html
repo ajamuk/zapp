@@ -757,7 +757,7 @@ const medioHtml = (m, ruta) => {
   if (!m.adjunto || !(m.tiene_medio || m.media_ruta)) return m.adjunto && m.media_error ? `<div class="ayuda">No se pudo descargar el ${esc(m.adjunto)} (${esc(m.media_error)})</div>` : '';
   const src = `${ruta}/media/${m.id}`;
   if (m.adjunto === 'imagen') return `<img class="medio-img" alt="Imagen enviada por el lead" data-media="${esc(src)}">`;
-  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
+  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : m.autor === 'ia' ? '<div class="ayuda">Nota de voz de Sofía (debajo, lo que dice)</div>' : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
   return `<a href="#" data-media-desc="${esc(src)}">Descargar ${esc(m.adjunto)}</a>`;
 };
 const textoSinMarcador = (m) => (m.adjunto && /^\[(audio|imagen|video|documento|adjunto)\]$/.test(m.texto || '') ? '' : m.texto);
@@ -1952,6 +1952,15 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Aviso fuera de horario</div><div class="d">Si un lead escribe cuando Sofía no está en su horario, le llega al momento este mensaje automático (uno por noche o día cerrado). Sofía le contesta de verdad en cuanto vuelve. Puedes usar <code>{nombre}</code> (su nombre) y <code>{apertura}</code> (p. ej. «mañana a las 8:00»).</div></div>${sw('fha', a.fueraHorario?.activo, 'Aviso fuera de horario')}</div>
     <div class="ajuste" style="align-items:flex-start"><div style="flex:1"><textarea id="fhm" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box" aria-label="Mensaje del aviso fuera de horario">${esc(a.fueraHorario?.mensaje || '')}</textarea>
       <div class="fila-f" style="margin-top:6px"><span class="ayuda">Se envía por:</span><label class="check"><input type="checkbox" id="fhw" ${a.fueraHorario?.canales?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="fhi" ${a.fueraHorario?.canales?.instagram ? 'checked' : ''}> Instagram</label></div></div></div>
+    <div class="ajuste"><div><div class="t">Notas de voz</div><div class="d">Sofía manda su respuesta como nota de voz de WhatsApp (voz de ElevenLabs) en vez de por escrito cuando se cumplen <b>todas</b> las normas de abajo. Nunca van por voz las respuestas con enlaces, precios u horas, ni los seguimientos con plantilla; si la voz falla, sale el texto. ${a.vozEstado?.clave ? `Este mes: <b>${Number(a.vozEstado.caracteresMes).toLocaleString('es-ES')}</b> letras de ${Number(a.voz.topeMensual).toLocaleString('es-ES')}.` : '<b style="color:var(--amber)">Falta la clave de ElevenLabs en el servidor (ELEVENLABS_API_KEY): hasta entonces no sale ninguna.</b>'}</div></div>${sw('vza', a.voz?.activo, 'Notas de voz')}</div>
+    <details class="ajuste-det" ${a.voz?.activo ? 'open' : ''}><summary>Normas de las notas de voz</summary><div class="dias-h">
+      <label class="check"><input type="checkbox" id="vzp" ${a.voz?.soloPruebas ? 'checked' : ''}> Solo a los teléfonos de prueba del equipo</label>
+      <label class="check"><input type="checkbox" id="vzl" ${a.voz?.soloSiLeadAudio ? 'checked' : ''}> Solo si lo último que mandó el lead fue una nota de voz</label>
+      <div class="dia-h"><b>Máximo por conversación</b><input type="number" id="vzc" min="1" max="50" value="${a.voz?.maxPorConversacion ?? 2}" style="width:80px" aria-label="Máximo de notas de voz por conversación"></div>
+      <div class="dia-h"><b>Letras por nota, como mucho</b><input type="number" id="vzm" min="50" max="1500" value="${a.voz?.maxCaracteres ?? 350}" style="width:80px" aria-label="Máximo de letras por nota de voz"> <span class="ayuda">las respuestas más largas van por escrito (350 ≈ 25 segundos)</span></div>
+      <div class="dia-h"><b>Tope de letras al mes</b><input type="number" id="vzt" min="0" value="${a.voz?.topeMensual ?? 25000}" style="width:100px" aria-label="Tope mensual de letras"> <span class="ayuda">al llegar, todo va por escrito hasta el mes siguiente</span></div>
+      <div class="dia-h"><b>Voz (Voice ID)</b><input type="text" id="vzi" maxlength="40" value="${esc(a.voz?.vozId || '')}" placeholder="${a.vozEstado?.vozPorDefecto ? 'la del servidor' : 'pega aquí el Voice ID'}" style="width:230px" aria-label="Voice ID de ElevenLabs"></div>
+    </div></details>
     <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Espera al azar antes de contestar, en segundos, como una persona que ve el mensaje y lo lee (en Zapp: 15 a 50)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" aria-label="Retraso mínimo" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" aria-label="Retraso máximo" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
     <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo mientras el lead ve «escribiendo…». Cuanto más largo el mensaje, más tarda (en Zapp: 4)</div></div>
@@ -1982,6 +1991,7 @@ async function ajustes() {
         pausarSiEquipoEscribe: $('#peq').checked, canaveralPlazasOcupadas: Number($('#pcan').value) || 0, palabrasParar: $('#ppar').value, palabrasReanudar: $('#prea').value,
         canalesPausa: { whatsapp: $('#pwa').checked, instagram: $('#pig').checked }, horarioDias,
         fueraHorario: { activo: $('#fha').checked, mensaje: $('#fhm').value, canales: { whatsapp: $('#fhw').checked, instagram: $('#fhi').checked } },
+        voz: { activo: $('#vza').checked, soloPruebas: $('#vzp').checked, soloSiLeadAudio: $('#vzl').checked, maxPorConversacion: Number($('#vzc').value), maxCaracteres: Number($('#vzm').value), topeMensual: Number($('#vzt').value), vozId: $('#vzi').value },
       }) });
       $('#gaj').classList.remove('pendiente');
       $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>';
