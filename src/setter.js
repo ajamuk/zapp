@@ -16,6 +16,7 @@ import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
+import * as archivos from './archivos.js';
 import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
@@ -385,7 +386,7 @@ export class Setter {
     if (!conv) return { ignorado: 'conversación desconocida' };
     if (!this.permitido(conv)) return { ignorado: 'aislamiento: chat de otro número' };
     // `creado`: fecha real del mensaje en GHL cuando se recupera más tarde (su copia del conector se compara por esa fecha)
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}) });
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}), ...(evt.medio || {}) });
     if (!ins) return { ignorado: 'duplicado' };
     await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) }));
     const ajustes = leerAjustes(this.repo);
@@ -1310,6 +1311,33 @@ export class Setter {
    * se escribiera en el CRM) y, a partir de ahí, cuenta como cualquier mensaje del equipo: queda en el historial y
    * Sofía se aparta del chat según los ajustes. Los motivos para no enviar llevan `usuario` (se enseñan tal cual).
    */
+  /**
+   * Envía un archivo del equipo (archivos.js) al chat: con el texto como pie, salvo en los audios (WhatsApp no les
+   * pone pie), donde el texto sale antes en su propio mensaje. Devuelve lo que hay que anotar del archivo enviado.
+   */
+  async enviarArchivo(conv, a, texto = '') {
+    const pieAparte = a.tipo === 'audio' && texto;
+    if (pieAparte) {
+      const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto });
+      this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'humano', texto });
+    }
+    const r = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: archivos.urlPublica(a), mime: a.mime, nombre: a.nombre, texto: pieAparte ? '' : texto });
+    return { messageId: r?.messageId || null, texto: pieAparte || !texto ? `[${a.tipo}: ${a.nombre}]` : texto, medio: { adjunto: a.tipo, media_ruta: a.media_ruta, media_mime: a.mime } };
+  }
+
+  /** Una persona del equipo envía un archivo (con texto opcional) desde el panel. Igual que `enviarDelEquipo`. */
+  enviarArchivoDelEquipo(convId, archivoId, texto = '') {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoEscribir(conv) || (this.ghl?.enviarAdjunto ? '' : 'El envío de archivos no está configurado.');
+      const a = archivos.obtener(this.repo.db, archivoId);
+      if (motivo || !a) { const e = new Error(motivo || 'Ese archivo ya no está: vuelve a adjuntarlo.'); e.usuario = true; throw e; }
+      const r = await this.enviarArchivo(conv, a, String(texto || '').trim());
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
   enviarDelEquipo(convId, texto) {
     return this.enSerie(convId, async () => {
       const conv = this.repo.getConv(convId);

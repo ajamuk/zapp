@@ -57,6 +57,11 @@
   .hilo .resp { border-top: 1px solid var(--line); padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: end; }
   .hilo .resp textarea { font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 7px 9px; resize: vertical; min-height: 42px; max-height: 200px; }
   .hilo .resp p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+  .resp-bot { display: flex; gap: 6px; align-items: center; }
+  .resp-bot .icono { padding: 6px 9px; }
+  .resp-bot .grabando { color: var(--red); border-color: var(--red); }
+  .arch-chip { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-size: 12px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 4px 2px 10px; background: var(--panel2); }
+  .arch-chip .x { border: 0; background: none; padding: 0 6px; cursor: pointer; }
   .hilo .resp-no { border-top: 1px solid var(--line); padding: 8px 14px; margin: 0; font-size: 12px; color: var(--muted); }
   .burbuja { max-width: 75%; padding: 7px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
   .burbuja .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
@@ -829,8 +834,8 @@ const chipsConv = (c) => [
 const medioHtml = (m, ruta) => {
   if (!m.adjunto || !(m.tiene_medio || m.media_ruta)) return m.adjunto && m.media_error ? `<div class="ayuda">No se pudo descargar el ${esc(m.adjunto)} (${esc(m.media_error)})</div>` : '';
   const src = `${ruta}/media/${m.id}`;
-  if (m.adjunto === 'imagen') return `<img class="medio-img" alt="Imagen enviada por el lead" data-media="${esc(src)}">`;
-  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : m.autor === 'ia' ? '<div class="ayuda">Nota de voz de Sofía (debajo, lo que dice)</div>' : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
+  if (m.adjunto === 'imagen') return `<img class="medio-img" alt="${m.autor === 'lead' ? 'Imagen enviada por el lead' : 'Imagen enviada al lead'}" data-media="${esc(src)}">`;
+  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : m.autor === 'ia' ? '<div class="ayuda">Nota de voz de Sofía (debajo, lo que dice)</div>' : m.autor === 'humano' ? '<div class="ayuda">Audio del equipo</div>' : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
   return `<a href="#" data-media-desc="${esc(src)}">Descargar ${esc(m.adjunto)}</a>`;
 };
 const textoSinMarcador = (m) => (m.adjunto && /^\[(audio|imagen|video|documento|adjunto)\]$/.test(m.texto || '') ? '' : m.texto);
@@ -1082,10 +1087,38 @@ async function lista() {
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
 const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
 
+// Archivos para el lead (imagen, vídeo, audio, PDF): se suben al elegirlos y se envían o programan con su id
+const ICONO_ARCH = { imagen: '🖼️', video: '🎬', audio: '🎙️', documento: '📄' };
+const ACEPTA_ARCH = 'image/jpeg,image/png,image/webp,video/mp4,audio/*,application/pdf';
+async function subirArchivoChat(convId, blob, nombre) {
+  if (blob.size > 16 * 1024 * 1024) throw new Error('Como mucho 16 MB.');
+  const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+  return api(`/panel/conversaciones/${encodeURIComponent(convId)}/adjunto`, { method: 'POST', body: JSON.stringify({ datos, mime: blob.type, archivo: nombre }) });
+}
+const chipArchivo = (a, idQuitar) => (a ? `<span class="arch-chip">${ICONO_ARCH[a.tipo] || '📎'} ${esc(a.nombre)} <span class="ayuda">${(a.tamano / 1048576).toFixed(1)} MB</span>${idQuitar ? `<button type="button" class="x" id="${idQuitar}" aria-label="Quitar archivo">✕</button>` : ''}</span>` : '');
+/** Graba una nota de voz con el micrófono. Devuelve la grabadora (rec.stop() la termina y llama a alTerminar(blob, nombre)). */
+async function grabarNota(alTerminar) {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Este navegador no permite grabar audio: adjunta un archivo de audio.');
+  let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { throw new Error('No hay permiso para usar el micrófono.'); }
+  const tipo = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/aac'].find((t) => MediaRecorder.isTypeSupported?.(t));
+  const trozos = []; const rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
+  rec.ondataavailable = (e) => trozos.push(e.data);
+  rec.onstop = () => {
+    flujo.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(trozos, { type: (rec.mimeType || tipo || 'audio/mp4').split(';')[0] });
+    alTerminar(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('webm') ? 'webm' : 'm4a'));
+  };
+  rec.start();
+  return rec;
+}
+const formProg = (p, v) => `<form id="${p}form" class="prog"><textarea id="${p}txt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead${v.archivo ? ' (pie del archivo, opcional)' : ''}">${esc(v.texto || '')}</textarea>${chipArchivo(v.archivo, p + 'quitar')}
+  <div class="fila-f"><input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button type="button" class="mini" id="${p}adj" title="Adjuntar imagen, vídeo, audio o PDF">📎 ${v.archivo ? 'Cambiar archivo' : 'Archivo'}</button><input type="file" id="${p}file" accept="${ACEPTA_ARCH}" hidden><button class="primario mini">${v.id ? 'Guardar cambios' : 'Programar'}</button>${v.id ? `<button type="button" class="mini" id="${p}cerrar">Cancelar edición</button>` : ''}</div>
+  <p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, el texto va por plantilla y no se pueden enviar archivos.</p><p class="error" id="${p}err"></p></form>`;
+
 async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
   if (!$('#ch').classList.contains('con-hilo') && movil) estado.scrollLista = window.scrollY;
-  if (estado.conv !== id) estado.progAbierto = false;
+  if (estado.conv !== id) { estado.progAbierto = false; estado.prog = null; estado.editProg = null; estado.respArchivo = null; }
   estado.conv = id;
   // La dirección lleva el chat: se puede compartir el enlace y, en el móvil, «atrás» vuelve a la lista
   const dir = '#chats/' + encodeURIComponent(id);
@@ -1116,15 +1149,16 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     <div class="centro"><div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
       return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}${x.tipo === 'fuera_horario' ? ' · aviso automático fuera de horario' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
     ${!d.escribir ? '' : d.escribir.motivo ? `<p class="resp-no">✍️ ${esc(d.escribir.motivo)}</p>`
-      : `<form class="resp" id="fresp"><textarea id="rtxt" rows="1" maxlength="2000" placeholder="Escribe al lead (le llega tal cual)" title="Ctrl+Intro para enviar" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><button class="primario" id="benv">Enviar</button><p>${c.ai_paused || c.derivado ? 'Sofía está en pausa en este chat.' : d.escribir.pausa ? 'Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
+      : `<form class="resp" id="fresp">${chipArchivo(estado.respArchivo, 'rquitar')}<textarea id="rtxt" rows="1" maxlength="2000" placeholder="${estado.respArchivo ? 'Pie del archivo (opcional)' : 'Escribe al lead (le llega tal cual)'}" title="Ctrl+Intro para enviar" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><div class="resp-bot"><button type="button" class="icono" id="radj" title="Adjuntar imagen, vídeo, audio o PDF" aria-label="Adjuntar archivo">📎</button><button type="button" class="icono ${estado.grabacion?.conv === id ? 'grabando' : ''}" id="rgrab" title="${estado.grabacion?.conv === id ? 'Parar y adjuntar la nota de voz' : 'Grabar nota de voz'}" aria-label="Grabar nota de voz">${estado.grabacion?.conv === id ? '⏹️' : '🎙️'}</button><input type="file" id="rfile" accept="${ACEPTA_ARCH}" hidden><button class="primario" id="benv">Enviar</button></div><p>${c.ai_paused || c.derivado ? 'Sofía está en pausa en este chat.' : d.escribir.pausa ? 'Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
       c.prueba_fecha ? `<b>📅 Clase de prueba</b><br>${fechaCorta(c.prueba_fecha)} <button type="button" class="mini" id="banprueba" title="Cancela sus recordatorios">Anular o cambiada</button>` : '',
-      `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? `<form id="fprog" class="prog"><textarea id="ptxt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead"></textarea><div class="fila-f"><input type="datetime-local" id="pfec" value="${fechaLocal(new Date(Date.now() + 3600e3).toISOString())}" aria-label="Fecha y hora"><button class="primario mini">Programar</button></div><p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, va por plantilla.</p><p class="error" id="perr"></p></form>` : ''}`,
+      `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? formProg('np', (estado.prog ??= { texto: '', cuando: new Date(Date.now() + 3600e3).toISOString(), archivo: null })) : ''}`,
       c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
       d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
-        ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
+        ? (estado.editProg?.id === s.id ? `<div class="fu-chat" data-fu-id="${s.id}"><b>Editar mensaje programado</b>${formProg('ep', estado.editProg)}</div>`
+          : `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} ${s.tipo === 'manual' ? `<button type="button" class="mini" data-fu-edit="${s.id}">Editar</button> ` : ''}<button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}${s.archivo ? chipArchivo(s.archivo) : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? (s.tipo === 'manual' && !s.texto_previsto && s.archivo ? '' : htmlPrevisto(s.texto_previsto)) : htmlPrevisto(null)}</div></div>`)
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
     ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Desde aquí puedes contestar al lead, revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
@@ -1144,23 +1178,61 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     if (t.value) crecer();
     t.oninput = () => { estado.respTexto = t.value; estado.tecleo = Date.now(); crecer(); };
     t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
+    const adjuntar = async (blob, nombre) => {
+      $('#rerr').textContent = 'Subiendo el archivo…';
+      try { estado.respArchivo = await subirArchivoChat(id, blob, nombre); estado.respTexto = $('#rtxt')?.value || ''; abrir(id, { datos: d, mantener: true }); }
+      catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; }
+    };
+    $('#radj').onclick = () => $('#rfile').click();
+    $('#rfile').onchange = (e) => { const f = e.target.files[0]; if (f) adjuntar(f, f.name); };
+    $('#rquitar') && ($('#rquitar').onclick = () => { estado.respArchivo = null; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true }); });
+    $('#rgrab').onclick = async () => {
+      if (estado.grabacion) { estado.grabacion.rec.stop(); return; }
+      try {
+        const rec = await grabarNota((blob, nombre) => { estado.grabacion = null; if (!blob.size) { abrir(id, { datos: d, mantener: true }); return avisar('La grabación ha salido vacía.'); } adjuntar(blob, nombre); });
+        estado.grabacion = { rec, conv: id }; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true });
+      } catch (err) { $('#rerr').textContent = err.message; }
+    };
     $('#fresp').onsubmit = async (e) => {
       e.preventDefault();
-      const texto = t.value.trim(); if (!texto || $('#benv').disabled) return;
+      const texto = t.value.trim(); const archivo = estado.respArchivo?.id || null;
+      if ((!texto && !archivo) || $('#benv').disabled) return;
       $('#benv').disabled = true; $('#benv').textContent = 'Enviando…'; $('#rerr').textContent = '';
-      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto }) }); estado.respTexto = ''; if ($('#rtxt')) $('#rtxt').value = ''; await recargar(); $('#rtxt')?.focus(); }
+      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto, archivo }) }); estado.respTexto = ''; estado.respArchivo = null; if ($('#rtxt')) $('#rtxt').value = ''; await recargar(); $('#rtxt')?.focus(); }
       catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; if ($('#benv')) { $('#benv').disabled = false; $('#benv').textContent = 'Enviar'; } }
     };
   }
-  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id, { datos: d, mantener: true }).then(() => $('#ptxt')?.focus()); };
+  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; if (!estado.progAbierto) estado.prog = null; abrir(id, { datos: d, mantener: true }).then(() => $('#nptxt')?.focus()); };
   $('#banprueba') && ($('#banprueba').onclick = async () => {
     const b = $('#banprueba'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Se cancelan sus recordatorios'; return; }
     await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); recargar();
   });
-  $('#fprog') && ($('#fprog').onsubmit = async (e) => {
-    e.preventDefault();
-    try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify({ texto: $('#ptxt').value, cuando: new Date($('#pfec').value).toISOString() }) }); estado.progAbierto = false; recargar(); }
-    catch (err) { $('#perr').textContent = err.message; }
+  // Formularios de mensaje programado (nuevo «np» y edición «ep»): lo escrito se guarda en `v` para que no se pierda al refrescar
+  const enlazarProg = (p, v, guardar, cerrar) => {
+    if (!$(`#${p}form`)) return;
+    const repintar = () => abrir(id, { datos: d, mantener: true });
+    $(`#${p}txt`).oninput = (e) => { v.texto = e.target.value; };
+    $(`#${p}fec`).onchange = (e) => { const f = new Date(e.target.value); if (!Number.isNaN(f.getTime())) v.cuando = f.toISOString(); };
+    $(`#${p}adj`).onclick = () => $(`#${p}file`).click();
+    $(`#${p}file`).onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      $(`#${p}err`).textContent = 'Subiendo el archivo…';
+      try { v.archivo = await subirArchivoChat(id, f, f.name); repintar(); } catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+    $(`#${p}quitar`) && ($(`#${p}quitar`).onclick = () => { v.archivo = null; repintar(); });
+    $(`#${p}cerrar`) && ($(`#${p}cerrar`).onclick = () => { cerrar(); repintar(); });
+    $(`#${p}form`).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await guardar({ texto: $(`#${p}txt`).value, cuando: new Date($(`#${p}fec`).value).toISOString(), archivo: v.archivo?.id || null }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+  };
+  enlazarProg('np', estado.prog, (b) => api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify(b) }), () => { estado.progAbierto = false; estado.prog = null; });
+  enlazarProg('ep', estado.editProg, (b) => api(`/panel/seguimientos/${estado.editProg.id}`, { method: 'PUT', body: JSON.stringify(b) }), () => { estado.editProg = null; });
+  $('#hilo').querySelectorAll('[data-fu-edit]').forEach((b) => b.onclick = () => {
+    const s = d.seguimientos.find((x) => x.id === Number(b.dataset.fuEdit)); if (!s) return;
+    estado.editProg = { id: s.id, texto: s.texto_previsto || '', cuando: s.due_at, archivo: s.archivo || null };
+    abrir(id, { datos: d, mantener: true }).then(() => $('#eptxt')?.focus());
   });
   if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
     (x) => api(`/panel/seguimientos/${x.id}/previa`, { method: 'POST' }),

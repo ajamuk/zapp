@@ -1,6 +1,7 @@
 import { knowledge } from './knowledge.js';
 import { deChats, sqlEsLead } from './etiquetas.js';
 import * as reglasSeg from './reglas.js';
+import * as archivos from './archivos.js';
 import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import { config } from './config.js';
@@ -255,7 +256,8 @@ export function detalle(db, id) {
     seguimientos: (() => {
       const ultimo = db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(id)?.m ?? 0;
       return db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id)
-        .map((x) => ({ ...x, nombre: x.tipo === 'manual' ? 'Mensaje programado' : x.tipo === 'lanzamiento' ? 'Lanzamiento' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }));
+        .map((x) => ({ ...x, nombre: x.tipo === 'manual' ? 'Mensaje programado' : x.tipo === 'lanzamiento' ? 'Lanzamiento' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }))
+        .map((x) => (x.contexto?.archivo ? { ...x, archivo: archivos.resumen(archivos.obtener(db, x.contexto.archivo)) } : x));
     })(),
     altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: JSON.parse(a.datos) })),
     ia: db.prepare('SELECT * FROM ai_runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id),
