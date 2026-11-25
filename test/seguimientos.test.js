@@ -11,6 +11,7 @@ const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
 
 function montar({ respuestas = [], live = true } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const sal = { enviados: [], plantillas: [], notas: [], requests: [] };
   let reloj = new Date(T0);
   const cola = [...respuestas];
@@ -131,6 +132,7 @@ test('plantilla vía workflow de GHL: guarda el texto en el campo y quita y pone
 test('Probar IA: el texto que se ve es el que sale al forzar', async () => {
   config.adminToken = 'clave-test';
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const pruebas = crearRepo(openDb(':memory:'));
   const cola = [{ mensajes: ['claro, te cuento'] }, { mensajes: ['oye, al final te encajan los martes?'] }];
   let llamadas = 0;

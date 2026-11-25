@@ -2,6 +2,7 @@ import { config } from './config.js';
 import * as reglas from './reglas.js';
 import { ajustesFueraHorario, validarFueraHorario } from './fuera-horario.js';
 import { ajustesVoz, validarVoz } from './voz.js';
+import { nivelValido, validarNivel } from './intensidad.js';
 
 // Teléfonos de prueba de .env (TEST_PHONES): valen mientras no se guarde una lista desde el panel
 const TELEFONOS_ENV = [...config.telefonosPrueba];
@@ -38,6 +39,8 @@ export function leerAjustes(repo) {
     maxDelay: g.maxDelay ?? config.ai.maxDelay,
     typingSpeed: g.typingSpeed ?? config.ai.typingSpeed,
     seguimientos,
+    // Intensidad de los seguimientos comerciales: suave | normal | intensa (intensidad.js)
+    intensidadSeguimientos: nivelValido(g.intensidadSeguimientos),
     // Controles como los de Zapp
     pausarSiEquipoEscribe: g.pausarSiEquipoEscribe ?? true,   // si una persona del equipo escribe, Sofía se aparta
     palabrasParar: g.palabrasParar ?? [],                       // si aparecen (lead o equipo), Sofía se pausa en ese chat
@@ -73,6 +76,7 @@ export function guardarAjustes(repo, cambio = {}) {
   n.canalesPausa = { ...actual.canalesPausa, ...(cambio.canalesPausa || {}) };
   n.fueraHorario = validarFueraHorario(actual.fueraHorario, cambio.fueraHorario);
   n.voz = validarVoz(actual.voz, cambio.voz);
+  n.intensidadSeguimientos = validarNivel(n.intensidadSeguimientos);
   n.telefonosPrueba = 'telefonosPrueba' in cambio ? validarTelefonosPrueba(cambio.telefonosPrueba) : actual.telefonosPrueba;
   const palabras = (l) => [...new Set((Array.isArray(l) ? l : String(l || '').split(',')).map((x) => String(x).trim().toLowerCase()).filter((x) => x.length >= 2))].slice(0, 30);
   n.palabrasParar = palabras(n.palabrasParar); n.palabrasReanudar = palabras(n.palabrasReanudar);
@@ -94,7 +98,7 @@ export function guardarAjustes(repo, cambio = {}) {
   if (!(n.minDelay >= 0 && n.maxDelay >= n.minDelay && n.maxDelay <= 600)) throw new Error('Retraso: mínimo ≥ 0, máximo ≥ mínimo y como mucho 600 s');
   if (!(n.typingSpeed >= 1 && n.typingSpeed <= 20)) throw new Error('Velocidad de escritura: de 1 a 20 letras por segundo');
   for (const [id, on] of Object.entries(cambio.seguimientos || {})) repo.db.prepare('UPDATE reglas_seguimiento SET activo = ? WHERE id = ?').run(on ? 1 : 0, id);
-  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias', 'fueraHorario', 'voz', 'canaveralPlazasOcupadas', 'telefonosPrueba']) {
+  for (const k of ['ia_activa', 'canales', 'horaInicio', 'horaFin', 'minDelay', 'maxDelay', 'typingSpeed', 'pausarSiEquipoEscribe', 'palabrasParar', 'palabrasReanudar', 'canalesPausa', 'horarioDias', 'fueraHorario', 'voz', 'canaveralPlazasOcupadas', 'telefonosPrueba', 'intensidadSeguimientos']) {
     if (JSON.stringify(n[k]) !== JSON.stringify(actual[k])) repo.guardarAjuste(k, n[k]);
   }
   return aplicarAjustes(repo);

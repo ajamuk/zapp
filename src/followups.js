@@ -8,13 +8,14 @@ import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
 import { esNoLead, sqlEsLead } from './etiquetas.js';
 import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
+import { entraEnNivel, normasDeTono, NIVELES } from './intensidad.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 const QUIEN_DEPENDE_DE_SOFIA = ['silencio', 'largo-plazo'];
 
 /** Instrucciones para que Sofía decida y redacte un seguimiento. */
-export function contextoSeguimiento(regla) {
+export function contextoSeguimiento(regla, tono = []) {
   const fijo = regla.modo === 'fijo';
   const huecos = fijo && /\[[^\]]+\]/.test(regla.textoFijo);
   return [
@@ -32,6 +33,7 @@ export function contextoSeguimiento(regla) {
     fijo && !huecos ? `Si se envía, el mensaje es EXACTAMENTE este texto, sin cambiar nada: «${regla.textoFijo}».` : '',
     !fijo ? `Si se envía, escribe un único mensaje. Instrucciones: ${regla.instrucciones}` : '',
     !fijo ? `Estilo: ${knowledge.followups.estiloComun}` : '',
+    ...tono,
   ].filter(Boolean).join('\n');
 }
 
@@ -45,14 +47,14 @@ function reglaDelPendiente(db, s) {
 }
 
 /** Instrucciones completas para redactar un seguimiento programado (incluye el motivo si es de largo plazo). */
-export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() } = {}) {
+export function contextoTarea(regla, s, { plantilla = false, ahora = new Date(), reglas: todas = [], nivel } = {}) {
   const c = json(s?.contexto);
   const futuro = s?.due_at && new Date(s.due_at) - ahora > 60000;
   const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
     futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
     'Las fechas y los días que salen en la conversación eran correctos cuando se dijeron (aunque ponga «hoy», «mañana» o «estamos a…»): no los corrijas ni te disculpes por ellos. Si alguno ya ha pasado, propón directamente el siguiente que encaje.',
-    contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla),
+    contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla, nivel ? normasDeTono(regla, todas, nivel) : []),
     regla.tipo === 'tras-cita' && s?.resultado ? `Resultado de la prueba (comprobado ahora): ${RESULTADOS[s.resultado] || s.resultado}.` : '',
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
     reglas.TIPOS_CITA.includes(regla.tipo) && c?.prueba ? `Su clase de prueba: ${c.prueba}.` : '',
@@ -94,7 +96,8 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
   let texto;
   if (regla.modo === 'fijo' && !regla.condicion && !/\[[^\]]+\]/.test(regla.textoFijo)) texto = regla.textoFijo; // sin huecos ni condición: no hace falta la IA
   else {
-    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now() }), { modelo: config.ai.modeloSeguimientos });
+    const tono = { reglas: reglas.listar(setter.catalogo), nivel: leerAjustes(repo).intensidadSeguimientos };
+    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now(), ...tono }), { modelo: config.ai.modeloSeguimientos });
     if (regla.modo === 'fijo') texto = texto.replace(/\s*\n+\s*/g, ' ').trim();
     if (regla.modo === 'fijo' && texto && !respetaPlantillaFija(regla.textoFijo, texto)) texto = ''; // ha cambiado el texto fijo: no sale
   }
@@ -104,7 +107,7 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
 }
 
 /** ¿Por qué no debe salir ahora? (null = puede salir) */
-function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false) {
+function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false, todas = []) {
   const deSofia = QUIEN_DEPENDE_DE_SOFIA.includes(s.tipo);
   const delEquipo = s.tipo === 'manual' || s.tipo === 'lanzamiento';
   if (s.tipo === 'manual') return null; // lo ha escrito una persona para este chat: sale siempre
@@ -118,6 +121,7 @@ function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false) {
   }
   if (!ajustes.ia_activa || !ajustes.canales[conv.channel]) return 'Sofía desactivada desde el panel';
   if (!regla.activo) return 'seguimiento desactivado desde el panel';
+  if (deSofia && !entraEnNivel(regla, todas, ajustes.intensidadSeguimientos)) return `no entra en la intensidad «${NIVELES[ajustes.intensidadSeguimientos].nombre}»`;
   if ((deSofia || regla.excluir.pausada) && (conv.ai_paused || conv.derivado)) return 'IA pausada o derivada';
   if (deSofia && conv.alta_estado === 'pendiente') return 'alta pendiente';
   if (regla.excluir.clientes && (conv.tipo === 'socio' || conv.alta_estado === 'preparada')) return 'ya es cliente';
@@ -177,7 +181,8 @@ export async function procesarSeguimientos(setter) {
         continue;
       }
     }
-    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id));
+    const todas = reglas.listar(setter.catalogo);
+    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id), todas);
     if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
     // Los mensajes a mano salen a su hora exacta; el resto, dentro del horario de Sofía
     if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
@@ -213,7 +218,7 @@ export async function procesarSeguimientos(setter) {
       // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale
       if (!sigueEnMarcha.get(s.id)) continue;
       const fresco = repo.getConv(conv.id);
-      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now(), esNoLead(repo.db, fresco.id)) : 'el chat ya no existe';
+      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now(), esNoLead(repo.db, fresco.id), todas) : 'el chat ya no existe';
       if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       // Si el lead escribe mientras Sofía «escribe» la primera burbuja, el seguimiento ya no sale

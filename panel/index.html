@@ -274,6 +274,10 @@
   .grupo-seg { margin-top: 18px; }
   .grupo-seg h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px !important; }
   .regla.apagada { opacity: .6; }
+  .intensidad { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .intensidad label { flex: 1 1 200px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 8px 10px; cursor: pointer; }
+  .intensidad label:has(input:checked) { border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset; }
+  .intensidad .ayuda { display: block; margin-top: 2px; }
   .prog { display: grid; gap: 6px; margin-top: 6px; }
   .prog textarea { width: 100%; font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 6px 8px; }
   .editor input[type="radio"] { accent-color: var(--green); width: 17px; height: 17px; }
@@ -1428,7 +1432,9 @@ async function seguimientos() {
   const s = await api('/panel/seguimientos');
   if (estado.seccion !== 'seguimientos') return;
   estado.segDatos = s;
-  const tarjeta = (r) => `<div class="regla ${r.activo ? '' : 'apagada'}"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${textoEspera(r)}</span>
+  const fueraNivel = (r) => r.activo && ['silencio', 'largo-plazo'].includes(r.tipo) && !r.excluir?.soloConPrueba && !s.intensidad.incluidas.includes(r.id);
+  const nivelActual = s.intensidad.niveles.find((n) => n.id === s.intensidad.nivel);
+  const tarjeta = (r) => `<div class="regla ${r.activo && !fueraNivel(r) ? '' : 'apagada'}"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${textoEspera(r)}</span>${fueraNivel(r) ? ` <span class="chip ambar" title="Activo, pero no sale con la intensidad elegida">no sale en «${esc(nivelActual?.nombre || '')}»</span>` : ''}
       ${r.etiqueta ? pill({ nombre: r.etiqueta.nombre, color: r.etiqueta.color }) : ''} ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')}
       <span class="chip ${r.modo === 'fijo' ? 'azul' : 'violeta'}">${r.modo === 'fijo' ? 'texto fijo' : 'lo escribe Sofía'}</span>${r.plantilla && r.canales.includes('whatsapp') ? ' <span class="chip">plantilla si &gt;24 h</span>' : ''}</div>
       <div class="acciones-f"><button class="mini" data-ed="${esc(r.id)}">Editar</button><label class="interruptor"><input type="checkbox" data-on="${esc(r.id)}" aria-label="${esc(r.nombre)} activo" ${r.activo ? 'checked' : ''}><span></span></label></div></div>
@@ -1438,6 +1444,9 @@ async function seguimientos() {
   const lz = s.lanzamientos;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Seguimientos</h2><div class="acciones-f"><button id="nlanz">+ Lanzamiento</button><button class="primario" id="nregla">+ Nuevo seguimiento</button></div></div>
     <p class="intro">Antes de enviar, Sofía mira la conversación y, si no se cumple la condición, no manda nada. Lo que escribe se puede ver antes en cada chat («texto previsto»). En modo prueba quedan como borrador. Ninguno de Sofía sale si el chat está pausado o derivado (salvo los de etiqueta o cita que lo permitan).</p>
+    <section class="grupo-seg"><h3>Intensidad</h3><p class="ayuda">Cuántos mensajes recibe quien se queda callado y con qué tono. Afecta a «Si no contesta» y «Más adelante»; los recordatorios de la clase de prueba y los mensajes informativos salen siempre. Los ya programados que no entren en el nivel no se envían.</p>
+      <div class="intensidad" role="radiogroup" aria-label="Intensidad de los seguimientos">${s.intensidad.niveles.map((n) => `<label><input type="radio" name="intens" value="${esc(n.id)}" ${n.id === s.intensidad.nivel ? 'checked' : ''}> <b>${esc(n.nombre)}</b><span class="ayuda">${esc(n.descripcion)}</span></label>`).join('')}</div>
+      <span id="intens-ok" class="ayuda" aria-live="polite"></span></section>
     ${TIPOS_SEG.map(([t, titulo, ayuda]) => `<section class="grupo-seg"><h3>${titulo} <button class="mini" data-nt="${t}">+ Añadir</button></h3><p class="ayuda">${ayuda}</p>
       ${s.reglas.filter((r) => r.tipo === t).map(tarjeta).join('') || '<div class="vacio">Ninguno todavía</div>'}</section>`).join('')}
     <h3>Próximos envíos</h3>
@@ -1449,6 +1458,11 @@ async function seguimientos() {
       <td>${['programado', 'enviando'].includes(l.estado) ? `<button class="mini peligro" data-lc="${l.id}">Cancelar</button>` : ''}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Ningún lanzamiento. Sirven para una oferta, una apertura o un evento con fecha.</div>'}`;
   const m = $('#main');
   $('#nregla').onclick = () => { estado.editRegla = { nuevo: 'silencio' }; seguimientos(); };
+  m.querySelectorAll('input[name="intens"]').forEach((r) => r.onchange = async () => {
+    $('#intens-ok').textContent = 'Guardando…';
+    try { estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: r.value }) }); seguimientos(); }
+    catch (e) { $('#intens-ok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  });
   $('#nlanz').onclick = () => { estado.nuevoLanz = true; seguimientos(); };
   m.querySelectorAll('[data-nt]').forEach((b) => b.onclick = () => { estado.editRegla = { nuevo: b.dataset.nt }; seguimientos(); });
   m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editRegla = { id: b.dataset.ed }; seguimientos(); });
