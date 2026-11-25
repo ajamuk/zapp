@@ -13,6 +13,7 @@ import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
 import { textoPrevisto, programarManual, cancelarCita, destinatarios, validarLanzamiento, cancelarLanzamiento } from './followups.js';
 import * as reglasSeg from './reglas.js';
+import { NIVELES, reglasDelNivel } from './intensidad.js';
 import * as reportes from './reportes.js';
 import * as documentos from './documentos.js';
 import * as recursosMod from './recursos.js';
@@ -272,7 +273,11 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.json({ ok: true });
   });
   admin.get('/panel/altas', (_req, res) => res.json(panel.altas(db)));
-  admin.get('/panel/seguimientos', (_req, res) => res.json(panel.seguimientos(db)));
+  admin.get('/panel/seguimientos', (_req, res) => res.json({ ...panel.seguimientos(db), intensidad: {
+    nivel: leerAjustes(repo).intensidadSeguimientos,
+    niveles: Object.entries(NIVELES).map(([id, n]) => ({ id, nombre: n.nombre, descripcion: n.descripcion })),
+    incluidas: [...reglasDelNivel(reglasSeg.listar(db), leerAjustes(repo).intensidadSeguimientos)],
+  } }));
   // Prepara (o devuelve) el texto que Sofía enviará en ese seguimiento
   admin.post('/panel/seguimientos/:id/previa', async (req, res) => {
     const s = db.prepare('SELECT * FROM scheduled WHERE id = ?').get(Number(req.params.id));

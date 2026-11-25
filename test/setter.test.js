@@ -10,6 +10,7 @@ const T0 = new Date('2026-11-17T11:00:00Z');
 
 function montar({ respuestas, socio = false, live = true, alta = { estado: 'preparada' }, telefonosPrueba = [] } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const llamadas = { enviados: [], tags: [], notas: [], avisos: [], plantillas: [], asignados: [], requests: [] };
   const ghl = {
     sendMessage: async ({ texto }) => { llamadas.enviados.push(texto); return { messageId: `m${llamadas.enviados.length}` }; },

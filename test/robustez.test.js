@@ -17,6 +17,7 @@ const responder = (mensajes) => ({ content: [{ type: 'tool_use', id: 't', name: 
 
 function montar({ complete, ghl = {}, live = true } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const sal = { enviados: [], avisos: [] };
   let reloj = new Date(T0);
   const setter = new Setter({
@@ -103,6 +104,7 @@ test('si alguien del equipo escribe mientras Sofía piensa, no se envía nada', 
 
 test('reinicio a mitad: los chats que se estaban contestando vuelven a la cola; envíos y reportes a medias quedan marcados', () => {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   for (const id of ['a', 'b']) repo.upsertConv({ id, contact_id: id, channel: 'whatsapp' });
   repo.updateConv('a', { respondiendo_desde: T0.toISOString() });
   repo.updateConv('b', { respondiendo_desde: T0.toISOString(), ai_paused: 1 });
@@ -162,6 +164,7 @@ test('copia de seguridad diaria: una por día y se borran las viejas', async () 
 test('salud y errores de ruta: /health da 503 si un bucle está parado; un error interno responde JSON sin detalles', async () => {
   config.adminToken = 'k';
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   let sano = true;
   const srv = crearApp({ setter: {}, repo, salud: () => ({ ok: sano, bucles_parados: sano ? [] : ['respuestas'] }) }).listen(0);
   await new Promise((r) => srv.once('listening', r));
@@ -204,6 +207,7 @@ test('webhook con etiquetas y adjuntos como texto', () => {
 
 test('aplicar una etiqueta a chats de antes no pausa, no fuerza respuesta ni programa seguimientos; la inactividad no toca chats viejos', async () => {
   const repo = crearRepo(openDb(':memory:')); const db = repo.db; const avisos = [];
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const e = new etq.Etiquetador({ repo, avisar: async (t) => avisos.push(t), now: () => T0, alPoner: (c, id) => programarPorEtiqueta(repo, db, c, id, T0) });
   const lab = etq.crear(db, { nombre: 'Precio', reglas: [{ tipo: 'texto', patron: 'precio' }, { tipo: 'inactividad', horas: 24 }], acciones: { forzar_respuesta: true, avisar: true, pausar_ia: false } });
   reglasSeg.crear(db, { nombre: 'Tras precio', tipo: 'etiqueta', etiquetaId: lab.id, canales: ['whatsapp'], minutos: 60, instrucciones: 'x' });
@@ -256,6 +260,7 @@ test('alta ya hecha no se repite, y un audio a medio transcribir no se contesta 
 
 test('una lista de socios vacía o recortada de AimHarder no borra el índice', async () => {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const cli = (n) => Array.from({ length: n }, (_, i) => ({ id: i, name: 'S', mobile_number: `6${String(10000000 + i)}`, current_memberships: [{ membership_name: 'L' }] }));
   await sincronizarSocios(repo, { parla: { clientes: async () => cli(40) } });
   await assert.rejects(sincronizarSocios(repo, { parla: { clientes: async () => [] } }), /no se actualiza/);

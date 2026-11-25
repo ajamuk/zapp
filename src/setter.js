@@ -10,6 +10,7 @@ import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita, horaMadrid, fueraDeVentana } from './followups.js';
+import { entraEnNivel } from './intensidad.js';
 import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps, describirTrialOps } from './clase-prueba.js';
 import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
@@ -1082,8 +1083,11 @@ export class Setter {
     // de Sofía): el que caería fuera se adelanta a 15 min antes del cierre de esa ventana, o no se programa.
     const ultimoLead = this.repo.getConv(conv.id)?.last_inbound_at;
     const cierre = ultimoLead ? new Date(ultimoLead).getTime() + VENTANA_SEG_MS - 15 * 60000 : Infinity;
-    for (const regla of reglasSeg.listar(this.catalogo)) {
+    const todas = reglasSeg.listar(this.catalogo);
+    const nivel = leerAjustes(this.repo).intensidadSeguimientos;
+    for (const regla of todas) {
       if (regla.tipo !== 'silencio' || !regla.canales.includes(conv.channel) || !regla.activo) continue;
+      if (!entraEnNivel(regla, todas, nivel)) continue; // la intensidad elegida en el panel no lo incluye
       let due = base + regla.minutos * 60000;
       if (!regla.plantilla && due > cierre) {
         if (cierre - base < 60 * 60000) continue; // ya no queda ventana para él
@@ -1112,11 +1116,13 @@ export class Setter {
     this.repo.cancelScheduled(conv.id, 'lo deja para más adelante', { tipos: ['silencio', 'largo-plazo'] });
     if (String(conv.id).startsWith('prueba-')) return { ...info, programado: false, nota: 'chat de pruebas: usa «Forzar» para verlo' };
     // La primera en la fecha; las encadenadas (despuesDe), sus días después de la anterior
+    const nivel = leerAjustes(this.repo).intensidadSeguimientos;
+    const sale = (r) => r.activo && entraEnNivel(r, reglas, nivel);
     let base = objetivo; let anterior = primera;
-    if (primera.activo) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
+    if (sale(primera)) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     for (let r = reglas.find((x) => x.despuesDe === anterior.id); r; anterior = r, r = reglas.find((x) => x.despuesDe === anterior.id)) {
       base = new Date(base.getTime() + r.minutos * 60000);
-      if (r.activo) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
+      if (sale(r)) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     }
     return { ...info, programado: true };
   }

@@ -9,6 +9,7 @@ import { MENSAJE_FUERA_HORARIO } from '../src/fuera-horario.js';
 const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
 function montar({ respuestas = [], live = true, socio = false, telefonosPrueba = [], mensajesGhl = null } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const sal = { enviados: [], notas: [], avisos: [], altas: [] };
   let reloj = new Date(T0);
   const cola = [...respuestas];

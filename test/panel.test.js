@@ -196,3 +196,19 @@ test('ajustes: los teléfonos de prueba se añaden y quitan desde el panel y el 
     assert.deepEqual((await (await api('/admin/panel/ajustes')).json()).telefonosPrueba, ['+34611222333']);
   } finally { await guardar([]); srv.close(); }
 });
+
+test('panel: la intensidad de los seguimientos se ve y se cambia desde Seguimientos', async () => {
+  const { srv, api } = await servidor();
+  try {
+    let s = await (await api('/admin/panel/seguimientos')).json();
+    assert.equal(s.intensidad.nivel, 'normal');
+    assert.deepEqual(s.intensidad.niveles.map((n) => n.id), ['suave', 'normal', 'intensa']);
+    assert.ok(!s.intensidad.incluidas.includes('comercial-5h'));
+    const r = await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: 'intensa' }) });
+    assert.equal(r.status, 200);
+    s = await (await api('/admin/panel/seguimientos')).json();
+    assert.equal(s.intensidad.nivel, 'intensa');
+    assert.ok(s.intensidad.incluidas.includes('comercial-5h'));
+    assert.equal((await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: 'brutal' }) })).status, 400);
+  } finally { srv.close(); }
+});
