@@ -197,6 +197,16 @@ CREATE TABLE IF NOT EXISTS recursos (
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS plantillas_wa (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,       -- nombre exacto de la plantilla aprobada (GHL / Meta)
+  idioma TEXT NOT NULL,              -- código exacto (es, es_ES…)
+  categoria TEXT NOT NULL DEFAULT 'MARKETING',
+  cuerpo TEXT NOT NULL,              -- texto con {{1}}, {{2}}…
+  descripcion TEXT,                  -- para qué se usa (lo ve el equipo)
+  activa INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS archivos_equipo (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,             -- nombre original del archivo

@@ -597,14 +597,14 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['plantillas', 'Plantillas'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 const hoyMes = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
 const PRIMERA = {
   resumen: () => [`/panel/resumen?dias=${estado.dias}`, '/panel/alertas'], embudo: () => [`/panel/embudo?mes=${estado.mes || hoyMes()}`],
   estadisticas: () => ['/panel/estadisticas?dias=30&sede=&canal=', '/panel/consumo?meses=6'], chats: () => ['/panel/vistas', '/panel/opciones'],
   etiquetas: () => ['/panel/etiquetas', '/panel/meta'], altas: () => ['/panel/altas'], preguntas: () => ['/panel/preguntas'], seguimientos: () => ['/panel/seguimientos'],
-  recursos: () => ['/panel/recursos'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
+  recursos: () => ['/panel/recursos'], plantillas: () => ['/panel/plantillas'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
 };
 /** Sección y chat (si lo hay) que dice la dirección. Sin sección, el panel abre en Chats; una que no existe lleva a Resumen. */
 function leerHash() {
@@ -689,7 +689,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, plantillas, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -1088,6 +1088,7 @@ async function lista() {
 const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
 
 // Archivos para el lead (imagen, vídeo, audio, PDF): se suben al elegirlos y se envían o programan con su id
+const SEG_DESHACER = 8; // segundos para arrepentirse antes de que el mensaje salga
 const ICONO_ARCH = { imagen: '🖼️', video: '🎬', audio: '🎙️', documento: '📄' };
 const ACEPTA_ARCH = 'image/jpeg,image/png,image/webp,video/mp4,audio/*,application/pdf';
 async function subirArchivoChat(convId, blob, nombre) {
@@ -1115,10 +1116,17 @@ const formProg = (p, v) => `<form id="${p}form" class="prog"><textarea id="${p}t
   <div class="fila-f"><input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button type="button" class="mini" id="${p}adj" title="Adjuntar imagen, vídeo, audio o PDF">📎 ${v.archivo ? 'Cambiar archivo' : 'Archivo'}</button><input type="file" id="${p}file" accept="${ACEPTA_ARCH}" hidden><button class="primario mini">${v.id ? 'Guardar cambios' : 'Programar'}</button>${v.id ? `<button type="button" class="mini" id="${p}cerrar">Cancelar edición</button>` : ''}</div>
   <p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, el texto va por plantilla y no se pueden enviar archivos.</p><p class="error" id="${p}err"></p></form>`;
 
+const formPlantilla = (p, v, lista) => { const t = lista.find((x) => x.id === Number(v.plantilla)); return `<form id="${p}form" class="prog">
+  <select id="${p}sel" aria-label="Plantilla"><option value="">Elige una plantilla…</option>${lista.map((x) => `<option value="${x.id}" ${t?.id === x.id ? 'selected' : ''}>${esc(x.nombre)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ''}</option>`).join('')}</select>
+  ${t ? `${Array.from({ length: t.variables }, (_, i) => `<input data-${p}var="${i}" maxlength="1000" placeholder="Valor de {{${i + 1}}}" aria-label="Variable ${i + 1}" value="${esc(v.variables?.[i] || '')}">`).join('')}
+  <div class="previsto" id="${p}prev">«${esc(t.cuerpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v.variables?.[n - 1] || m))}»</div>
+  <div class="fila-f">${v.id ? '' : `<button type="button" class="primario mini" id="${p}ya">Enviar ahora</button><span class="ayuda">o</span>`}<input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button class="mini ${v.id ? 'primario' : ''}">${v.id ? 'Guardar cambios' : 'Programar'}</button>${v.id ? `<button type="button" class="mini" id="${p}cerrar">Cancelar edición</button>` : ''}</div>` : ''}
+  ${lista.length ? '' : '<p class="ayuda">No hay plantillas activas: añádelas en la sección Plantillas.</p>'}<p class="error" id="${p}err"></p></form>`; };
+
 async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
   if (!$('#ch').classList.contains('con-hilo') && movil) estado.scrollLista = window.scrollY;
-  if (estado.conv !== id) { estado.progAbierto = false; estado.prog = null; estado.editProg = null; estado.respArchivo = null; }
+  if (estado.conv !== id) { estado.progAbierto = false; estado.prog = null; estado.editProg = null; estado.respArchivo = null; estado.tplAbierto = false; estado.tpl = null; }
   estado.conv = id;
   // La dirección lleva el chat: se puede compartir el enlace y, en el móvil, «atrás» vuelve a la lista
   const dir = '#chats/' + encodeURIComponent(id);
@@ -1155,9 +1163,10 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
       c.prueba_fecha ? `<b>📅 Clase de prueba</b><br>${fechaCorta(c.prueba_fecha)} <button type="button" class="mini" id="banprueba" title="Cancela sus recordatorios">Anular o cambiada</button>` : '',
       `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? formProg('np', (estado.prog ??= { texto: '', cuando: new Date(Date.now() + 3600e3).toISOString(), archivo: null })) : ''}`,
+      d.plantillas ? `<b>📨 Plantilla de WhatsApp</b> <button type="button" class="mini" id="btpl" ${d.plantillas.motivo ? 'disabled' : ''}>${estado.tplAbierto ? 'Cerrar' : 'Elegir'}</button>${d.plantillas.motivo ? `<div class="ayuda">${esc(d.plantillas.motivo)}</div>` : '<div class="ayuda">Vale aunque hayan pasado más de 24 h desde su último mensaje.</div>'}${estado.tplAbierto && !d.plantillas.motivo ? formPlantilla('tp', (estado.tpl ??= { plantilla: '', variables: [], cuando: new Date(Date.now() + 3600e3).toISOString() }), d.plantillas.lista) : ''}` : '',
       c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
       d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
-        ? (estado.editProg?.id === s.id ? `<div class="fu-chat" data-fu-id="${s.id}"><b>Editar mensaje programado</b>${formProg('ep', estado.editProg)}</div>`
+        ? (estado.editProg?.id === s.id ? `<div class="fu-chat" data-fu-id="${s.id}"><b>Editar mensaje programado</b>${estado.editProg.plantilla ? formPlantilla('ep', estado.editProg, d.plantillas?.lista || []) : formProg('ep', estado.editProg)}</div>`
           : `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} ${s.tipo === 'manual' ? `<button type="button" class="mini" data-fu-edit="${s.id}">Editar</button> ` : ''}<button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}${s.archivo ? chipArchivo(s.archivo) : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? (s.tipo === 'manual' && !s.texto_previsto && s.archivo ? '' : htmlPrevisto(s.texto_previsto)) : htmlPrevisto(null)}</div></div>`)
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
@@ -1193,13 +1202,30 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
         estado.grabacion = { rec, conv: id }; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true });
       } catch (err) { $('#rerr').textContent = err.message; }
     };
-    $('#fresp').onsubmit = async (e) => {
+    // Un mensaje de WhatsApp enviado no se puede borrar: se espera unos segundos con «Deshacer» antes de mandarlo de verdad
+    $('#fresp').onsubmit = (e) => {
       e.preventDefault();
       const texto = t.value.trim(); const archivo = estado.respArchivo?.id || null;
-      if ((!texto && !archivo) || $('#benv').disabled) return;
-      $('#benv').disabled = true; $('#benv').textContent = 'Enviando…'; $('#rerr').textContent = '';
-      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto, archivo }) }); estado.respTexto = ''; estado.respArchivo = null; if ($('#rtxt')) $('#rtxt').value = ''; await recargar(); $('#rtxt')?.focus(); }
-      catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; if ($('#benv')) { $('#benv').disabled = false; $('#benv').textContent = 'Enviar'; } }
+      const b = $('#benv');
+      if ((!texto && !archivo) || b.disabled) return;
+      b.disabled = true; t.readOnly = true; $('#rerr').textContent = '';
+      const deshacer = Object.assign(document.createElement('button'), { type: 'button', className: 'peligro', textContent: 'Deshacer' });
+      b.after(deshacer);
+      let quedan = SEG_DESHACER;
+      const pintar = () => { b.textContent = `Se envía en ${quedan} s`; };
+      const aviso = (ev) => { ev.preventDefault(); ev.returnValue = ''; };
+      window.addEventListener('beforeunload', aviso); pintar();
+      const fin = () => { clearInterval(reloj); window.removeEventListener('beforeunload', aviso); deshacer.remove(); };
+      const reloj = setInterval(async () => {
+        if (--quedan > 0) return pintar();
+        fin(); b.textContent = 'Enviando…';
+        try {
+          await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto, archivo }) });
+          estado.respTexto = ''; estado.respArchivo = null; t.value = '';
+          if (estado.conv === id) { await recargar(); $('#rtxt')?.focus(); }
+        } catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; b.disabled = false; b.textContent = 'Enviar'; t.readOnly = false; }
+      }, 1000);
+      deshacer.onclick = () => { fin(); b.disabled = false; b.textContent = 'Enviar'; t.readOnly = false; t.focus(); };
     };
   }
   $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; if (!estado.progAbierto) estado.prog = null; abrir(id, { datos: d, mantener: true }).then(() => $('#nptxt')?.focus()); };
@@ -1228,10 +1254,41 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     };
   };
   enlazarProg('np', estado.prog, (b) => api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify(b) }), () => { estado.progAbierto = false; estado.prog = null; });
-  enlazarProg('ep', estado.editProg, (b) => api(`/panel/seguimientos/${estado.editProg.id}`, { method: 'PUT', body: JSON.stringify(b) }), () => { estado.editProg = null; });
+  if (!estado.editProg?.plantilla) enlazarProg('ep', estado.editProg, (b) => api(`/panel/seguimientos/${estado.editProg.id}`, { method: 'PUT', body: JSON.stringify(b) }), () => { estado.editProg = null; });
+  // Formularios de plantilla (nueva «tp» y edición «ep» de una programada)
+  const enlazarPlantilla = (p, v, cerrar) => {
+    if (!v || !$(`#${p}form`)) return;
+    const repintar = () => abrir(id, { datos: d, mantener: true });
+    const lista = d.plantillas?.lista || [];
+    const cuerpo = () => lista.find((x) => x.id === Number(v.plantilla))?.cuerpo || '';
+    $(`#${p}sel`).onchange = (e) => { v.plantilla = e.target.value; v.variables = []; repintar(); };
+    $('#hilo').querySelectorAll(`[data-${p}var]`).forEach((inp) => inp.oninput = () => {
+      v.variables[Number(inp.dataset[`${p}var`])] = inp.value;
+      const prev = $(`#${p}prev`); if (prev) prev.textContent = `«${cuerpo().replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v.variables[n - 1] || m)}»`;
+    });
+    $(`#${p}fec`) && ($(`#${p}fec`).onchange = (e) => { const f = new Date(e.target.value); if (!Number.isNaN(f.getTime())) v.cuando = f.toISOString(); });
+    $(`#${p}cerrar`) && ($(`#${p}cerrar`).onclick = () => { cerrar(); repintar(); });
+    const body = () => JSON.stringify({ plantilla: Number(v.plantilla), variables: v.variables, cuando: new Date($(`#${p}fec`).value).toISOString() });
+    $(`#${p}ya`) && ($(`#${p}ya`).onclick = async (e) => {
+      const b = e.target;
+      if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Enviar ya? No se puede borrar'; return; }
+      b.disabled = true; b.textContent = 'Enviando…';
+      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/plantilla`, { method: 'POST', body: JSON.stringify({ plantilla: Number(v.plantilla), variables: v.variables }) }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar ahora'; }
+    });
+    $(`#${p}form`).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api(v.id ? `/panel/seguimientos/${v.id}` : `/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: v.id ? 'PUT' : 'POST', body: body() }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+  };
+  enlazarPlantilla('tp', estado.tpl, () => { estado.tplAbierto = false; estado.tpl = null; });
+  if (estado.editProg?.plantilla) enlazarPlantilla('ep', estado.editProg, () => { estado.editProg = null; });
+  $('#btpl') && ($('#btpl').onclick = () => { estado.tplAbierto = !estado.tplAbierto; if (!estado.tplAbierto) estado.tpl = null; abrir(id, { datos: d, mantener: true }); });
   $('#hilo').querySelectorAll('[data-fu-edit]').forEach((b) => b.onclick = () => {
     const s = d.seguimientos.find((x) => x.id === Number(b.dataset.fuEdit)); if (!s) return;
-    estado.editProg = { id: s.id, texto: s.texto_previsto || '', cuando: s.due_at, archivo: s.archivo || null };
+    estado.editProg = s.contexto?.plantilla ? { id: s.id, plantilla: s.contexto.plantilla, variables: [...(s.contexto.variables || [])], cuando: s.due_at }
+      : { id: s.id, texto: s.texto_previsto || '', cuando: s.due_at, archivo: s.archivo || null };
     abrir(id, { datos: d, mantener: true }).then(() => $('#eptxt')?.focus());
   });
   if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
@@ -2300,6 +2357,45 @@ async function conciliarConsumo(dias) {
 }
 
 // ---------- Recursos ----------
+async function plantillas() {
+  const { plantillas: lista, categorias } = await api('/panel/plantillas');
+  if (estado.seccion !== 'plantillas') return;
+  const CAT = { MARKETING: 'Marketing', UTILITY: 'Utilidad' };
+  const conVars = (t) => esc(t).replace(/\{\{\s*(\d+)\s*\}\}/g, '<span class="chip violeta">{{$1}}</span>');
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Plantillas de WhatsApp</h2><button class="primario" id="tnueva">+ Añadir plantilla</button></div>
+    <p class="intro">Plantillas aprobadas por Meta para escribir a un lead cuando han pasado más de 24 h desde su último mensaje (o cuando quieras). Se envían desde cada chat, al momento o programadas. Primero se crean y se aprueban en GHL (Ajustes → WhatsApp → Plantillas); aquí se copian <b>tal cual</b> su nombre, su idioma y su texto, porque GHL no deja leerlas desde fuera. Si algo no coincide, Meta rechaza el envío.</p>
+    <div id="tform"></div>
+    ${lista.length ? lista.map((t) => `<div class="regla ${t.activa ? '' : 'apagada'}"><div class="cab"><div><b>${esc(t.nombre)}</b> <span class="chip">${esc(t.idioma)}</span> <span class="chip">${CAT[t.categoria] || esc(t.categoria)}</span> <span class="chip">${t.variables} variable${t.variables === 1 ? '' : 's'}</span>${t.activa ? '' : ' <span class="chip ambar">desactivada</span>'}</div>
+      <div class="acciones-f"><button class="mini" data-ted="${t.id}">Editar</button><button class="mini" data-tact="${t.id}" data-on="${t.activa ? 0 : 1}">${t.activa ? 'Desactivar' : 'Activar'}</button><button class="mini peligro" data-tbor="${t.id}">Borrar</button></div></div>
+      <p class="largo">${conVars(t.cuerpo)}</p>${t.descripcion ? `<p class="ayuda">${esc(t.descripcion)}</p>` : ''}</div>`).join('') : '<div class="vacio">Todavía no hay plantillas. Añade la de seguimiento (sofia_seguimiento_v1) u otra aprobada en GHL.</div>'}`;
+  const form = (t) => {
+    $('#tform').innerHTML = `<form class="editor" id="ftpl"><section><h3>${t ? `Editar «${esc(t.nombre)}»` : 'Añadir plantilla'}</h3>
+      <div class="fila-f"><label>Nombre en GHL <input name="n" required maxlength="512" placeholder="sofia_seguimiento_v1" value="${esc(t?.nombre || '')}"></label>
+      <label>Idioma <input name="i" required maxlength="6" placeholder="es" value="${esc(t?.idioma || 'es')}" style="width:80px"></label>
+      <label>Categoría <select name="c">${categorias.map((c) => `<option value="${c}" ${(t?.categoria || 'MARKETING') === c ? 'selected' : ''}>${CAT[c] || c}</option>`).join('')}</select></label></div>
+      <textarea name="b" rows="4" maxlength="1024" required placeholder="Texto exacto de la plantilla, con sus variables: hola {{1}}, ..." style="width:100%;margin-top:8px">${esc(t?.cuerpo || '')}</textarea>
+      <input name="d" maxlength="300" placeholder="Para qué se usa (opcional, lo ve el equipo)" value="${esc(t?.descripcion || '')}" style="width:100%;margin-top:8px">
+      <p class="ayuda">Las variables se escriben como en GHL: {{1}}, {{2}}… Al enviarla, el panel pide un valor para cada una.</p>
+      <div class="acciones-f"><button class="primario">${t ? 'Guardar' : 'Añadir'}</button><button type="button" id="tcanc">Cancelar</button></div><p class="error"></p></section></form>`;
+    $('#tcanc').onclick = () => { $('#tform').innerHTML = ''; };
+    $('#ftpl').onsubmit = async (e) => {
+      e.preventDefault(); const f = e.target;
+      const body = JSON.stringify({ nombre: f.n.value.trim(), idioma: f.i.value.trim(), categoria: f.c.value, cuerpo: f.b.value, descripcion: f.d.value });
+      try { await api(t ? `/panel/plantillas/${t.id}` : '/panel/plantillas', { method: t ? 'PUT' : 'POST', body }); plantillas(); }
+      catch (err) { f.querySelector('.error').textContent = err.message; }
+    };
+    f0();
+  };
+  const f0 = () => $('#ftpl input[name="n"]')?.focus();
+  $('#tnueva').onclick = () => form(null);
+  $('#main').querySelectorAll('[data-ted]').forEach((b) => b.onclick = () => form(lista.find((t) => t.id === Number(b.dataset.ted))));
+  $('#main').querySelectorAll('[data-tact]').forEach((b) => b.onclick = async () => { await api(`/panel/plantillas/${b.dataset.tact}`, { method: 'PUT', body: JSON.stringify({ activa: b.dataset.on === '1' }) }); plantillas(); });
+  $('#main').querySelectorAll('[data-tbor]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro?'; return; }
+    await api(`/panel/plantillas/${b.dataset.tbor}`, { method: 'DELETE' }); plantillas();
+  });
+}
+
 async function recursos() {
   const lista = await api('/panel/recursos');
   if (estado.seccion !== 'recursos') return;

@@ -17,6 +17,7 @@ import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
 import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
 import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
@@ -1302,7 +1303,7 @@ export class Setter {
     if (this.aislado() && this.aislamiento.modo !== 'activo') return 'El número de Sofía está mal configurado: no se envía nada.';
     if (!this.permitido(conv)) return 'Este chat no es del número de Sofía: contéstalo en el CRM.';
     if (!CANALES_NATIVOS.has(conv.channel) || (this.aislado() && conv.channel !== 'whatsapp')) return `Desde aquí solo se escribe por WhatsApp${this.aislado() ? '' : ' e Instagram'}: este chat contéstalo en el CRM.`;
-    if (fueraDeVentana(conv, this.now())) return 'Han pasado más de 24 h desde su último mensaje: solo se le puede escribir con plantilla (usa «Programar mensaje»).';
+    if (fueraDeVentana(conv, this.now())) return 'Han pasado más de 24 h desde su último mensaje: solo se le puede escribir con una plantilla de WhatsApp (abajo, «📨 Plantilla de WhatsApp»).';
     return '';
   }
 
@@ -1333,6 +1334,37 @@ export class Setter {
       const a = archivos.obtener(this.repo.db, archivoId);
       if (motivo || !a) { const e = new Error(motivo || 'Ese archivo ya no está: vuelve a adjuntarlo.'); e.usuario = true; throw e; }
       const r = await this.enviarArchivo(conv, a, String(texto || '').trim());
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
+  /** ¿Se le puede mandar una plantilla de WhatsApp a este chat? ('' = sí). A diferencia de un texto, vale pasadas 24 h. */
+  motivoNoPlantilla(conv) {
+    if (!conv) return 'Ese chat no existe.';
+    if (String(conv.id).startsWith('prueba-')) return 'Es un chat de prueba: no sale a nadie.';
+    if (conv.channel !== 'whatsapp') return 'Las plantillas solo son de WhatsApp.';
+    if (!this.ghl?.enviarPlantillaWa) return 'El envío de plantillas no está configurado.';
+    if (this.aislado() && this.aislamiento.modo !== 'activo') return 'El número de Sofía está mal configurado: no se envía nada.';
+    if (!this.permitido(conv)) return 'Este chat no es del número de Sofía: contéstalo en el CRM.';
+    return '';
+  }
+
+  /** Envía una plantilla ya preparada (plantillas.prepararEnvio). Devuelve lo que hay que anotar en el chat. */
+  async enviarPlantilla(conv, env) {
+    const r = await this.ghl.enviarPlantillaWa({ contactId: conv.contact_id, nombre: env.plantilla.nombre, idioma: env.plantilla.idioma, categoria: env.plantilla.categoria, variables: env.variables, texto: env.texto });
+    return { messageId: r?.messageId || null, texto: env.texto, medio: { tipo: 'plantilla' } };
+  }
+
+  /** Una persona del equipo envía una plantilla de WhatsApp desde el panel. */
+  enviarPlantillaDelEquipo(convId, plantillaId, variables = []) {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoPlantilla(conv);
+      if (motivo) { const e = new Error(motivo); e.usuario = true; throw e; }
+      let env;
+      try { env = plantillasWa.prepararEnvio(this.repo.db, plantillaId, variables); } catch (e) { e.usuario = true; throw e; }
+      const r = await this.enviarPlantilla(conv, env);
       const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
       return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
     });

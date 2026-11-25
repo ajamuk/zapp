@@ -166,6 +166,18 @@ export class Ghl {
     return { messageId: null, via: 'workflow' };
   }
 
+  /**
+   * Plantilla aprobada de WhatsApp enviada directamente (sin workflow), con el formato de la bandeja de GHL:
+   * `whatsapp.type = 'template'` y las variables del cuerpo por orden en `placeholders.body`. `texto` es la plantilla
+   * ya rellenada: es lo que GHL guarda y enseña en el chat. Con aislamiento sale del número propio (`fromNumber`).
+   */
+  enviarPlantillaWa({ contactId, nombre, idioma, categoria, variables = [], texto }) {
+    return this.req('POST', '/conversations/messages', this.cuerpoEnvio('whatsapp', {
+      contactId, message: texto,
+      whatsapp: { type: 'template', template: { name: nombre, lang: idioma, ...(categoria ? { category: categoria } : {}) }, placeholders: { header: [], body: variables, buttons: [] } },
+    }));
+  }
+
   // Compatibilidad: el nombre antiguo
   sendTemplate({ contactId, variables = [] }) { return this.enviarPorPlantilla({ contactId, texto: variables[0] || '' }); }
 

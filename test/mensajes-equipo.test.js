@@ -154,3 +154,85 @@ test('API: subir, enviar con archivo, programar, editar y la URL pública del ar
     assert.equal((await api(`/admin/panel/seguimientos/${id}`, { method: 'PUT', body: JSON.stringify({ texto: 'x', cuando }) })).status, 409);
   } finally { srv.close(); }
 });
+
+// ---------- Plantillas de WhatsApp ----------
+import * as plantillasWa from '../src/plantillas.js';
+import { Ghl } from '../src/ghl.js';
+
+const PLANTILLA = { nombre: 'sofia_seguimiento_v1', idioma: 'es', categoria: 'MARKETING', cuerpo: 'hola {{1}}, {{2}}' };
+
+test('plantillas: catálogo con validación y variables', () => {
+  const repo = crearRepo(openDb(':memory:'));
+  const p = plantillasWa.crear(repo.db, PLANTILLA);
+  assert.equal(p.variables, 2); assert.equal(p.activa, true);
+  assert.throws(() => plantillasWa.crear(repo.db, PLANTILLA), /Ya hay una plantilla/);
+  assert.throws(() => plantillasWa.crear(repo.db, { ...PLANTILLA, nombre: 'Con Mayúsculas' }), /minúsculas/);
+  assert.throws(() => plantillasWa.crear(repo.db, { ...PLANTILLA, nombre: 'otra', idioma: 'español' }), /Idioma/);
+  assert.throws(() => plantillasWa.crear(repo.db, { ...PLANTILLA, nombre: 'otra', cuerpo: 'hola {{2}}' }), /Falta la variable \{\{1\}\}/);
+  assert.equal(plantillasWa.actualizar(repo.db, p.id, { activa: false }).activa, false);
+  assert.throws(() => plantillasWa.prepararEnvio(repo.db, p.id, ['ana', 'x']), /desactivada/);
+  plantillasWa.actualizar(repo.db, p.id, { activa: true });
+  assert.throws(() => plantillasWa.prepararEnvio(repo.db, p.id, ['ana']), /Rellena la variable \{\{2\}\}/);
+  const env = plantillasWa.prepararEnvio(repo.db, p.id, ['ana', 'te escribo\npor lo de parla']);
+  assert.deepEqual(env.variables, ['ana', 'te escribo por lo de parla']);
+  assert.equal(env.texto, 'hola ana, te escribo por lo de parla');
+});
+
+test('plantillas: el cuerpo que se manda a GHL (formato de la bandeja, número propio)', async () => {
+  const peticiones = [];
+  const ghl = new Ghl({ token: 't', baseUrl: 'https://ghl.test', aislamiento: { modo: 'activo', numero: '+34604840858' }, fetchImpl: async (url, o) => { peticiones.push({ url, body: JSON.parse(o.body) }); return new Response(JSON.stringify({ messageId: 'm1' }), { status: 200 }); } });
+  const r = await ghl.enviarPlantillaWa({ contactId: 'k1', nombre: 'sofia_seguimiento_v1', idioma: 'es', categoria: 'MARKETING', variables: ['ana'], texto: 'hola ana' });
+  assert.equal(r.messageId, 'm1');
+  assert.equal(peticiones[0].url, 'https://ghl.test/conversations/messages');
+  assert.deepEqual(peticiones[0].body, { type: 'WhatsApp', contactId: 'k1', message: 'hola ana', fromNumber: '+34604840858',
+    whatsapp: { type: 'template', template: { name: 'sofia_seguimiento_v1', lang: 'es', category: 'MARKETING' }, placeholders: { header: [], body: ['ana'], buttons: [] } } });
+});
+
+test('plantillas: se envían desde el panel aunque hayan pasado 24 h, y también programadas y editadas', async () => {
+  const { repo, setter, sal, avanzar, ahora } = montar();
+  const enviadas = [];
+  setter.ghl.enviarPlantillaWa = async (x) => { enviadas.push(x); return { messageId: `p${enviadas.length}` }; };
+  const p = plantillasWa.crear(repo.db, PLANTILLA);
+  avanzar(30 * 3600e3); // fuera de la ventana
+  assert.match(setter.motivoNoEscribir(repo.getConv('c1')), /plantilla de WhatsApp/);
+  assert.equal(setter.motivoNoPlantilla(repo.getConv('c1')), '');
+  await setter.enviarPlantillaDelEquipo('c1', p.id, ['ana', 'qué tal']);
+  assert.equal(enviadas[0].texto, 'hola ana, qué tal');
+  const m = repo.db.prepare("SELECT * FROM messages WHERE external_id = 'p1'").get();
+  assert.deepEqual([m.autor, m.tipo, m.texto], ['humano', 'plantilla', 'hola ana, qué tal']);
+  await assert.rejects(setter.enviarPlantillaDelEquipo('c1', p.id, ['ana']), /Rellena la variable/);
+  // Programada y corregida antes de salir
+  const id = programarManual(repo, 'c1', '', new Date(ahora().getTime() + 3600e3).toISOString(), ahora(), { plantilla: p.id, variables: ['ana', 'te escribo mañna'] });
+  assert.ok(editarManual(repo, id, { cuando: new Date(ahora().getTime() + 1800e3).toISOString(), plantilla: p.id, variables: ['ana', 'te escribo mañana'] }, ahora()));
+  avanzar(1800e3 + 1000);
+  await procesarSeguimientos(setter);
+  assert.equal(enviadas[1].texto, 'hola ana, te escribo mañana');
+  assert.equal(sal.plantillas.length, 0); // no usa el workflow
+  assert.deepEqual(Object.values(repo.db.prepare('SELECT estado, detalle FROM scheduled WHERE id = ?').get(id)), ['enviado', 'plantilla sofia_seguimiento_v1']);
+});
+
+test('plantillas: API (catálogo, envío y lo que ve el chat)', async () => {
+  const { repo, setter } = montar();
+  const enviadas = [];
+  setter.ghl.enviarPlantillaWa = async (x) => { enviadas.push(x); return { messageId: `p${enviadas.length}` }; };
+  const srv = crearApp({ setter, repo, medios: { base: tmp() } }).listen(0);
+  await new Promise((r) => srv.once('listening', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const api = (ruta, o = {}) => fetch(base + ruta, { ...o, headers: { authorization: 'Bearer clave-test', 'content-type': 'application/json' } });
+  try {
+    const c = await api('/admin/panel/plantillas', { method: 'POST', body: JSON.stringify(PLANTILLA) });
+    assert.equal(c.status, 201);
+    const p = await c.json();
+    assert.equal((await api('/admin/panel/plantillas', { method: 'POST', body: JSON.stringify({ ...PLANTILLA, nombre: 'mal nombre' }) })).status, 400);
+    const det = await (await api('/admin/panel/conversaciones/c1')).json();
+    assert.equal(det.plantillas.motivo, '');
+    assert.deepEqual(det.plantillas.lista.map((x) => x.nombre), ['sofia_seguimiento_v1']);
+    assert.equal((await api('/admin/panel/conversaciones/c1/plantilla', { method: 'POST', body: JSON.stringify({ plantilla: p.id, variables: ['ana', 'hola'] }) })).status, 200);
+    assert.equal(enviadas.length, 1);
+    assert.equal((await api('/admin/panel/conversaciones/c1/plantilla', { method: 'POST', body: JSON.stringify({ plantilla: p.id, variables: [] }) })).status, 409);
+    setter.ghl.enviarPlantillaWa = async () => { throw new Error('GHL POST /conversations/messages → 400: template name does not exist'); };
+    const err = await api('/admin/panel/conversaciones/c1/plantilla', { method: 'POST', body: JSON.stringify({ plantilla: p.id, variables: ['ana', 'hola'] }) });
+    assert.equal(err.status, 502); assert.match((await err.json()).error, /template name does not exist/);
+    assert.equal((await api(`/admin/panel/plantillas/${p.id}`, { method: 'DELETE' })).status, 200);
+  } finally { srv.close(); }
+});

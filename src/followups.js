@@ -7,6 +7,7 @@ import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
 import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
 import { esNoLead, sqlEsLead } from './etiquetas.js';
 import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
 import { entraEnNivel, normasDeTono, NIVELES } from './intensidad.js';
@@ -195,6 +196,27 @@ export async function procesarSeguimientos(setter) {
       continue;
     }
 
+    // Plantilla de WhatsApp elegida por el equipo: se envía directamente (vale pasadas las 24 h)
+    if (s.tipo === 'manual' && json(s.contexto)?.plantilla) {
+      try {
+        const c = json(s.contexto);
+        const no = setter.motivoNoPlantilla?.(conv);
+        if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
+        const env = plantillasWa.prepararEnvio(repo.db, c.plantilla, c.variables);
+        if (!sigueEnMarcha.get(s.id)) continue;
+        if (!setter.enviaDeVerdad(conv)) {
+          await setter.safe(() => setter.ghl.addNote(conv.contact_id, `[Borrador, no enviado] plantilla «${env.plantilla.nombre}»: ${env.texto}`));
+          repo.addMessage({ conversation_id: conv.id, autor: 'humano', texto: env.texto, tipo: 'plantilla', enviado: 0 });
+          repo.finishScheduled(s.id, 'enviado', 'borrador (modo prueba)');
+          continue;
+        }
+        const r = await setter.enviarPlantilla(conv, env);
+        repo.addMessage({ conversation_id: conv.id, external_id: r.messageId, autor: 'humano', texto: r.texto, ...r.medio });
+        repo.finishScheduled(s.id, 'enviado', `plantilla ${env.plantilla.nombre}`);
+      } catch (e) { repo.finishScheduled(s.id, 'error', e.message); }
+      continue;
+    }
+
     const plantilla = fueraDeVentana(conv, ahora);
     // La plantilla la envía un workflow de GHL y ahí no se puede fijar el número emisor: con aislamiento no sale
     if (plantilla && setter.plantillas && !setter.plantillas()) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: fuera de las 24 h solo se puede por plantilla, y no se puede fijar su número emisor'); continue; }
@@ -321,7 +343,16 @@ export function cancelarCita(repo, convId) {
  * Comprueba un mensaje programado a mano: texto y/o archivo del equipo (archivos.js) y la hora. Un archivo solo puede
  * salir dentro de las 24 h desde el último mensaje del lead (fuera de ellas solo hay plantilla, que es texto).
  */
-function validarManual(repo, conv, { texto, cuando, archivo }, ahora) {
+function validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora) {
+  if (plantilla) { // plantilla de WhatsApp: el texto sale de la plantilla y vale aunque hayan pasado 24 h
+    if (conv.channel !== 'whatsapp') throw new Error('Las plantillas solo son de WhatsApp.');
+    const env = plantillasWa.prepararEnvio(repo.db, plantilla, variables);
+    const f = new Date(cuando);
+    if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
+    if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
+    if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
+    return { texto: env.texto, cuando: f, archivo: null, contexto: { plantilla: env.plantilla.id, variables: env.variables } };
+  }
   const t = String(texto || '').trim();
   const a = archivo ? archivos.obtener(repo.db, archivo) : null;
   if (archivo && !a) throw new Error('Ese archivo ya no está: vuelve a adjuntarlo.');
@@ -332,25 +363,25 @@ function validarManual(repo, conv, { texto, cuando, archivo }, ahora) {
   if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
   if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
   if (a && conv.channel === 'whatsapp' && fueraDeVentana(conv, f)) throw new Error('A esa hora habrán pasado más de 24 h desde su último mensaje: WhatsApp solo deja enviar texto por plantilla, no archivos. Prográmalo antes o quita el archivo.');
-  return { texto: t, cuando: f, archivo: a };
+  return { texto: t, cuando: f, archivo: a, contexto: a ? { archivo: a.id } : null };
 }
 
 /** Mensaje programado a mano desde el panel (texto tal cual y/o un archivo; por plantilla si ya no hay ventana). */
-export function programarManual(repo, convId, texto, cuando, ahora = new Date(), { archivo = null } = {}) {
+export function programarManual(repo, convId, texto, cuando, ahora = new Date(), { archivo = null, plantilla = null, variables = [] } = {}) {
   const conv = repo.getConv(convId);
   if (!conv) throw new Error('El chat no existe.');
-  const v = validarManual(repo, conv, { texto, cuando, archivo }, ahora);
-  return Number(repo.schedule(convId, 'manual', v.cuando.toISOString(), v.archivo ? { archivo: v.archivo.id } : null, 'manual', v.texto).lastInsertRowid);
+  const v = validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora);
+  return Number(repo.schedule(convId, 'manual', v.cuando.toISOString(), v.contexto, 'manual', v.texto).lastInsertRowid);
 }
 
 /** Cambia un mensaje programado a mano que aún no ha salido (texto, hora y archivo). Devuelve false si ya no se puede. */
-export function editarManual(repo, id, { texto, cuando, archivo = null }, ahora = new Date()) {
+export function editarManual(repo, id, { texto, cuando, archivo = null, plantilla = null, variables = [] }, ahora = new Date()) {
   const s = repo.db.prepare("SELECT * FROM scheduled WHERE id = ? AND tipo = 'manual'").get(Number(id));
   if (!s) throw new Error('Ese mensaje programado no existe.');
   if (s.estado !== 'pendiente') return false;
-  const v = validarManual(repo, repo.getConv(s.conversation_id), { texto, cuando, archivo }, ahora);
+  const v = validarManual(repo, repo.getConv(s.conversation_id), { texto, cuando, archivo, plantilla, variables }, ahora);
   return repo.db.prepare("UPDATE scheduled SET texto_previsto = ?, due_at = ?, contexto = ?, previsto_msg = NULL WHERE id = ? AND estado = 'pendiente'")
-    .run(v.texto, v.cuando.toISOString(), v.archivo ? JSON.stringify({ archivo: v.archivo.id }) : null, s.id).changes > 0;
+    .run(v.texto, v.cuando.toISOString(), v.contexto ? JSON.stringify(v.contexto) : null, s.id).changes > 0;
 }
 
 // ---------- Lanzamientos ----------

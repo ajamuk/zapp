@@ -15,6 +15,7 @@ import { textoPrevisto, programarManual, editarManual, cancelarCita, destinatari
 import * as reglasSeg from './reglas.js';
 import { NIVELES, reglasDelNivel } from './intensidad.js';
 import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
 import * as reportes from './reportes.js';
 import * as documentos from './documentos.js';
 import * as recursosMod from './recursos.js';
@@ -237,6 +238,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     const d = panel.detalle(db, req.params.id);
     // ¿Se le puede escribir desde aquí? (cuadro de respuesta del panel; `motivo` vacío = sí)
     if (d && setter?.motivoNoEscribir) d.escribir = { motivo: setter.motivoNoEscribir(d.conv), pausa: Boolean(leerAjustes(repo).pausarSiEquipoEscribe && setter.enviaDeVerdad(d.conv)) };
+    // Plantillas de WhatsApp que se le pueden mandar (también pasadas 24 h)
+    if (d && setter?.motivoNoPlantilla && d.conv.channel === 'whatsapp') d.plantillas = { motivo: setter.motivoNoPlantilla(d.conv), lista: plantillasWa.listar(db, { activas: true }) };
     return d ? res.json(d) : res.status(404).json({ error: 'no existe' });
   });
   // Contestar al lead desde el panel, como si se escribiera en el CRM
@@ -450,14 +453,33 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   // Mensaje programado a mano desde un chat. Body: { texto, cuando (ISO) }
   admin.post('/panel/conversaciones/:id/programar', (req, res) => {
-    try { res.status(201).json({ id: programarManual(repo, req.params.id, req.body?.texto, req.body?.cuando, new Date(), { archivo: req.body?.archivo || null }) }); } catch (e) { errorUsuario(res, e); }
+    const b = req.body || {};
+    try { res.status(201).json({ id: programarManual(repo, req.params.id, b.texto, b.cuando, new Date(), { archivo: b.archivo || null, plantilla: b.plantilla || null, variables: b.variables || [] }) }); } catch (e) { errorUsuario(res, e); }
   });
   // Corregir un mensaje programado a mano antes de que salga. Body: { texto, cuando (ISO), archivo (id o null) }
   admin.put('/panel/seguimientos/:id', (req, res) => {
     try {
-      const ok = editarManual(repo, req.params.id, { texto: req.body?.texto, cuando: req.body?.cuando, archivo: req.body?.archivo || null });
+      const b = req.body || {};
+      const ok = editarManual(repo, req.params.id, { texto: b.texto, cuando: b.cuando, archivo: b.archivo || null, plantilla: b.plantilla || null, variables: b.variables || [] });
       return ok ? res.json({ ok: true }) : res.status(409).json({ error: 'Ese mensaje ya ha salido o se ha cancelado: no se puede cambiar.' });
     } catch (e) { errorUsuario(res, e); }
+  });
+  // Plantillas de WhatsApp: catálogo (copiado de GHL) y envío desde un chat. Body del envío: { plantilla, variables: [] }
+  admin.get('/panel/plantillas', (_req, res) => res.json({ plantillas: plantillasWa.listar(db), categorias: plantillasWa.CATEGORIAS }));
+  admin.post('/panel/plantillas', (req, res) => { try { res.status(201).json(plantillasWa.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/plantillas/:id', (req, res) => { try { const p = plantillasWa.actualizar(db, req.params.id, req.body || {}); return p ? res.json(p) : res.status(404).json({ error: 'Esa plantilla no existe.' }); } catch (e) { errorUsuario(res, e); } });
+  admin.delete('/panel/plantillas/:id', (req, res) => res.json({ ok: plantillasWa.borrar(db, req.params.id) }));
+  admin.post('/panel/conversaciones/:id/plantilla', async (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    if (!setter?.enviarPlantillaDelEquipo) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = await setter.enviarPlantillaDelEquipo(req.params.id, req.body?.plantilla, req.body?.variables || []);
+      res.json({ ok: true, pausada: Boolean(r?.pausada) });
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] plantilla del equipo:', e.message);
+      res.status(502).json({ error: `GHL no ha aceptado la plantilla: no se ha enviado (${String(e.message).slice(0, 300)}).` });
+    }
   });
   // Archivo para enviar a un lead (imagen, vídeo, audio o PDF en base64). Devuelve su id para «enviar» o «programar».
   admin.post('/panel/conversaciones/:id/adjunto', async (req, res) => {
