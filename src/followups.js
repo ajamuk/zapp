@@ -6,6 +6,8 @@ import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
+import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
 import { esNoLead, sqlEsLead } from './etiquetas.js';
 import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
 import { entraEnNivel, normasDeTono, NIVELES } from './intensidad.js';
@@ -194,6 +196,27 @@ export async function procesarSeguimientos(setter) {
       continue;
     }
 
+    // Plantilla de WhatsApp elegida por el equipo: se envía directamente (vale pasadas las 24 h)
+    if (s.tipo === 'manual' && json(s.contexto)?.plantilla) {
+      try {
+        const c = json(s.contexto);
+        const no = setter.motivoNoPlantilla?.(conv);
+        if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
+        const env = plantillasWa.prepararEnvio(repo.db, c.plantilla, c.variables);
+        if (!sigueEnMarcha.get(s.id)) continue;
+        if (!setter.enviaDeVerdad(conv)) {
+          await setter.safe(() => setter.ghl.addNote(conv.contact_id, `[Borrador, no enviado] plantilla «${env.plantilla.nombre}»: ${env.texto}`));
+          repo.addMessage({ conversation_id: conv.id, autor: 'humano', texto: env.texto, tipo: 'plantilla', enviado: 0 });
+          repo.finishScheduled(s.id, 'enviado', 'borrador (modo prueba)');
+          continue;
+        }
+        const r = await setter.enviarPlantilla(conv, env);
+        repo.addMessage({ conversation_id: conv.id, external_id: r.messageId, autor: 'humano', texto: r.texto, ...r.medio });
+        repo.finishScheduled(s.id, 'enviado', `plantilla ${env.plantilla.nombre}`);
+      } catch (e) { repo.finishScheduled(s.id, 'error', e.message); }
+      continue;
+    }
+
     const plantilla = fueraDeVentana(conv, ahora);
     // La plantilla la envía un workflow de GHL y ahí no se puede fijar el número emisor: con aislamiento no sale
     if (plantilla && setter.plantillas && !setter.plantillas()) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: fuera de las 24 h solo se puede por plantilla, y no se puede fijar su número emisor'); continue; }
@@ -214,6 +237,23 @@ export async function procesarSeguimientos(setter) {
       const previsto = resultado ? { ...s, texto_previsto: null, resultado }
         : s.texto_previsto != null && (s.tipo === 'manual' || s.tipo === 'lanzamiento' || fueraDeVentana(conv, s.due_at) === plantilla) ? s : { ...s, texto_previsto: null };
       const { texto } = await textoPrevisto(setter, previsto);
+      // Mensaje a mano con archivo: dentro de las 24 h sale el archivo (con el texto de pie); fuera, solo el texto por plantilla
+      const arch = s.tipo === 'manual' && json(s.contexto)?.archivo ? archivos.obtener(repo.db, json(s.contexto).archivo) : null;
+      if (s.tipo === 'manual' && json(s.contexto)?.archivo && !arch) { repo.finishScheduled(s.id, 'error', 'el archivo ya no está'); continue; }
+      if (arch && !plantilla) {
+        if (!sigueEnMarcha.get(s.id)) continue;
+        if (!setter.enviaDeVerdad(conv)) {
+          await setter.safe(() => setter.ghl.addNote(conv.contact_id, `[Borrador, no enviado] mensaje programado con el archivo «${arch.nombre}»${texto ? `: ${texto}` : ''}`));
+          repo.addMessage({ conversation_id: conv.id, autor: 'humano', texto: texto || `[${arch.tipo}: ${arch.nombre}]`, enviado: 0, adjunto: arch.tipo, media_ruta: arch.media_ruta, media_mime: arch.mime });
+          repo.finishScheduled(s.id, 'enviado', 'borrador (modo prueba)');
+          continue;
+        }
+        const r = await setter.enviarArchivo(conv, arch, texto);
+        repo.addMessage({ conversation_id: conv.id, external_id: r.messageId, autor: 'humano', texto: r.texto, ...r.medio });
+        repo.finishScheduled(s.id, 'enviado', `con ${arch.tipo}`);
+        continue;
+      }
+      if (arch && !texto) { repo.finishScheduled(s.id, 'omitido', 'fuera de las 24 h: WhatsApp no deja enviar archivos, solo texto por plantilla'); continue; }
       if (!texto) { repo.finishScheduled(s.id, 'omitido', 'la IA decidió no enviar'); continue; }
       // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale
       if (!sigueEnMarcha.get(s.id)) continue;
@@ -224,7 +264,7 @@ export async function procesarSeguimientos(setter) {
       // Si el lead escribe mientras Sofía «escribe» la primera burbuja, el seguimiento ya no sale
       const control = { get cancelado() { return !sigueEnMarcha.get(s.id); } };
       if ((await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null, control)) === null) continue;
-      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
+      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, arch ? 'sin el archivo (fuera de las 24 h)' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
       if (regla.recursoId && !plantilla) { const rec = recursosMod.obtener(setter.catalogo, regla.recursoId); if (rec?.activo) await setter.enviarRecursos(conv, [rec]); }
       if (regla.ponerEtiqueta) await setter.safe(() => setter.etiquetas?.poner(conv.id, regla.ponerEtiqueta, 'regla'));
     } catch (e) {
@@ -299,17 +339,49 @@ export function cancelarCita(repo, convId) {
   repo.updateConv(convId, { prueba_fecha: null, prueba_reservada: 0 });
 }
 
-/** Mensaje programado a mano desde el panel (texto tal cual; por plantilla si ya no hay ventana). */
-export function programarManual(repo, convId, texto, cuando, ahora = new Date()) {
+/**
+ * Comprueba un mensaje programado a mano: texto y/o archivo del equipo (archivos.js) y la hora. Un archivo solo puede
+ * salir dentro de las 24 h desde el último mensaje del lead (fuera de ellas solo hay plantilla, que es texto).
+ */
+function validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora) {
+  if (plantilla) { // plantilla de WhatsApp: el texto sale de la plantilla y vale aunque hayan pasado 24 h
+    if (conv.channel !== 'whatsapp') throw new Error('Las plantillas solo son de WhatsApp.');
+    const env = plantillasWa.prepararEnvio(repo.db, plantilla, variables);
+    const f = new Date(cuando);
+    if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
+    if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
+    if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
+    return { texto: env.texto, cuando: f, archivo: null, contexto: { plantilla: env.plantilla.id, variables: env.variables } };
+  }
   const t = String(texto || '').trim();
-  if (!t) throw new Error('Escribe el mensaje.');
+  const a = archivo ? archivos.obtener(repo.db, archivo) : null;
+  if (archivo && !a) throw new Error('Ese archivo ya no está: vuelve a adjuntarlo.');
+  if (!t && !a) throw new Error('Escribe el mensaje o adjunta un archivo.');
   if (t.length > 1000) throw new Error('El mensaje puede tener como mucho 1000 caracteres.');
   const f = new Date(cuando);
   if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
   if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
   if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
-  if (!repo.getConv(convId)) throw new Error('El chat no existe.');
-  return Number(repo.schedule(convId, 'manual', f.toISOString(), null, 'manual', t).lastInsertRowid);
+  if (a && conv.channel === 'whatsapp' && fueraDeVentana(conv, f)) throw new Error('A esa hora habrán pasado más de 24 h desde su último mensaje: WhatsApp solo deja enviar texto por plantilla, no archivos. Prográmalo antes o quita el archivo.');
+  return { texto: t, cuando: f, archivo: a, contexto: a ? { archivo: a.id } : null };
+}
+
+/** Mensaje programado a mano desde el panel (texto tal cual y/o un archivo; por plantilla si ya no hay ventana). */
+export function programarManual(repo, convId, texto, cuando, ahora = new Date(), { archivo = null, plantilla = null, variables = [] } = {}) {
+  const conv = repo.getConv(convId);
+  if (!conv) throw new Error('El chat no existe.');
+  const v = validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora);
+  return Number(repo.schedule(convId, 'manual', v.cuando.toISOString(), v.contexto, 'manual', v.texto).lastInsertRowid);
+}
+
+/** Cambia un mensaje programado a mano que aún no ha salido (texto, hora y archivo). Devuelve false si ya no se puede. */
+export function editarManual(repo, id, { texto, cuando, archivo = null, plantilla = null, variables = [] }, ahora = new Date()) {
+  const s = repo.db.prepare("SELECT * FROM scheduled WHERE id = ? AND tipo = 'manual'").get(Number(id));
+  if (!s) throw new Error('Ese mensaje programado no existe.');
+  if (s.estado !== 'pendiente') return false;
+  const v = validarManual(repo, repo.getConv(s.conversation_id), { texto, cuando, archivo, plantilla, variables }, ahora);
+  return repo.db.prepare("UPDATE scheduled SET texto_previsto = ?, due_at = ?, contexto = ?, previsto_msg = NULL WHERE id = ? AND estado = 'pendiente'")
+    .run(v.texto, v.cuando.toISOString(), v.contexto ? JSON.stringify(v.contexto) : null, s.id).changes > 0;
 }
 
 // ---------- Lanzamientos ----------

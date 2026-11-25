@@ -197,6 +197,26 @@ CREATE TABLE IF NOT EXISTS recursos (
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS plantillas_wa (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,       -- nombre exacto de la plantilla aprobada (GHL / Meta)
+  idioma TEXT NOT NULL,              -- código exacto (es, es_ES…)
+  categoria TEXT NOT NULL DEFAULT 'MARKETING',
+  cuerpo TEXT NOT NULL,              -- texto con {{1}}, {{2}}…
+  descripcion TEXT,                  -- para qué se usa (lo ve el equipo)
+  activa INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS archivos_equipo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,             -- nombre original del archivo
+  tipo TEXT NOT NULL,               -- imagen | video | documento | audio
+  media_ruta TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  tamano INTEGER,
+  token TEXT NOT NULL UNIQUE,       -- para la URL pública /r/eq_<token>
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS meta_eventos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
