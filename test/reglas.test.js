@@ -11,6 +11,7 @@ const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
 
 function montar({ respuestas = [] } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const sal = { enviados: [], plantillas: [], requests: [] };
   let reloj = new Date(T0);
   const cola = [...respuestas];
@@ -43,6 +44,7 @@ test('las reglas se copian del archivo la primera vez, con el recordatorio de pr
   assert.equal(reglas.obtener(db, 'comercial-5h').plantilla, false);
   // Los interruptores de Ajustes cambian la regla
   const repo = crearRepo(db);
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   guardarAjustes(repo, { seguimientos: { 'comercial-5h': false } });
   assert.equal(reglas.obtener(db, 'comercial-5h').activo, false);
   assert.equal(leerAjustes(repo).seguimientos['comercial-5h'], false);

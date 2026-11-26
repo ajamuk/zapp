@@ -49,16 +49,46 @@ de GHL no admite variables de plantilla, así que el envío se hace con un **wor
    (clave `{{contact.sofa__texto_de_seguimiento}}`; se crea solo la primera vez).
 2. Quita y vuelve a poner la etiqueta **`sofia-enviar-plantilla`** al contacto.
 
-### Qué hay que crear en GHL (una vez)
+### Lo que hay en GHL (creado el 23 nov 2026)
 
-1. **Plantilla de WhatsApp** aprobada por Meta (WhatsApp → Templates), categoría *Marketing* o *Utility*, idioma
-   español, con **una variable en el cuerpo**. Ejemplo de cuerpo: `{{1}}` o `hola 😊 {{1}}`. Ejemplo para Meta:
-   «me dijiste que en enero te ponías con ello, te miro horarios para empezar?».
-2. **Workflow** «Sofía · enviar plantilla»:
-   - Disparador: *Contact Tag* → añadida → `sofia-enviar-plantilla`.
-   - Acción: *WhatsApp* → enviar plantilla → la del paso 1 → variable 1 = `{{contact.sofa__texto_de_seguimiento}}`.
-   - Acción: *Remove Contact Tag* → `sofia-enviar-plantilla`.
-   - Permitir volver a entrar en el workflow (re-entry), para que salga en cada seguimiento.
+1. **Plantilla** `sofia_seguimiento_v1` (WhatsApp → Templates): Marketing, español (SPA), aprobada. Cuerpo:
+   `Hola 😊 Te escribimos de CrossFit MetroPolitano. {{1}} Cuéntanos por aquí cuando puedas.`
+   La variable `{{1}}` está enlazada en la propia plantilla al campo `{{contact.sofa__texto_de_seguimiento}}`.
+   (Meta no admite una plantilla que empiece o acabe en variable: por eso lleva texto fijo delante y detrás. El
+   texto de Sofía va en medio, en una sola frase.)
+2. **Workflow** «Sofía · enviar plantilla» (publicado):
+   - Disparador: *Contact Tag* → *Tag added* → `sofia-enviar-plantilla`.
+   - Acción *WhatsApp*: **From phone number = +34 604 84 08 58** (el número de Sofía; es el único de la subcuenta),
+     plantilla `sofia_seguimiento_v1`, sin ramas.
+   - Acción *Remove contact tag* → `sofia-enviar-plantilla`.
+   - *Allow re-entry* activado, para que salga en cada seguimiento.
 
-Configurable con `GHL_TAG_PLANTILLA` y `GHL_CAMPO_PLANTILLA`. Mientras no exista el workflow, los seguimientos por
-plantilla se marcan como enviados en el panel pero no le llegan al lead.
+Configurable con `GHL_TAG_PLANTILLA` y `GHL_CAMPO_PLANTILLA`. Para cambiar el texto fijo hay que crear otra plantilla
+(`sofia_seguimiento_v2`), esperar la aprobación de Meta y elegirla en la acción del workflow.
+
+Con el aislamiento activo (`docs/aislamiento-whatsapp.md`) las plantillas solo salen si además está
+`SOFIA_WA_PLANTILLAS=true`, que declara justo eso: que este workflow envía desde el número propio. Si alguna vez una
+plantilla saliera por otra línea, Sofía lo ve al repasar la conversación y deja de actuar en ese chat.
+
+Cada plantilla de marketing la cobra Meta. Qué reglas la usan se decide en el panel (Seguimientos → «enviar por
+plantilla si han pasado 24 h»); hoy: «cierre a los 4 días», los dos de largo plazo y los de la clase de prueba.
+
+## Primer contacto (Chats → «+ Nuevo chat»)
+
+Para escribir a alguien que aún no nos ha escrito: una persona que vino a una prueba hace tiempo, un contacto de un
+evento, una recomendación… El equipo pone el **móvil** (9 cifras si es español, o con prefijo), el **nombre**, la
+**plantilla** del primer mensaje con sus variables y **por qué le escribimos** (es lo que Sofía sabrá si responde).
+
+- WhatsApp no deja abrir una conversación con texto libre: el primer mensaje siempre es una plantilla aprobada de la
+  pestaña Plantillas, enviada directamente (`Ghl.enviarPlantillaWa`) desde el número de Sofía. Meta la cobra.
+- El contacto se crea en GHL (o se reutiliza: GHL deduplica por teléfono) con la fuente «Sofía · primer contacto» y
+  una nota con el motivo.
+- Si ya hay un chat con ese número, no se envía nada: el panel ofrece abrir ese chat (desde ahí se le puede mandar
+  una plantilla).
+- El chat queda creado con el mensaje enviado y el motivo (`conversations.primer_contacto`). Por defecto Sofía
+  contesta cuando la persona responda, sabiendo que la conversación la empezamos nosotros; con la casilla
+  desmarcada el chat queda en pausa para el equipo. Al responder se comprueba si es socio como en cualquier chat.
+- Con el aislamiento activo, el chat queda verificado para el número propio (sale con `fromNumber`).
+
+Antes de usarlo hace falta una plantilla de marketing aprobada pensada para un primer mensaje (que diga quiénes
+somos), dada de alta en GHL y copiada en la pestaña Plantillas.

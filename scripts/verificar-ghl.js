@@ -14,7 +14,7 @@ config.ghl.locationId ? ok(`GHL_LOCATION_ID = ${config.ghl.locationId}`) : mal('
 (config.webhookSecret || '').length >= 24 ? ok('WEBHOOK_SECRET con 24+ caracteres') : mal('WEBHOOK_SECRET falta o es corto (openssl rand -hex 24)');
 config.ai.apiKey ? ok('ANTHROPIC_API_KEY puesta') : mal('Falta ANTHROPIC_API_KEY');
 config.ghlWebhookEnabled ? ok('GHL_WEBHOOK_ENABLED=true') : mal('GHL_WEBHOOK_ENABLED=false: el webhook responde 503 y no entra nada');
-config.mode === 'live' ? ojo('MODE=live: Sofía ENVÍA mensajes a los leads') : ok(`MODE=${config.mode}: Sofía deja su respuesta como nota interna, no envía`);
+config.mode === 'live' ? ojo('MODE=live: Sofía ENVÍA mensajes a los leads (solo con el aislamiento bien configurado: npm run verificar-aislamiento)') : ok(`MODE=${config.mode}: Sofía deja su respuesta como nota interna, no envía`);
 
 if (!config.ghl.token || !config.ghl.locationId) { console.log(`\n${fallos} problema(s). Sin token no se puede seguir.\n`); process.exit(1); }
 

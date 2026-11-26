@@ -5,16 +5,23 @@ import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
-import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, esperar } from './horario.js';
+import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, chatCaliente, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita, horaMadrid, fueraDeVentana } from './followups.js';
+import { entraEnNivel } from './intensidad.js';
 import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps, describirTrialOps } from './clase-prueba.js';
 import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
 import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
+import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
+import * as primerContacto from './primer-contacto.js';
+import * as vozReal from './voz.js';
+import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
+import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
 
 const TAGS = knowledge.etiquetas;
 /** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
@@ -30,6 +37,8 @@ const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
 const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
 /** ¿Es el mensaje de reinicio? Tiene que ser el mensaje entero (sin distinguir mayúsculas ni espacios de más). */
 export const esReinicio = (texto, palabra) => Boolean(palabra) && String(texto || '').trim().toLowerCase() === String(palabra).trim().toLowerCase();
+// Tope de lo que Sofía espera «escuchando» un audio (los más largos se contestan como si durasen esto)
+const MAX_ESCUCHA_S = 600;
 export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
 
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
@@ -57,11 +66,105 @@ const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', 
  * - avisar(texto, {sede}): aviso al equipo (Telegram)
  * - complete: sustituto de la llamada al modelo (tests)
  * - etiquetas: Etiquetador (etiquetas.js) para reglas, criterios de IA y acciones (opcional)
+ * - aislamiento: estado de aislamiento.js (el servicio real pasa el de la configuración; simuladores y tests, ninguno)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, voz = vozReal, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, voz, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
+  }
+
+  // ---------- Aislamiento en el número propio (aislamiento.js) ----------
+
+  /** ¿Hay aislamiento configurado (bien o mal)? */
+  aislado() { return this.aislamiento.modo !== 'apagado'; }
+
+  /** ¿Se pueden enviar plantillas? (false: aislamiento sin la declaración de que el workflow envía desde el número propio) */
+  plantillas() { return plantillasPermitidas(this.aislamiento); }
+
+  /**
+   * Chat que ya estaba en la base antes del aislamiento. Si el número propio es el que la subcuenta ya tenía
+   * (SOFIA_WA_ADOPTAR_CHATS=true), se repasa su conversación en GHL y pasa a verificado solo si GHL lo confirma
+   * (ver `sincronizar`). Devuelve si al terminar Sofía puede actuar en él.
+   */
+  async intentarAdoptar(convId) {
+    const c = this.repo.getConv(convId);
+    if (!c) return false;
+    if (this.permitido(c)) return true;
+    if (this.aislamiento.modo !== 'activo' || !this.aislamiento.adoptar || c.aislado_bloqueo || !this.ghl.mensajes) return false;
+    await this.safe(() => this.enSerie(convId, () => this.sincronizar(convId, null, { enMarcha: false })));
+    return this.permitido(this.repo.getConv(convId));
+  }
+
+  /** ¿Puede Sofía hacer algo en este chat? Sin aislamiento, siempre. */
+  permitido(conv) { return chatPermitido(this.aislamiento, conv); }
+
+  /** Último seguro antes de cualquier salida o cambio en GHL de un chat. */
+  exigirPermitido(conv) {
+    if (!this.permitido(conv)) { const e = new Error('Aislamiento: este chat no está verificado para el número propio; no se envía nada'); e.noReintentar = true; throw e; }
+  }
+
+  /**
+   * ¿Es este entrante un WhatsApp al número propio? Se decide solo con el mensaje leído de la API de GHL (`evidencia`
+   * es el de la lista de la conversación; si le faltan datos o no hay, se pide el mensaje por su id). Lo que diga el
+   * webhook (canal, teléfono del contacto, datos del workflow) no cuenta. Sin prueba, no entra.
+   */
+  async comprobarEntrante(evt, evidencia = null) {
+    const a = this.aislamiento;
+    if (a.modo === 'apagado') return { ok: true };
+    if (a.modo !== 'activo') return { ok: false, motivo: 'aislamiento mal configurado' };
+    // Solo entra lo que sale de repasar la conversación en GHL (`sincronizar`): ahí se ve también si la conversación
+    // la comparte otra línea de WhatsApp. Un aviso suelto, aunque traiga un id de mensaje bueno, no basta.
+    if (!evidencia?.id) return { ok: false, motivo: 'sin la conversación leída de GHL' };
+    const id = evidencia.id;
+    this.descartados ??= new Map();
+    if (this.descartados.has(id)) return { ok: false, motivo: this.descartados.get(id), repetido: true };
+    const esperado = { conversationId: evt.conversationId, contactId: evt.contactId };
+    // Un chat que ya estaba en la base sin verificar para este número (de antes del aislamiento, de otra línea o de
+    // otro número propio) no se adopta: su historial y su estado (pausas, fase, alta, seguimientos) no son de aquí.
+    const previa = this.repo.getConv(evt.conversationId);
+    let v = previa?.aislado_bloqueo ? { ok: false, motivo: `chat bloqueado (${previa.aislado_bloqueo})` }
+      : previa && previa.aislado_num !== a.clave ? { ok: false, motivo: 'el chat ya existía con historial ajeno al número propio' }
+        : evaluarEntrante(a, evidencia, esperado);
+    if (!v.ok && !previa && this.ghl.mensaje && (!evidencia.locationId || evidencia.para == null)) {
+      const m = await this.safe(() => this.ghl.mensaje(id));
+      v = m ? evaluarEntrante(a, m, esperado) : { ok: false, motivo: 'GHL no devuelve ese mensaje' };
+      // GHL caído o lento no es una prueba en contra: no se recuerda como descartado y se volverá a mirar
+      if (!m) return v;
+    }
+    if (!v.ok) {
+      this.descartados.set(id, v.motivo); if (this.descartados.size > 2000) this.descartados.delete(this.descartados.keys().next().value);
+      console.warn(`[aislamiento] entrante descartado (${v.motivo})`); // sin teléfonos ni texto
+    }
+    return v;
+  }
+
+  /**
+   * En la conversación de GHL hay WhatsApp de otra línea (el mismo contacto ha hablado con otro número de la empresa):
+   * el historial, el contacto y sus etiquetas son compartidos y no se pueden separar desde aquí, así que Sofía no
+   * actúa en esa conversación. Si ya tenía chat, queda bloqueado y sin nada pendiente. No se toca GHL.
+   */
+  bloquearCompartida(convId) {
+    const motivo = 'conversación compartida con otra línea de WhatsApp';
+    const conv = this.repo.getConv(convId);
+    if (conv && !conv.aislado_bloqueo) {
+      this.repo.updateConv(convId, { aislado_bloqueo: motivo, respond_at: null, reintentos: 0 });
+      this.repo.cancelScheduled(convId, `aislamiento: ${motivo}`);
+      console.warn(`[aislamiento] ${convId}: ${motivo}; Sofía deja de actuar en este chat`);
+    } else if (!conv && !(this.compartidasVistas ??= new Set()).has(convId)) {
+      this.compartidasVistas.add(convId); if (this.compartidasVistas.size > 2000) this.compartidasVistas.clear();
+      console.warn(`[aislamiento] entrante descartado (${motivo})`);
+    }
+    return { visto: false, entrantes: 0, salientes: 0, compartida: true, ignorado: `aislamiento: ${motivo}` };
+  }
+
+  /** GHL aún no lista el mensaje del aviso: se vuelve a mirar la conversación un par de veces (si no, se perdería). */
+  repasarLuego(evt) {
+    if (!this.ghl.mensajes) return;
+    for (const ms of this.repasosAislamiento ?? [8000, 40000]) {
+      const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId, evt)).catch(() => {}); }, ms);
+      t.unref?.();
+    }
   }
 
   // ---------- Entrada ----------
@@ -70,6 +173,7 @@ export class Setter {
     // Cambio de tags en GHL (evento ContactTagUpdate): se reflejan en las etiquetas del panel
     if (evt.evento === 'tags') return (await this.safe(() => this.etiquetas?.sincronizarContacto(evt.contactId, evt.tags))) || { ignorado: 'sin etiquetas' };
     if (!evt.contactId) return { ignorado: 'faltan ids' };
+    if (this.aislamiento.modo === 'invalido') return { ignorado: 'aislamiento mal configurado' };
     evt.recibido ??= this.now().toISOString(); // cuándo llegó el aviso (puede procesarse más tarde, detrás de otro)
     // Webhook de un workflow de GHL: no trae el id de la conversación. Si el contacto ya tiene chat, sale de la
     // base; si no, se pregunta a GHL.
@@ -83,18 +187,28 @@ export class Setter {
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
     return this.enSerie(evt.conversationId, async () => {
+      // Aislamiento: un aviso de saliente no dice por qué línea salió. No se usa tal cual: se repasa la conversación
+      // (solo en chats propios), y ahí cuentan únicamente los salientes del número propio.
+      if (this.aislado() && evt.evento === 'outbound') {
+        const conv = this.repo.getConv(evt.conversationId);
+        if (!conv || !this.permitido(conv) || !this.ghl.mensajes) return { ignorado: 'aislamiento: saliente sin verificar' };
+        return (await this.sincronizar(evt.conversationId)) || { ignorado: 'aislamiento: GHL no responde' };
+      }
       // Entrante de workflow (sin id de mensaje o sin canal): lo que cuenta es lo que hay en la conversación de GHL.
       // El canal NO se saca del «último mensaje» del chat: el conector de WhatsApp mete una copia de cada mensaje
       // y, si la copia era lo último, el mensaje de verdad se descartaba como copia.
-      if (evt.evento === 'inbound' && (!evt.messageId || evt.canal === 'desconocido')) {
+      if (evt.evento === 'inbound' && (this.aislado() || !evt.messageId || evt.canal === 'desconocido')) {
         if (this.ghl.mensajes) {
           const r = await this.sincronizar(evt.conversationId, evt);
+          if (r?.compartida || r?.ajeno) return r;
           if (r?.visto) {
             // El texto coincidía con un mensaje que ya estaba: por si era otro igual que GHL aún no listaba
             if (r.repasar && !r.entrantes) { const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId)).catch(() => {}); }, this.repasoMs ?? 8000); t.unref?.(); }
             return r;
           }
         }
+        // Con aislamiento nada entra «tal como vino»: sin el mensaje de GHL no hay prueba de a qué número se escribió
+        if (this.aislado()) { this.repasarLuego(evt); return { ignorado: 'aislamiento: GHL aún no lista el mensaje; se repasa en unos segundos' }; }
         // GHL no contesta o aún no lista el mensaje: entra tal como vino (el disparador del workflow solo salta
         // con WhatsApp e Instagram). Cuando aparezca en GHL, `sincronizar` lo reconoce por el texto y no lo repite.
         if (evt.canal === 'desconocido') {
@@ -115,8 +229,30 @@ export class Setter {
    * `evt` es el webhook que lo ha provocado; `visto` dice si su mensaje está en GHL (ya registrado o recién entrado).
    */
   async sincronizar(convId, evt = null, { programar = true, enMarcha = this.enCurso?.has(convId) } = {}) {
+    // Aislamiento: un chat de la base que no es del número propio (heredado o bloqueado) ni se consulta ni se toca
+    let porAdoptar = false;
+    if (this.aislado()) {
+      const c = this.repo.getConv(convId);
+      porAdoptar = Boolean(c && !this.permitido(c) && this.aislamiento.modo === 'activo' && this.aislamiento.adoptar && !c.aislado_bloqueo);
+      if (c && !this.permitido(c) && !porAdoptar) {
+        if (!(this.ajenosVistos ??= new Set()).has(convId)) { this.ajenosVistos.add(convId); if (this.ajenosVistos.size > 2000) this.ajenosVistos.clear(); console.warn(`[aislamiento] ${convId}: chat no verificado para el número propio; no se atiende`); }
+        return { visto: false, entrantes: 0, salientes: 0, ajeno: true, ignorado: 'aislamiento: chat no verificado para el número propio' };
+      }
+    }
     const lista = await this.safe(() => this.ghl.mensajes(convId));
     if (!lista) return null;
+    const aisl = this.aislamiento.modo === 'activo' ? this.aislamiento : null;
+    // Se mira toda la lista (no solo lo reciente): basta un mensaje de otra línea para que la conversación sea compartida
+    if (aisl && lista.some((m) => esDeOtraLinea(aisl, m))) return this.bloquearCompartida(convId);
+    if (porAdoptar) {
+      // Se adopta solo con prueba: en la conversación de GHL no hay nada de otra línea (comprobado arriba) y sí al
+      // menos un WhatsApp entrante al número propio. Sin eso, el chat sigue sin atenderse.
+      const c = this.repo.getConv(convId);
+      const prueba = lista.some((m) => evaluarEntrante(aisl, m, { conversationId: convId, contactId: c.contact_id }).ok);
+      if (!prueba) return { visto: false, entrantes: 0, salientes: 0, ajeno: true, ignorado: 'aislamiento: chat anterior sin WhatsApp al número propio en GHL' };
+      this.repo.updateConv(convId, { aislado_num: aisl.clave });
+      console.log(`[aislamiento] ${convId}: chat anterior adoptado (GHL confirma que es del número propio)`);
+    }
     const db = this.repo.db;
     const cursor = this.repo.getConv(convId)?.ghl_sync_at;
     // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
@@ -142,9 +278,9 @@ export class Setter {
           if (gemelo) db.prepare('UPDATE messages SET external_id = ? WHERE id = ?').run(m.id, gemelo.id);
           else {
             const conv = this.repo.getConv(convId);
-            await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
-              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar });
-            out.entrantes++;
+            const r = await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
+              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar, evidencia: m });
+            if (r?.aislamiento) out.descartados = (out.descartados || 0) + 1; else out.entrantes++;
           }
           // Recién registrado: es el del webhook aunque este se haya procesado con retraso
           if (esElDelWebhook) out.visto = true;
@@ -153,7 +289,7 @@ export class Setter {
           // mensaje anterior con el mismo texto («hola», «hola») y que GHL aún no liste el nuevo: se repasa luego.
           out.visto = true; out.repasar = true;
         }
-      } else if (m.direccion === 'outbound' && m.source !== 'workflow' && !conocido(m.id)) {
+      } else if (m.direccion === 'outbound' && m.source !== 'workflow' && !conocido(m.id) && (!this.aislado() || salienteVerificado(aisl, m))) {
         const nativo = CANALES_NATIVOS.has(m.canal); const delConector = m.tipo === 'TYPE_CUSTOM_SMS';
         // Sin texto solo cuenta por el canal nativo (una foto o un audio del equipo); el conector no se puede cotejar
         const cuenta = (nativo && (t || m.adjuntos.length)) || (delConector && t);
@@ -169,7 +305,7 @@ export class Setter {
             const nuestro = t && db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
               .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
             if (!nuestro) {
-              await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha });
+              await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha }, { verificado: true });
               out.salientes++;
             }
           }
@@ -243,13 +379,16 @@ export class Setter {
       .all(evt.conversationId, desde, evt.messageId || '').some((m) => textoComparable(m.texto) === t);
   }
 
-  async onOutbound(evt) {
+  async onOutbound(evt, { verificado = false } = {}) {
+    // Aislamiento: solo cuenta un saliente que GHL sitúa en el número propio (lo comprueba `sincronizar`)
+    if (this.aislado() && !verificado) return { ignorado: 'aislamiento: saliente sin verificar' };
     // Mensajes que envía el propio sistema ya están registrados (mismo external_id) → se ignoran.
     if (!evt.userId) return { ignorado: 'saliente sin usuario (sistema o plantilla)' };
     const conv = this.repo.getConv(evt.conversationId);
     if (!conv) return { ignorado: 'conversación desconocida' };
+    if (!this.permitido(conv)) return { ignorado: 'aislamiento: chat de otro número' };
     // `creado`: fecha real del mensaje en GHL cuando se recupera más tarde (su copia del conector se compara por esa fecha)
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}) });
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos), ...(evt.creado ? { created_at: evt.creado } : {}), ...(evt.medio || {}) });
     if (!ins) return { ignorado: 'duplicado' };
     await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'humano', texto: evt.texto, adjunto: tipoAdjunto(evt.adjuntos) }));
     const ajustes = leerAjustes(this.repo);
@@ -268,7 +407,13 @@ export class Setter {
     return { pausada: true };
   }
 
-  async onInbound(evt, { programar = true } = {}) {
+  async onInbound(evt, { programar = true, evidencia = null } = {}) {
+    // Aislamiento: antes de crear el chat o tocar nada del contacto (etiquetas, notas, AimHarder, avisos)
+    if (this.aislado()) {
+      const v = await this.comprobarEntrante(evt, evidencia);
+      if (!v.ok) return { ignorado: `aislamiento: ${v.motivo}`, aislamiento: true };
+      evt.canal = 'whatsapp';
+    }
     // Un teléfono de prueba reinicia su conversación escribiendo la palabra de reinicio (para los leads es un texto más)
     const previa = this.repo.getConv(evt.conversationId);
     if (esReinicio(evt.texto, this.palabraReinicio) && esTelefonoPrueba(evt.telefono || previa?.telefono, this.telefonosPrueba)) {
@@ -279,6 +424,8 @@ export class Setter {
     }
     const nuevo = !this.repo.getConv(evt.conversationId);
     const conv = this.repo.upsertConv({ id: evt.conversationId, contact_id: evt.contactId, channel: evt.canal, nombre: evt.nombre, telefono: evt.telefono });
+    // Solo un chat recién creado (o reiniciado por un teléfono de prueba ya verificado) recibe la marca: nunca uno heredado
+    if (this.aislamiento.modo === 'activo' && nuevo) { this.repo.updateConv(conv.id, { aislado_num: this.aislamiento.clave }); conv.aislado_num = this.aislamiento.clave; }
     // Se contesta por donde ha escrito la última vez (el mismo contacto puede escribir por Instagram y luego por WhatsApp)
     if (!nuevo && CANALES_NATIVOS.has(evt.canal) && conv.channel !== evt.canal) { this.repo.updateConv(conv.id, { channel: evt.canal }); conv.channel = evt.canal; }
     const ajustesC = leerAjustes(this.repo);
@@ -291,6 +438,8 @@ export class Setter {
     if (pararLead) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `el lead escribió «${pararLead}»`, respond_at: null });
     // Audios e imágenes: se descargan y los audios se transcriben antes de que Sofía conteste
     let transcripcion = null;
+    const llegada = this.now().getTime();
+    let duracionAudio = 0;
     if (evt.adjuntos?.length || evt.subida) {
       // Mientras se descarga y transcribe, el bucle no contesta este chat (si no, diría «no he podido oír el audio»)
       this.mediosEnCurso ??= new Map();
@@ -300,6 +449,7 @@ export class Setter {
       finally { const n = this.mediosEnCurso.get(conv.id) - 1; if (n > 0) this.mediosEnCurso.set(conv.id, n); else this.mediosEnCurso.delete(conv.id); }
       if (m) {
         adjunto = m.adjunto; transcripcion = m.transcripcion;
+        if (m.adjunto === 'audio') duracionAudio = Math.min(MAX_ESCUCHA_S, Math.max(0, Number(m.duracion) || 0));
         this.repo.updateMessage(ins.lastInsertRowid, { adjunto: m.adjunto, media_ruta: m.media_ruta, media_mime: m.media_mime, transcripcion: m.transcripcion, media_error: m.media_error, ...(evt.texto ? {} : { texto: `[${m.adjunto}]` }) });
       }
     }
@@ -333,12 +483,55 @@ export class Setter {
     if (!programar) return { registrado: true };
 
     // Retardo humano; cada mensaje nuevo reinicia la espera para contestar todo junto.
-    const { lectura } = retardoHumano([], { random: this.random });
-    let cuando = new Date(ahora.getTime() + lectura);
+    const { lectura } = retardoHumano([], { random: this.random, caliente: chatCaliente(actual.last_ai_at, ahora), leido: String(evt.texto || '').length });
+    // Un audio se escucha entero, a su velocidad, antes de ponerse a contestar: la espera normal empieza cuando
+    // termina. Empieza a oírlo al llegar (lo que tarde en transcribirse no se suma) y varios audios se oyen seguidos.
+    this.oyendoHasta ??= new Map();
+    let finEscucha = this.oyendoHasta.get(conv.id) || 0;
+    if (duracionAudio) { finEscucha = Math.max(finEscucha, llegada) + duracionAudio * 1000; this.oyendoHasta.set(conv.id, finEscucha); }
+    if (finEscucha <= ahora.getTime()) this.oyendoHasta.delete(conv.id);
+    let cuando = new Date(Math.max(ahora.getTime(), finEscucha) + lectura);
     // Los teléfonos de prueba del equipo no tienen horario: se prueba a Sofía a cualquier hora
-    if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) cuando = siguienteApertura(cuando);
+    let aviso = null;
+    if (!dentroDeHorario(cuando) && !this.esDePrueba(actual)) {
+      cuando = siguienteApertura(cuando);
+      aviso = await this.avisoFueraDeHorario(actual, ahora);
+    }
     this.repo.updateConv(conv.id, { respond_at: cuando.toISOString() });
-    return { programada: cuando.toISOString() };
+    return { programada: cuando.toISOString(), ...(aviso ? { aviso_fuera_horario: aviso } : {}) };
+  }
+
+  /**
+   * Fuera de horario, el lead recibe al momento un aviso automático (texto fijo de Ajustes, sin pasar por la IA):
+   * que ahora no se está atendiendo y que se le contesta en cuanto se lea. Uno por cada cierre y chat. Sofía
+   * contesta de verdad en la siguiente apertura. Queda en el chat como mensaje del «sistema»: no cuenta como
+   * respuesta de Sofía ni entra en lo que lee el modelo (que solo recibe una nota en el contexto).
+   */
+  async avisoFueraDeHorario(conv, ahora = this.now()) {
+    const ajustes = leerAjustes(this.repo);
+    const a = ajustes.fueraHorario;
+    if (!this.permitido(conv)) return null;
+    if (!a?.activo || !a.canales[conv.channel] || !ajustes.ia_activa || !ajustes.canales[conv.channel]) return null;
+    if (avisadoEnEsteCierre(conv.aviso_fuera_at, ahora)) return null;
+    const texto = textoAviso(a.mensaje, { ahora, nombre: conv.nombre });
+    // Se marca antes de enviar: dos mensajes casi a la vez no mandan dos avisos
+    this.repo.updateConv(conv.id, { aviso_fuera_at: ahora.toISOString() });
+    const msg = { conversation_id: conv.id, autor: 'sistema', tipo: TIPO_AVISO, texto };
+    if (!this.enviaDeVerdad(conv)) {
+      await this.safe(() => this.ghl.addNote(conv.contact_id, `[Borrador IA, no enviado: aviso fuera de horario]\n${texto}`));
+      this.repo.addMessage({ ...msg, enviado: 0 });
+      return 'borrador';
+    }
+    try {
+      const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto });
+      this.repo.addMessage({ ...msg, external_id: r?.messageId || null });
+      return 'enviado';
+    } catch (e) {
+      // Puede haber salido aunque GHL no lo confirme: si aparece luego en GHL, no se toma por un mensaje del equipo
+      this.anotarSinConfirmar(conv.id, { texto, extra: { autor: 'sistema', tipo: TIPO_AVISO } });
+      console.error(`Aviso fuera de horario sin confirmar en ${conv.id}:`, e.message);
+      return 'error';
+    }
   }
 
   async clasificar(conv, evt) {
@@ -354,11 +547,12 @@ export class Setter {
     if (telefono && !prueba) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
     if (socio.esSocio) {
       const sede = normalizarSede(socio.sede);
-      this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: 'socio' });
-      const etiquetas = [TAGS.tipo.socio, TAGS.tareas.gestion_socio, sede && TAGS.sedes[sede]?.tag].filter(Boolean);
+      // Exsocio reciente (última tarifa hace menos de 3 meses): se trata igual que un socio
+      this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: socio.exSocioReciente ? 'exsocio reciente' : 'socio' });
+      const etiquetas = [TAGS.tipo.socio, TAGS.tareas.gestion_socio, sede && TAGS.sedes[sede]?.tag, socio.exSocioReciente && 'exsocio'].filter(Boolean);
       await this.safe(() => this.ghl.addTags(conv.contact_id, etiquetas));
       if (sede) await this.safe(() => this.ghl.assign(conv.contact_id, config.ghl.users[sede]));
-      await this.avisar?.(`Socio escribe${sede ? ` (${SEDE_NOMBRE[sede]})` : ''}: «${(evt.texto || '').slice(0, 200)}»`, { sede });
+      // Sin aviso por Telegram: los socios los lleva el equipo desde GHL (etiqueta + asignación). Telegram es solo para leads.
       return 'socio';
     }
     this.repo.updateConv(conv.id, { tipo: 'captacion' });
@@ -381,7 +575,12 @@ export class Setter {
     const ahora = this.now();
     this.ultimoTick = Date.now();
     const ajustes = leerAjustes(this.repo);
-    const pendientes = this.repo.dueResponses(ahora.toISOString()).filter((c) => !this.enCurso.has(c.id) && !this.mediosEnCurso?.has(c.id));
+    const pendientes = [];
+    for (const c of this.repo.dueResponses(ahora.toISOString()).filter((x) => !this.enCurso.has(x.id) && !this.mediosEnCurso?.has(x.id))) {
+      if (this.permitido(c) || (await this.intentarAdoptar(c.id))) { pendientes.push(c); continue; }
+      // Aislamiento: respuesta pendiente de un chat que no es del número propio (cola de antes, «forzar» desde el panel…)
+      this.repo.updateConv(c.id, { respond_at: null, reintentos: 0 });
+    }
     // Fuera de horario no se contesta, venga de donde venga la respuesta pendiente (un reintento, un reinicio del
     // servicio, «forzar respuesta»…): pasa a la siguiente apertura. Los chats de prueba del panel y los teléfonos
     // de prueba del equipo (TEST_PHONES) no tienen horario.
@@ -463,11 +662,36 @@ export class Setter {
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
       `- Alta: ${conv.alta_estado || 'no iniciada'}. ${this.textoPrueba(conv)}`,
       '- Puedes ver las imágenes que manda el lead y recibes sus notas de voz ya transcritas (la transcripción puede tener algún error: si algo no se entiende, pregúntalo). Si no se ha podido escuchar un audio, pídele con naturalidad que lo escriba.',
+      this.notaAvisoFuera(conv),
+      this.notaVoz(conv),
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
+      primerContacto.contextoIA(conv),
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,
     ].filter(Boolean).join('\n');
+  }
+
+  /** Si la respuesta de este turno puede salir como nota de voz, Sofía lo sabe y la escribe para ser oída: breve. */
+  notaVoz(conv) {
+    const ajustes = leerAjustes(this.repo).voz;
+    if (!this.enviaDeVerdad(conv) || !ajustes.activo || !this.voz || !this.ghl?.enviarAdjunto) return '';
+    const ultimo = this.repo.db.prepare("SELECT adjunto FROM messages WHERE conversation_id = ? AND autor = 'lead' ORDER BY id DESC LIMIT 1").get(conv.id);
+    const d = this.voz.decidirVoz({
+      ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId: this.voz.vozElegida(ajustes), esPrueba: this.esDePrueba(conv),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes: ['hola'], ...this.voz.uso(this.repo.db, conv.id, this.now()),
+    });
+    if (!d.voz) return '';
+    return '- El lead te ha mandado una nota de voz y tu respuesta le va a llegar también como nota de voz, leída tal cual la escribas. Escríbela para ser oída: muy breve (dos o tres frases cortas, unas 200 letras como mucho, 15 segundos), una sola idea y, si hace falta, una pregunta al final. Nada de listas ni de varios precios u horarios seguidos: da solo el dato que te pide. Si necesitas pasar un enlace o muchos datos, escríbelos con normalidad (entonces irá por escrito).';
+  }
+
+  /** Si lo último que recibió el lead fue el aviso automático de fuera de horario, Sofía lo sabe al volver. */
+  notaAvisoFuera(conv) {
+    const db = this.repo.db;
+    const aviso = db.prepare("SELECT id, texto FROM messages WHERE conversation_id = ? AND autor = 'sistema' AND tipo = ? ORDER BY id DESC LIMIT 1").get(conv.id, TIPO_AVISO);
+    if (!aviso) return '';
+    if (db.prepare("SELECT 1 FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND id > ? LIMIT 1").get(conv.id, aviso.id)) return '';
+    return `- Fuera de horario, al lead le llegó este aviso automático: «${aviso.texto}». Ahora ya le atiendes: contesta a lo que escribió con naturalidad, sin volver a decir que no estabais ni pedir perdón por la espera.`;
   }
 
   /** Línea de la clase de prueba para el contexto: la reservada aquí, o la del calendario de GHL (metro-trial-ops). */
@@ -521,6 +745,7 @@ export class Setter {
   async responder(convId, { extraContexto = '', motivo = 'respuesta', plantilla = null, avisarFallo = true, control = null } = {}) {
     const conv = this.repo.getConv(convId);
     if (!conv || conv.ai_paused || conv.derivado) return null;
+    if (!this.permitido(conv)) return null; // aislamiento: ni se llama al modelo ni se ejecuta ninguna herramienta
     const ultimoDelLead = () => this.repo.db.prepare("SELECT max(id) m FROM messages WHERE conversation_id = ? AND autor = 'lead'").get(convId)?.m ?? 0;
     const leadAlEmpezar = ultimoDelLead();
     const reinicioAlEmpezar = this.reinicios?.get(convId) || 0;
@@ -553,6 +778,7 @@ export class Setter {
     // Mientras Sofía pensaba, alguien del equipo ha escrito o han pausado el chat: no se envía nada
     const ahoraConv = this.repo.getConv(convId);
     if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
+    if (!this.permitido(ahoraConv)) return null; // al repasar, la conversación resultó compartida con otra línea
     const hechoFuera = efectos.derivado || efectos.herramientas.some((h) => NO_REPETIBLES.includes(h.nombre));
     // El turno se anuló por tardar demasiado (ya hay un reintento en cola): esta respuesta no sale. Si en el turno
     // se hizo algo que no se repite (alta, prueba, derivación), se quita el reintento y se avisa al equipo.
@@ -606,6 +832,8 @@ export class Setter {
   async aplicarRespuesta(conv, r, efectos) {
     const patch = {};
     if (r.fase) patch.fase = r.fase;
+    // La fase más avanzada alcanzada se guarda aparte: «cerrada» no dice hasta dónde llegó el chat
+    if (r.fase && r.fase !== 'cerrada' && TAGS.embudo.indexOf(r.fase) > TAGS.embudo.indexOf(conv.fase_max)) patch.fase_max = r.fase;
     // Si Sofía no dice la sede pero en este turno ha consultado precios, horarios o recibo de una sola, es esa
     const consultadas = [...new Set((efectos.herramientas || []).map((h) => h.entrada?.sede && normalizarSede(h.entrada.sede)).filter(Boolean))];
     const sede = r.sede && r.sede !== 'desconocida' ? normalizarSede(r.sede) : (!conv.sede && consultadas.length === 1 ? consultadas[0] : null);
@@ -676,7 +904,7 @@ export class Setter {
     const marca = evt.fecha && !Number.isNaN(Date.parse(evt.fecha)) ? new Date(evt.fecha).toISOString() : this.now().toISOString();
     this.repo.borrarConversacion(id);
     this.repo.upsertConv(base);
-    this.repo.updateConv(id, { ghl_sync_at: marca, ghl_sync_suelo: marca });
+    this.repo.updateConv(id, { ghl_sync_at: marca, ghl_sync_suelo: marca, ...(this.aislamiento.modo === 'activo' ? { aislado_num: this.aislamiento.clave } : {}) });
     this.repo.addMessage({ conversation_id: id, external_id: evt.messageId || null, autor: 'sistema', texto: '[conversación de prueba reiniciada desde WhatsApp]' });
     // Una respuesta que estuviera en marcha para la conversación anterior ya no debe salir
     (this.reinicios ??= new Map()).set(id, (this.reinicios.get(id) || 0) + 1);
@@ -705,6 +933,8 @@ export class Setter {
 
   /** `yaEsperadoMs`: lo que ha tardado el modelo en pensar; se descuenta del «escribiendo…» de la primera burbuja. */
   async enviar(conv, mensajes, plantilla = null, control = null, yaEsperadoMs = 0) {
+    this.exigirPermitido(conv);
+    if (plantilla && !this.plantillas()) { const e = new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor'); e.noReintentar = true; throw e; }
     const { escritura } = retardoHumano(mensajes, { random: this.random });
     if (!this.enviaDeVerdad(conv)) {
       // Modo prueba: nada sale hacia el lead; queda una nota interna en GHL para comparar.
@@ -720,6 +950,26 @@ export class Setter {
     }
     const ids = [];
     const pausadaAlEmpezar = Boolean(this.repo.getConv(conv.id)?.ai_paused);
+    // Nota de voz en vez de texto, si las normas de Ajustes lo piden. Si no se puede generar o enviar, sale el texto.
+    const antesVoz = Date.now();
+    const nota = await this.notaDeVoz(conv, mensajes);
+    if (nota) {
+      await this.sleep(Math.max(0, escritura[0] - yaEsperadoMs - (Date.now() - antesVoz)));
+      if (control?.cancelado) return null;
+      const msg = { conversation_id: conv.id, autor: 'ia', texto: mensajes.join('\n'), adjunto: 'audio', media_ruta: nota.media_ruta, media_mime: nota.media_mime };
+      try {
+        const r = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: nota.url, mime: nota.media_mime, nombre: 'nota-de-voz.ogg' });
+        this.repo.addMessage({ ...msg, external_id: r?.messageId || null });
+        await this.safe(() => this.etiquetas?.alMensaje(conv.id, { autor: 'ia', texto: msg.texto }));
+        this.repo.updateConv(conv.id, { last_ai_at: this.now().toISOString() });
+        return [r?.messageId || null];
+      } catch (e) {
+        // GHL puede dejar el audio creado aunque devuelva un error: si aparece luego, es de Sofía. La respuesta
+        // sale igualmente por escrito (mejor repetida en voz y texto que sin contestar).
+        this.anotarSinConfirmar(conv.id, { texto: msg.texto, url: nota.url, extra: { adjunto: msg.adjunto, media_ruta: msg.media_ruta, media_mime: msg.media_mime } });
+        console.error('[voz]', `GHL no aceptó la nota de voz, sale el texto: ${e.message}`);
+      }
+    }
     for (let i = 0; i < mensajes.length; i++) {
       await this.sleep(i === 0 ? Math.max(0, escritura[0] - yaEsperadoMs) : escritura[i]);
       // Alguien del equipo ha escrito mientras Sofía «escribía»: no se mandan las burbujas que faltan
@@ -744,6 +994,24 @@ export class Setter {
     return ids;
   }
 
+  /**
+   * Nota de voz de esta respuesta ({ media_ruta, media_mime, url }) si las normas de Ajustes dicen que va por voz;
+   * null si va por texto, también cuando ElevenLabs o la conversión fallan.
+   */
+  async notaDeVoz(conv, mensajes) {
+    const ajustes = leerAjustes(this.repo).voz;
+    if (!ajustes.activo || !this.voz || !this.ghl.enviarAdjunto) return null;
+    const ultimo = this.repo.db.prepare("SELECT adjunto FROM messages WHERE conversation_id = ? AND autor = 'lead' ORDER BY id DESC LIMIT 1").get(conv.id);
+    const vozId = this.voz.vozElegida(ajustes);
+    const d = this.voz.decidirVoz({
+      ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId, esPrueba: this.esDePrueba(conv),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes, ...this.voz.uso(this.repo.db, conv.id, this.now()),
+    });
+    if (!d.voz) return null;
+    try { return await this.voz.sintetizar(d.texto, { vozId, velocidad: ajustes.velocidad, base: this.medios?.base }); }
+    catch (e) { console.error('[voz]', `no se ha podido generar la nota de voz, sale el texto: ${e.message}`); return null; }
+  }
+
   /** ¿Está en GHL, recién enviado y sin registrar aquí, un saliente con ese texto? Devuelve { messageId } o null. */
   async confirmarEnvio(conv, texto) {
     if (!this.ghl.mensajes) return null;
@@ -752,7 +1020,7 @@ export class Setter {
       await this.sleep(espera);
       const lista = (await this.safe(() => this.ghl.mensajes(conv.id, 15))) || [];
       const desde = new Date(this.now().getTime() - 2 * 60000).toISOString();
-      const m = lista.filter((x) => x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal) && x.fecha > desde && textoComparable(x.texto) === t)
+      const m = lista.filter((x) => x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal) && x.fecha > desde && textoComparable(x.texto) === t && (!this.aislado() || salienteVerificado(this.aislamiento, x)))
         .find((x) => !this.repo.db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(x.id));
       if (m) return { messageId: m.id };
     }
@@ -782,6 +1050,7 @@ export class Setter {
 
   /** Envía archivos de Recursos. En modo prueba, solo una nota en GHL y un borrador en el chat. */
   async enviarRecursos(conv, lista) {
+    this.exigirPermitido(conv);
     for (const r of lista) {
       const msg = { conversation_id: conv.id, autor: 'ia', texto: `[${r.tipo}: ${r.nombre}]`, adjunto: r.tipo, media_ruta: r.media_ruta, media_mime: r.mime };
       if (!this.enviaDeVerdad(conv)) {
@@ -790,7 +1059,7 @@ export class Setter {
         continue;
       }
       try {
-        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
+        const out = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: recursos.urlPublica(r), mime: r.mime, nombre: `${r.nombre}${String(r.media_ruta).match(/\.[a-z0-9]+$/i)?.[0] || ''}`, ...(conv.channel === 'whatsapp' ? { texto: recursos.pieDeArchivo(r) } : {}) });
         this.repo.addMessage({ ...msg, external_id: out?.messageId || null });
       } catch (e) {
         // GHL puede dejar el mensaje creado aunque devuelva un error: si aparece luego, es de Sofía
@@ -819,8 +1088,11 @@ export class Setter {
     // de Sofía): el que caería fuera se adelanta a 15 min antes del cierre de esa ventana, o no se programa.
     const ultimoLead = this.repo.getConv(conv.id)?.last_inbound_at;
     const cierre = ultimoLead ? new Date(ultimoLead).getTime() + VENTANA_SEG_MS - 15 * 60000 : Infinity;
-    for (const regla of reglasSeg.listar(this.catalogo)) {
+    const todas = reglasSeg.listar(this.catalogo);
+    const nivel = leerAjustes(this.repo).intensidadSeguimientos;
+    for (const regla of todas) {
       if (regla.tipo !== 'silencio' || !regla.canales.includes(conv.channel) || !regla.activo) continue;
+      if (!entraEnNivel(regla, todas, nivel)) continue; // la intensidad elegida en el panel no lo incluye
       let due = base + regla.minutos * 60000;
       if (!regla.plantilla && due > cierre) {
         if (cierre - base < 60 * 60000) continue; // ya no queda ventana para él
@@ -849,11 +1121,13 @@ export class Setter {
     this.repo.cancelScheduled(conv.id, 'lo deja para más adelante', { tipos: ['silencio', 'largo-plazo'] });
     if (String(conv.id).startsWith('prueba-')) return { ...info, programado: false, nota: 'chat de pruebas: usa «Forzar» para verlo' };
     // La primera en la fecha; las encadenadas (despuesDe), sus días después de la anterior
+    const nivel = leerAjustes(this.repo).intensidadSeguimientos;
+    const sale = (r) => r.activo && entraEnNivel(r, reglas, nivel);
     let base = objetivo; let anterior = primera;
-    if (primera.activo) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
+    if (sale(primera)) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     for (let r = reglas.find((x) => x.despuesDe === anterior.id); r; anterior = r, r = reglas.find((x) => x.despuesDe === anterior.id)) {
       base = new Date(base.getTime() + r.minutos * 60000);
-      if (r.activo) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
+      if (sale(r)) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     }
     return { ...info, programado: true };
   }
@@ -919,7 +1193,8 @@ export class Setter {
         efectos.tags.add(tarea);
         this.repo.updateConv(conv.id, { derivado: 1, ai_paused: 1, pause_reason: `derivado: ${input.motivo}` });
         this.repo.cancelScheduled(conv.id, 'derivado');
-        await this.avisar?.(`Derivado (${input.motivo})${conv.sede ? ` · ${SEDE_NOMBRE[conv.sede]}` : ''}: ${input.resumen}`, { sede: conv.sede });
+        // Los temas de socio no van a Telegram: quedan en GHL con su etiqueta de tarea
+        if (input.motivo !== 'gestion_socio' && conv.tipo !== 'socio') await this.avisar?.(`Derivado (${input.motivo})${conv.sede ? ` · ${SEDE_NOMBRE[conv.sede]}` : ''}: ${input.resumen}`, { sede: conv.sede });
         return { ok: true, nota: 'Avisa al lead de que lo revisa una persona del equipo y que le escribirá por aquí. No sigas vendiendo.' };
       }
       default: return { ok: false, error: `Herramienta desconocida: ${nombre}` };
@@ -1013,6 +1288,7 @@ export class Setter {
   async contestarPregunta(p) {
     const conv = p.conversation_id ? this.repo.getConv(p.conversation_id) : null;
     if (!conv) return 'sin chat';
+    if (!this.permitido(conv)) return 'aislamiento: el chat no es del número propio de Sofía; no se envía';
     if (conv.ai_paused || conv.derivado) return 'chat pausado o derivado: contéstale tú';
     if (this.enCurso?.has(conv.id)) return 'Sofía estaba contestando en ese chat: no se ha enviado';
     if (!String(conv.id).startsWith('prueba-') && fueraDeVentana(conv, this.now())) return 'han pasado más de 24 h desde su último mensaje: no se puede escribir sin plantilla';
@@ -1020,6 +1296,134 @@ export class Setter {
     if (!r) return 'no se ha enviado (chat pausado)';
     if (!r.mensajes.length) return 'Sofía vio que ya estaba contestada';
     return this.enviaDeVerdad(conv) ? 'enviada al lead' : 'borrador (modo prueba)';
+  }
+
+  /** ¿Por qué no se puede escribir a mano en este chat desde el panel? Cadena vacía si se puede. */
+  motivoNoEscribir(conv) {
+    if (!conv) return 'Ese chat no existe.';
+    if (String(conv.id).startsWith('prueba-')) return 'Es un chat de prueba: no sale a nadie.';
+    if (!this.ghl?.sendMessage) return 'El envío a GHL no está configurado.';
+    if (this.aislado() && this.aislamiento.modo !== 'activo') return 'El número de Sofía está mal configurado: no se envía nada.';
+    if (!this.permitido(conv)) return 'Este chat no es del número de Sofía: contéstalo en el CRM.';
+    if (!CANALES_NATIVOS.has(conv.channel) || (this.aislado() && conv.channel !== 'whatsapp')) return `Desde aquí solo se escribe por WhatsApp${this.aislado() ? '' : ' e Instagram'}: este chat contéstalo en el CRM.`;
+    if (fueraDeVentana(conv, this.now())) return 'Han pasado más de 24 h desde su último mensaje: solo se le puede escribir con una plantilla de WhatsApp (abajo, «📨 Plantilla de WhatsApp»).';
+    return '';
+  }
+
+  /**
+   * Una persona del equipo escribe al lead desde el panel. Sale siempre de verdad (también en modo prueba, como si
+   * se escribiera en el CRM) y, a partir de ahí, cuenta como cualquier mensaje del equipo: queda en el historial y
+   * Sofía se aparta del chat según los ajustes. Los motivos para no enviar llevan `usuario` (se enseñan tal cual).
+   */
+  /**
+   * Envía un archivo del equipo (archivos.js) al chat: con el texto como pie, salvo en los audios (WhatsApp no les
+   * pone pie), donde el texto sale antes en su propio mensaje. Devuelve lo que hay que anotar del archivo enviado.
+   */
+  async enviarArchivo(conv, a, texto = '') {
+    const pieAparte = a.tipo === 'audio' && texto;
+    if (pieAparte) {
+      const r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto });
+      this.repo.addMessage({ conversation_id: conv.id, external_id: r?.messageId || null, autor: 'humano', texto });
+    }
+    const r = await this.ghl.enviarAdjunto({ contactId: conv.contact_id, canal: conv.channel, url: archivos.urlPublica(a), mime: a.mime, nombre: a.nombre, texto: pieAparte ? '' : texto });
+    return { messageId: r?.messageId || null, texto: pieAparte || !texto ? `[${a.tipo}: ${a.nombre}]` : texto, medio: { adjunto: a.tipo, media_ruta: a.media_ruta, media_mime: a.mime } };
+  }
+
+  /** Una persona del equipo envía un archivo (con texto opcional) desde el panel. Igual que `enviarDelEquipo`. */
+  enviarArchivoDelEquipo(convId, archivoId, texto = '') {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoEscribir(conv) || (this.ghl?.enviarAdjunto ? '' : 'El envío de archivos no está configurado.');
+      const a = archivos.obtener(this.repo.db, archivoId);
+      if (motivo || !a) { const e = new Error(motivo || 'Ese archivo ya no está: vuelve a adjuntarlo.'); e.usuario = true; throw e; }
+      const r = await this.enviarArchivo(conv, a, String(texto || '').trim());
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
+  /** ¿Se le puede mandar una plantilla de WhatsApp a este chat? ('' = sí). A diferencia de un texto, vale pasadas 24 h. */
+  motivoNoPlantilla(conv) {
+    if (!conv) return 'Ese chat no existe.';
+    if (String(conv.id).startsWith('prueba-')) return 'Es un chat de prueba: no sale a nadie.';
+    if (conv.channel !== 'whatsapp') return 'Las plantillas solo son de WhatsApp.';
+    if (!this.ghl?.enviarPlantillaWa) return 'El envío de plantillas no está configurado.';
+    if (this.aislado() && this.aislamiento.modo !== 'activo') return 'El número de Sofía está mal configurado: no se envía nada.';
+    if (!this.permitido(conv)) return 'Este chat no es del número de Sofía: contéstalo en el CRM.';
+    return '';
+  }
+
+  /** Envía una plantilla ya preparada (plantillas.prepararEnvio). Devuelve lo que hay que anotar en el chat. */
+  async enviarPlantilla(conv, env) {
+    const r = await this.ghl.enviarPlantillaWa({ contactId: conv.contact_id, nombre: env.plantilla.nombre, idioma: env.plantilla.idioma, categoria: env.plantilla.categoria, variables: env.variables, texto: env.texto });
+    return { messageId: r?.messageId || null, texto: env.texto, medio: { tipo: 'plantilla' } };
+  }
+
+  /** Una persona del equipo envía una plantilla de WhatsApp desde el panel. */
+  enviarPlantillaDelEquipo(convId, plantillaId, variables = []) {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoPlantilla(conv);
+      if (motivo) { const e = new Error(motivo); e.usuario = true; throw e; }
+      let env;
+      try { env = plantillasWa.prepararEnvio(this.repo.db, plantillaId, variables); } catch (e) { e.usuario = true; throw e; }
+      const r = await this.enviarPlantilla(conv, env);
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
+  /**
+   * Primer contacto: el equipo escribe a alguien que aún no nos ha escrito. Crea (o recupera) el contacto en GHL,
+   * le envía la plantilla elegida desde el número de Sofía y deja el chat creado aquí con el motivo, para que Sofía
+   * lo sepa si responde. `d`: { telefono, nombre, plantilla, variables, motivo, sofiaResponde }.
+   * Si ya hay un chat con ese número no envía nada: devuelve `existente` para abrirlo (ahí se puede mandar la plantilla).
+   */
+  async iniciarConversacion(d = {}) {
+    const fallo = (m) => { const e = new Error(m); e.usuario = true; return e; };
+    let v, env;
+    try { v = primerContacto.validar(d); env = plantillasWa.prepararEnvio(this.repo.db, v.plantilla, v.variables); } catch (e) { e.usuario = true; throw e; }
+    if (!this.ghl?.enviarPlantillaWa || !this.ghl?.upsertContacto) throw fallo('El envío de plantillas no está configurado.');
+    if (this.aislado() && this.aislamiento.modo !== 'activo') throw fallo('El número de Sofía está mal configurado: no se envía nada.');
+    const previo = primerContacto.chatExistente(this.repo.db, { telefono: v.telefono });
+    if (previo) return { existente: previo.id, nombre: previo.nombre };
+    const contacto = await this.ghl.upsertContacto({ telefono: v.telefono, nombre: v.nombre });
+    const previoGhl = primerContacto.chatExistente(this.repo.db, { contactId: contacto.id });
+    if (previoGhl) return { existente: previoGhl.id, nombre: previoGhl.nombre };
+    const r = await this.ghl.enviarPlantillaWa({ contactId: contacto.id, nombre: env.plantilla.nombre, idioma: env.plantilla.idioma, categoria: env.plantilla.categoria, variables: env.variables, texto: env.texto });
+    const convId = r?.conversationId || (await this.safe(() => this.ghl.buscarConversacion?.(contacto.id)))?.id;
+    if (!convId) throw fallo('La plantilla ha salido, pero GHL no ha dicho en qué conversación: el chat aparecerá aquí cuando responda.');
+    const ahora = this.now().toISOString();
+    return this.enSerie(convId, async () => {
+      this.repo.upsertConv({ id: convId, contact_id: contacto.id, channel: 'whatsapp', nombre: v.nombre, telefono: v.telefono });
+      this.repo.updateConv(convId, {
+        primer_contacto: JSON.stringify({ motivo: v.motivo, plantilla: env.plantilla.nombre, at: ahora }),
+        // El chat sale del número propio: queda verificado para el aislamiento igual que uno que entra
+        ...(this.aislamiento.modo === 'activo' ? { aislado_num: this.aislamiento.clave } : {}),
+        ...(v.sofiaResponde ? {} : { ai_paused: 1, pause_reason: 'primer contacto: lo lleva el equipo' }),
+      });
+      // Se anota como mensaje del equipo, pero sin apartar a Sofía: abrir la conversación no es contestarla
+      this.repo.addMessage({ conversation_id: convId, external_id: r?.messageId || null, autor: 'humano', texto: env.texto, tipo: 'plantilla' });
+      await this.safe(() => this.ghl.addNote(contacto.id, `[Primer contacto desde el panel] Plantilla «${env.plantilla.nombre}». Motivo: ${v.motivo}`));
+      return { id: convId, contacto: contacto.id, nuevo: contacto.nuevo, texto: env.texto, sofiaResponde: v.sofiaResponde };
+    });
+  }
+
+  enviarDelEquipo(convId, texto) {
+    return this.enSerie(convId, async () => {
+      const conv = this.repo.getConv(convId);
+      const motivo = this.motivoNoEscribir(conv);
+      if (motivo) { const e = new Error(motivo); e.usuario = true; throw e; }
+      let r;
+      try { r = await this.ghl.sendMessage({ contactId: conv.contact_id, canal: conv.channel, texto }); }
+      catch (e) {
+        // GHL a veces no confirma a tiempo un mensaje que sí ha salido: se mira antes de dar el error (y evitar un reenvío doble)
+        r = await this.confirmarEnvio(conv, texto);
+        if (!r) throw e;
+      }
+      const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto, messageId: r?.messageId || null, userId: 'panel' }, { verificado: true });
+      return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
   }
 
   /** Plazas de apertura de El Cañaveral ya ocupadas (registro de AimHarder + altas de Sofía que aún no están en él). */

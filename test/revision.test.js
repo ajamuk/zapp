@@ -153,7 +153,7 @@ test('claves del servicio: se avisa si faltan o son cortas', () => {
 
 // ---------- Funcional ----------
 
-test('dos mensajes casi a la vez de un chat nuevo: se clasifica una vez y se avisa una vez', async () => {
+test('dos mensajes casi a la vez de un chat nuevo: se clasifica una vez y no se avisa por Telegram', async () => {
   let consultas = 0;
   const { repo, setter, sal } = montar({ aimharder: { buscarSocioPorTelefono: async () => { consultas++; await espera(20); return { esSocio: true, sede: 'parla' }; } } });
   const evt = (n) => ({ evento: 'inbound', conversationId: 'c1', contactId: 'k1', canal: 'whatsapp', texto: `mensaje ${n}`, messageId: `m${n}`, telefono: '+34600111222' });
@@ -161,7 +161,7 @@ test('dos mensajes casi a la vez de un chat nuevo: se clasifica una vez y se avi
   assert.deepEqual(a, { socio: true });
   assert.deepEqual(b, { pausada: true });
   assert.equal(consultas, 1);
-  assert.equal(sal.avisos.length, 1);
+  assert.equal(sal.avisos.length, 0);
   assert.equal(repo.history('c1').length, 2);
   // Otro chat no espera al primero, y un fallo no atasca la cola de ese chat
   setter.aimharder.buscarSocioPorTelefono = async () => ({ esSocio: false });
@@ -169,6 +169,28 @@ test('dos mensajes casi a la vez de un chat nuevo: se clasifica una vez y se avi
   await assert.rejects(setter.handleWebhook({ ...evt(1), messageId: 'x1' }), /fallo suelto/);
   assert.deepEqual(await setter.handleWebhook({ ...evt(1), messageId: 'x2' }), { ok: 'x2' });
   assert.equal(setter.colas.size, 0);
+});
+
+test('exsocio reciente: Sofía no contesta, se pausa como socio y se etiqueta exsocio', async () => {
+  const { repo, setter, sal } = montar({ aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: true, exSocio: true, exSocioReciente: true, tarifaHasta: '2026-11-07', sede: 'parla' }) } });
+  const r = await setter.handleWebhook({ evento: 'inbound', conversationId: 'c1', contactId: 'k1', canal: 'whatsapp', texto: 'sigo de baja médica', messageId: 'm1', telefono: '+34600111222' });
+  assert.deepEqual(r, { socio: true });
+  const c = repo.getConv('c1');
+  assert.equal(c.tipo, 'socio');
+  assert.equal(c.ai_paused, 1);
+  assert.equal(c.pause_reason, 'exsocio reciente');
+  assert.ok(sal.tags.includes('exsocio'));
+  assert.equal(sal.enviados.length, 0);
+  assert.equal(sal.avisos.length, 0);
+});
+
+test('alta nueva con la tarifa por empezar: se pausa como socio, sin etiqueta exsocio', async () => {
+  const { repo, setter, sal } = montar({ aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: true, exSocio: false, pagoVigente: true, tarifaHasta: '2027-01-07', sede: 'getafe' }) } });
+  assert.deepEqual(await setter.handleWebhook({ evento: 'inbound', conversationId: 'c1', contactId: 'k1', canal: 'whatsapp', texto: 'ya estamos apuntados', messageId: 'm1', telefono: '+34600111222' }), { socio: true });
+  const c = repo.getConv('c1');
+  assert.equal(c.pause_reason, 'socio');
+  assert.ok(!sal.tags.includes('exsocio'));
+  assert.equal(sal.enviados.length, 0);
 });
 
 test('un webhook repetido no vuelve a pausar un chat que el equipo ya reanudó', async () => {

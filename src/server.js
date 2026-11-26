@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import express from 'express';
 import { config } from './config.js';
 import { dentroDeHorario, siguienteApertura } from './horario.js';
@@ -11,11 +11,15 @@ import { plazasCanaveral } from './canaveral.js';
 import { leerAjustes, guardarAjustes } from './ajustes.js';
 import * as panel from './panel.js';
 import { embudo, mesActual } from './embudo.js';
-import { textoPrevisto, programarManual, cancelarCita, destinatarios, validarLanzamiento, cancelarLanzamiento } from './followups.js';
+import { textoPrevisto, programarManual, editarManual, cancelarCita, destinatarios, validarLanzamiento, cancelarLanzamiento } from './followups.js';
 import * as reglasSeg from './reglas.js';
+import { NIVELES, reglasDelNivel } from './intensidad.js';
+import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
 import * as reportes from './reportes.js';
 import * as documentos from './documentos.js';
 import * as recursosMod from './recursos.js';
+import * as vozMod from './voz.js';
 import * as alertas from './alertas.js';
 import * as meta from './meta.js';
 import * as actividad from './actividad.js';
@@ -27,6 +31,7 @@ import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
 import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
 import * as etq from './etiquetas.js';
+import { estadoAislamiento, enmascarar } from './aislamiento.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const htmlPanel = readFileSync(panelPath, 'utf8');
@@ -71,7 +76,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead, aimharderWebhook = null }) {
   const app = express();
   app.disable('x-powered-by');
   // Cabeceras de seguridad en todas las respuestas: el navegador no adivina tipos de archivo, no se puede
@@ -123,7 +128,13 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   // Recursos públicos para que GHL los descargue al enviarlos (código aleatorio; solo los activos)
   app.get('/r/:token', (req, res) => {
+    // Archivos que envía el equipo desde el panel (/r/eq_<código>.<ext>)
+    const eq = archivos.porCodigo(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
+    if (eq) { res.set('Cache-Control', 'public, max-age=3600'); return enviarMedio(res, { media_ruta: eq.media_ruta, media_mime: eq.mime }, medios?.base || carpetaMedios()); }
     const r = recursosMod.porToken(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
+    // Notas de voz de Sofía (/r/voz_<código>.ogg): Meta las descarga de aquí al enviarlas
+    const voz = r ? null : vozMod.rutaDeCodigo(String(req.params.token).replace(/\.ogg$/i, ''));
+    if (voz) { const base = medios?.base || carpetaMedios(); if (!existsSync(path.join(base, voz))) return res.status(404).end(); res.type(vozMod.MIME_VOZ); return res.sendFile(path.resolve(base, voz), { headers: { 'Cache-Control': 'public, max-age=3600' } }); }
     if (!r) return res.status(404).end();
     res.set('Cache-Control', 'public, max-age=3600');
     return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios());
@@ -140,6 +151,16 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
       // Un aviso que no se puede atribuir a ningún chat no debe perderse en silencio
       if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));
     } catch (e) { console.error('Webhook:', e); }
+  });
+
+  // Webhooks de AimHarder (uno por sede: la URL lleva la sede y un token). Responde rápido; el trabajo va después.
+  app.post('/webhooks/aimharder/:sede', async (req, res) => {
+    if (!aimharderWebhook || !config.aimharder.webhookToken) return res.status(503).json({ error: 'webhooks de AimHarder desactivados' });
+    if (!igual(String(req.query.token || ''), config.aimharder.webhookToken)) return res.status(401).json({ error: 'token no válido' });
+    try {
+      const r = await aimharderWebhook(req.params.sede, req.body);
+      res.status(r.status).json(r.status === 200 ? { recibido: true } : { error: r.error || 'rechazado' });
+    } catch (e) { console.error('[aimharder-webhook]', e); res.status(500).json({ error: 'error interno' }); }
   });
 
   const admin = express.Router();
@@ -204,6 +225,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   const db = repo.db;
   admin.get('/panel/estado', (_req, res) => res.json({
     modo: config.mode, modelo: config.ai.model, alta_en_pruebas: config.aimharder.altaDryRun,
+    aislamiento: ((a) => ({ modo: a.modo, ...(a.modo === 'activo' ? { numero: enmascarar(a.numero), subcuenta: a.locationId, adoptar: a.adoptar, plantillas: a.plantillas } : {}), ...(a.motivos ? { motivos: a.motivos } : {}) }))(setter?.aislamiento || estadoAislamiento()),
     modelo_configurado: Boolean(config.ai.apiKey), entrada_ghl: config.ghlWebhookEnabled,
     credenciales_alta: Boolean(config.aimharder.adminUser && config.aimharder.adminPassword),
     ajustes: leerAjustes(repo), contadores: panel.contadores(db), alertas: alertas.abiertas(db).length,
@@ -224,7 +246,28 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   });
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);
+    // ¿Se le puede escribir desde aquí? (cuadro de respuesta del panel; `motivo` vacío = sí)
+    if (d && setter?.motivoNoEscribir) d.escribir = { motivo: setter.motivoNoEscribir(d.conv), pausa: Boolean(leerAjustes(repo).pausarSiEquipoEscribe && setter.enviaDeVerdad(d.conv)) };
+    // Plantillas de WhatsApp que se le pueden mandar (también pasadas 24 h)
+    if (d && setter?.motivoNoPlantilla && d.conv.channel === 'whatsapp') d.plantillas = { motivo: setter.motivoNoPlantilla(d.conv), lista: plantillasWa.listar(db, { activas: true }) };
     return d ? res.json(d) : res.status(404).json({ error: 'no existe' });
+  });
+  // Contestar al lead desde el panel, como si se escribiera en el CRM
+  admin.post('/panel/conversaciones/:id/enviar', async (req, res) => {
+    const texto = typeof req.body?.texto === 'string' ? req.body.texto.trim() : '';
+    const archivo = req.body?.archivo ? Number(req.body.archivo) : null;
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    if (!texto && !archivo) return res.status(400).json({ error: 'Escribe el mensaje o adjunta un archivo.' });
+    if (texto.length > 2000) return res.status(400).json({ error: 'El mensaje es demasiado largo (máximo 2000 caracteres).' });
+    if (!setter?.enviarDelEquipo) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = archivo ? await setter.enviarArchivoDelEquipo(req.params.id, archivo, texto) : await setter.enviarDelEquipo(req.params.id, texto);
+      res.json({ ok: true, pausada: Boolean(r?.pausada) });
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] envío del equipo:', e.message);
+      res.status(502).json({ error: 'GHL no ha aceptado el mensaje: no se ha enviado. Inténtalo otra vez o escríbelo en el CRM.' });
+    }
   });
   // ⚡ Forzar respuesta: Sofía contesta ya (respeta su horario)
   admin.post('/panel/conversaciones/:id/forzar', (req, res) => {
@@ -248,7 +291,11 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.json({ ok: true });
   });
   admin.get('/panel/altas', (_req, res) => res.json(panel.altas(db)));
-  admin.get('/panel/seguimientos', (_req, res) => res.json(panel.seguimientos(db)));
+  admin.get('/panel/seguimientos', (_req, res) => res.json({ ...panel.seguimientos(db), intensidad: {
+    nivel: leerAjustes(repo).intensidadSeguimientos,
+    niveles: Object.entries(NIVELES).map(([id, n]) => ({ id, nombre: n.nombre, descripcion: n.descripcion })),
+    incluidas: [...reglasDelNivel(reglasSeg.listar(db), leerAjustes(repo).intensidadSeguimientos)],
+  } }));
   // Prepara (o devuelve) el texto que Sofía enviará en ese seguimiento
   admin.post('/panel/seguimientos/:id/previa', async (req, res) => {
     const s = db.prepare('SELECT * FROM scheduled WHERE id = ?').get(Number(req.params.id));
@@ -416,7 +463,51 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   // Mensaje programado a mano desde un chat. Body: { texto, cuando (ISO) }
   admin.post('/panel/conversaciones/:id/programar', (req, res) => {
-    try { res.status(201).json({ id: programarManual(repo, req.params.id, req.body?.texto, req.body?.cuando) }); } catch (e) { errorUsuario(res, e); }
+    const b = req.body || {};
+    try { res.status(201).json({ id: programarManual(repo, req.params.id, b.texto, b.cuando, new Date(), { archivo: b.archivo || null, plantilla: b.plantilla || null, variables: b.variables || [] }) }); } catch (e) { errorUsuario(res, e); }
+  });
+  // Corregir un mensaje programado a mano antes de que salga. Body: { texto, cuando (ISO), archivo (id o null) }
+  admin.put('/panel/seguimientos/:id', (req, res) => {
+    try {
+      const b = req.body || {};
+      const ok = editarManual(repo, req.params.id, { texto: b.texto, cuando: b.cuando, archivo: b.archivo || null, plantilla: b.plantilla || null, variables: b.variables || [] });
+      return ok ? res.json({ ok: true }) : res.status(409).json({ error: 'Ese mensaje ya ha salido o se ha cancelado: no se puede cambiar.' });
+    } catch (e) { errorUsuario(res, e); }
+  });
+  // Plantillas de WhatsApp: catálogo (copiado de GHL) y envío desde un chat. Body del envío: { plantilla, variables: [] }
+  admin.get('/panel/plantillas', (_req, res) => res.json({ plantillas: plantillasWa.listar(db), categorias: plantillasWa.CATEGORIAS }));
+  admin.post('/panel/plantillas', (req, res) => { try { res.status(201).json(plantillasWa.crear(db, req.body || {})); } catch (e) { errorUsuario(res, e); } });
+  admin.put('/panel/plantillas/:id', (req, res) => { try { const p = plantillasWa.actualizar(db, req.params.id, req.body || {}); return p ? res.json(p) : res.status(404).json({ error: 'Esa plantilla no existe.' }); } catch (e) { errorUsuario(res, e); } });
+  admin.delete('/panel/plantillas/:id', (req, res) => res.json({ ok: plantillasWa.borrar(db, req.params.id) }));
+  admin.post('/panel/conversaciones/:id/plantilla', async (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    if (!setter?.enviarPlantillaDelEquipo) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = await setter.enviarPlantillaDelEquipo(req.params.id, req.body?.plantilla, req.body?.variables || []);
+      res.json({ ok: true, pausada: Boolean(r?.pausada) });
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] plantilla del equipo:', e.message);
+      res.status(502).json({ error: `GHL no ha aceptado la plantilla: no se ha enviado (${String(e.message).slice(0, 300)}).` });
+    }
+  });
+  // Primer contacto: escribir a alguien que aún no nos ha escrito (conversación nueva, siempre por plantilla).
+  // Body: { telefono, nombre, plantilla, variables: [], motivo, sofiaResponde }. Si ya hay chat: 200 con `existente`.
+  admin.post('/panel/primer-contacto', async (req, res) => {
+    if (!setter?.iniciarConversacion) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = await setter.iniciarConversacion(req.body || {});
+      res.status(r.existente ? 200 : 201).json(r);
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] primer contacto:', e.message);
+      res.status(502).json({ error: `GHL no ha aceptado el envío: no ha salido nada (${String(e.message).slice(0, 300)}).` });
+    }
+  });
+  // Archivo para enviar a un lead (imagen, vídeo, audio o PDF en base64). Devuelve su id para «enviar» o «programar».
+  admin.post('/panel/conversaciones/:id/adjunto', async (req, res) => {
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    try { res.status(201).json(archivos.resumen(await archivos.subir(db, req.body || {}, { base: medios?.base }))); } catch (e) { errorUsuario(res, e); }
   });
   // La clase de prueba se anula o se cambia: se cancelan sus recordatorios
   admin.post('/panel/conversaciones/:id/prueba/cancelar', (req, res) => {
@@ -506,7 +597,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     estados: Object.keys(panel.ESTADOS),
   }));
 
-  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), canaveral: plazasCanaveral(repo) }));
+  admin.get('/panel/ajustes', (_req, res) => res.json({ ...leerAjustes(repo), palabraReinicio: config.palabraReinicio, canaveral: plazasCanaveral(repo), vozEstado: { clave: vozMod.hayClave(), vozPorDefecto: Boolean(config.voz.vozId), caracteresMes: vozMod.uso(db).caracteresMes } }));
   admin.put('/panel/ajustes', (req, res) => {
     try { res.json(guardarAjustes(repo, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
   });

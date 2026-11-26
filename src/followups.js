@@ -6,14 +6,18 @@ import { dentroDeHorario, siguienteApertura } from './horario.js';
 import { leerAjustes } from './ajustes.js';
 import * as reglas from './reglas.js';
 import * as recursosMod from './recursos.js';
+import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
+import { esNoLead, sqlEsLead } from './etiquetas.js';
 import { instruccionesTrasPrueba, RESULTADOS } from './clase-prueba.js';
+import { entraEnNivel, normasDeTono, NIVELES } from './intensidad.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 const QUIEN_DEPENDE_DE_SOFIA = ['silencio', 'largo-plazo'];
 
 /** Instrucciones para que Sofía decida y redacte un seguimiento. */
-export function contextoSeguimiento(regla) {
+export function contextoSeguimiento(regla, tono = []) {
   const fijo = regla.modo === 'fijo';
   const huecos = fijo && /\[[^\]]+\]/.test(regla.textoFijo);
   return [
@@ -31,6 +35,7 @@ export function contextoSeguimiento(regla) {
     fijo && !huecos ? `Si se envía, el mensaje es EXACTAMENTE este texto, sin cambiar nada: «${regla.textoFijo}».` : '',
     !fijo ? `Si se envía, escribe un único mensaje. Instrucciones: ${regla.instrucciones}` : '',
     !fijo ? `Estilo: ${knowledge.followups.estiloComun}` : '',
+    ...tono,
   ].filter(Boolean).join('\n');
 }
 
@@ -44,14 +49,14 @@ function reglaDelPendiente(db, s) {
 }
 
 /** Instrucciones completas para redactar un seguimiento programado (incluye el motivo si es de largo plazo). */
-export function contextoTarea(regla, s, { plantilla = false, ahora = new Date() } = {}) {
+export function contextoTarea(regla, s, { plantilla = false, ahora = new Date(), reglas: todas = [], nivel } = {}) {
   const c = json(s?.contexto);
   const futuro = s?.due_at && new Date(s.due_at) - ahora > 60000;
   const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
     futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
     'Las fechas y los días que salen en la conversación eran correctos cuando se dijeron (aunque ponga «hoy», «mañana» o «estamos a…»): no los corrijas ni te disculpes por ellos. Si alguno ya ha pasado, propón directamente el siguiente que encaje.',
-    contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla),
+    contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla, nivel ? normasDeTono(regla, todas, nivel) : []),
     regla.tipo === 'tras-cita' && s?.resultado ? `Resultado de la prueba (comprobado ahora): ${RESULTADOS[s.resultado] || s.resultado}.` : '',
     regla.tipo === 'largo-plazo' && c ? `Contexto: el lead lo dejó para más adelante (${c.motivo || 'sin motivo concreto'}); se programó para el ${c.fecha}.` : '',
     reglas.TIPOS_CITA.includes(regla.tipo) && c?.prueba ? `Su clase de prueba: ${c.prueba}.` : '',
@@ -93,7 +98,8 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
   let texto;
   if (regla.modo === 'fijo' && !regla.condicion && !/\[[^\]]+\]/.test(regla.textoFijo)) texto = regla.textoFijo; // sin huecos ni condición: no hace falta la IA
   else {
-    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now() }), { modelo: config.ai.modeloSeguimientos });
+    const tono = { reglas: reglas.listar(setter.catalogo), nivel: leerAjustes(repo).intensidadSeguimientos };
+    texto = await setter.redactar(conv.id, contextoTarea(regla, s, { plantilla, ahora: setter.now(), ...tono }), { modelo: config.ai.modeloSeguimientos });
     if (regla.modo === 'fijo') texto = texto.replace(/\s*\n+\s*/g, ' ').trim();
     if (regla.modo === 'fijo' && texto && !respetaPlantillaFija(regla.textoFijo, texto)) texto = ''; // ha cambiado el texto fijo: no sale
   }
@@ -103,10 +109,11 @@ export async function textoPrevisto(setter, s, { forzar = false } = {}) {
 }
 
 /** ¿Por qué no debe salir ahora? (null = puede salir) */
-function motivoParaNoEnviar(s, regla, conv, ajustes, ahora) {
+function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false, todas = []) {
   const deSofia = QUIEN_DEPENDE_DE_SOFIA.includes(s.tipo);
   const delEquipo = s.tipo === 'manual' || s.tipo === 'lanzamiento';
   if (s.tipo === 'manual') return null; // lo ha escrito una persona para este chat: sale siempre
+  if (noLead) return 'marcado como «no es un lead»'; // ni seguimientos ni lanzamientos
   // Lanzamientos: nunca a socios, a quien ya tiene el alta, a chats derivados ni a quien pidió no recibir mensajes
   if (s.tipo === 'lanzamiento') {
     if (conv.tipo === 'socio' || conv.alta_estado === 'preparada') return 'ya es cliente';
@@ -116,6 +123,7 @@ function motivoParaNoEnviar(s, regla, conv, ajustes, ahora) {
   }
   if (!ajustes.ia_activa || !ajustes.canales[conv.channel]) return 'Sofía desactivada desde el panel';
   if (!regla.activo) return 'seguimiento desactivado desde el panel';
+  if (deSofia && !entraEnNivel(regla, todas, ajustes.intensidadSeguimientos)) return `no entra en la intensidad «${NIVELES[ajustes.intensidadSeguimientos].nombre}»`;
   if ((deSofia || regla.excluir.pausada) && (conv.ai_paused || conv.derivado)) return 'IA pausada o derivada';
   if (deSofia && conv.alta_estado === 'pendiente') return 'alta pendiente';
   if (regla.excluir.clientes && (conv.tipo === 'socio' || conv.alta_estado === 'preparada')) return 'ya es cliente';
@@ -145,6 +153,12 @@ export async function procesarSeguimientos(setter) {
     const regla = reglaDelPendiente(setter.catalogo, s);
     let conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    // Aislamiento: a un chat que no es del número propio no se le escribe ni se toca nada suyo en GHL
+    if (setter.permitido && !setter.permitido(conv)) {
+      if (!(await setter.intentarAdoptar?.(conv.id))) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: chat no verificado para el número propio'); continue; }
+      if (!sigueEnMarcha.get(s.id)) continue; // al repasarlo en GHL, el lead había escrito o el equipo ya contestó
+      conv = repo.getConv(conv.id);
+    }
     // Antes de escribirle se repasa el chat en GHL: si el lead ha contestado (y GHL no avisó) o el equipo ya le
     // ha escrito, el seguimiento no debe salir encima. Mientras dura, el chat cuenta como «en curso».
     if (setter.ghl?.mensajes && !String(conv.id).startsWith('prueba-')) {
@@ -163,13 +177,14 @@ export async function procesarSeguimientos(setter) {
     if (s.tipo !== 'manual' && conv.tipo !== 'socio' && conv.telefono && !setter.esDePrueba?.(conv) && setter.aimharder?.buscarSocioPorTelefono) {
       const socio = await setter.safe(() => setter.aimharder.buscarSocioPorTelefono(conv.telefono));
       if (socio?.esSocio) {
-        repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: 'socio' });
+        repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: socio.exSocioReciente ? 'exsocio reciente' : 'socio' });
         repo.cancelScheduled(conv.id, 'ya es socio', { tipos: ['silencio', 'largo-plazo', 'etiqueta'] });
         repo.finishScheduled(s.id, 'omitido', 'ya es socio');
         continue;
       }
     }
-    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora);
+    const todas = reglas.listar(setter.catalogo);
+    const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id), todas);
     if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
     // Los mensajes a mano salen a su hora exacta; el resto, dentro del horario de Sofía
     if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
@@ -181,7 +196,30 @@ export async function procesarSeguimientos(setter) {
       continue;
     }
 
+    // Plantilla de WhatsApp elegida por el equipo: se envía directamente (vale pasadas las 24 h)
+    if (s.tipo === 'manual' && json(s.contexto)?.plantilla) {
+      try {
+        const c = json(s.contexto);
+        const no = setter.motivoNoPlantilla?.(conv);
+        if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
+        const env = plantillasWa.prepararEnvio(repo.db, c.plantilla, c.variables);
+        if (!sigueEnMarcha.get(s.id)) continue;
+        if (!setter.enviaDeVerdad(conv)) {
+          await setter.safe(() => setter.ghl.addNote(conv.contact_id, `[Borrador, no enviado] plantilla «${env.plantilla.nombre}»: ${env.texto}`));
+          repo.addMessage({ conversation_id: conv.id, autor: 'humano', texto: env.texto, tipo: 'plantilla', enviado: 0 });
+          repo.finishScheduled(s.id, 'enviado', 'borrador (modo prueba)');
+          continue;
+        }
+        const r = await setter.enviarPlantilla(conv, env);
+        repo.addMessage({ conversation_id: conv.id, external_id: r.messageId, autor: 'humano', texto: r.texto, ...r.medio });
+        repo.finishScheduled(s.id, 'enviado', `plantilla ${env.plantilla.nombre}`);
+      } catch (e) { repo.finishScheduled(s.id, 'error', e.message); }
+      continue;
+    }
+
     const plantilla = fueraDeVentana(conv, ahora);
+    // La plantilla la envía un workflow de GHL y ahí no se puede fijar el número emisor: con aislamiento no sale
+    if (plantilla && setter.plantillas && !setter.plantillas()) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: fuera de las 24 h solo se puede por plantilla, y no se puede fijar su número emisor'); continue; }
     if (plantilla && !(conv.channel === 'whatsapp' && regla.plantilla)) {
       repo.finishScheduled(s.id, 'omitido', conv.channel === 'instagram' ? 'Instagram no deja escribir fuera de plazo' : 'fuera de la ventana de 24 h y sin plantilla');
       continue;
@@ -199,17 +237,34 @@ export async function procesarSeguimientos(setter) {
       const previsto = resultado ? { ...s, texto_previsto: null, resultado }
         : s.texto_previsto != null && (s.tipo === 'manual' || s.tipo === 'lanzamiento' || fueraDeVentana(conv, s.due_at) === plantilla) ? s : { ...s, texto_previsto: null };
       const { texto } = await textoPrevisto(setter, previsto);
+      // Mensaje a mano con archivo: dentro de las 24 h sale el archivo (con el texto de pie); fuera, solo el texto por plantilla
+      const arch = s.tipo === 'manual' && json(s.contexto)?.archivo ? archivos.obtener(repo.db, json(s.contexto).archivo) : null;
+      if (s.tipo === 'manual' && json(s.contexto)?.archivo && !arch) { repo.finishScheduled(s.id, 'error', 'el archivo ya no está'); continue; }
+      if (arch && !plantilla) {
+        if (!sigueEnMarcha.get(s.id)) continue;
+        if (!setter.enviaDeVerdad(conv)) {
+          await setter.safe(() => setter.ghl.addNote(conv.contact_id, `[Borrador, no enviado] mensaje programado con el archivo «${arch.nombre}»${texto ? `: ${texto}` : ''}`));
+          repo.addMessage({ conversation_id: conv.id, autor: 'humano', texto: texto || `[${arch.tipo}: ${arch.nombre}]`, enviado: 0, adjunto: arch.tipo, media_ruta: arch.media_ruta, media_mime: arch.mime });
+          repo.finishScheduled(s.id, 'enviado', 'borrador (modo prueba)');
+          continue;
+        }
+        const r = await setter.enviarArchivo(conv, arch, texto);
+        repo.addMessage({ conversation_id: conv.id, external_id: r.messageId, autor: 'humano', texto: r.texto, ...r.medio });
+        repo.finishScheduled(s.id, 'enviado', `con ${arch.tipo}`);
+        continue;
+      }
+      if (arch && !texto) { repo.finishScheduled(s.id, 'omitido', 'fuera de las 24 h: WhatsApp no deja enviar archivos, solo texto por plantilla'); continue; }
       if (!texto) { repo.finishScheduled(s.id, 'omitido', 'la IA decidió no enviar'); continue; }
       // Mientras Sofía redactaba, el lead ha escrito o lo han cancelado o pausado: no sale
       if (!sigueEnMarcha.get(s.id)) continue;
       const fresco = repo.getConv(conv.id);
-      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now()) : 'el chat ya no existe';
+      const no2 = fresco ? motivoParaNoEnviar(s, regla, fresco, ajustes, setter.now(), esNoLead(repo.db, fresco.id), todas) : 'el chat ya no existe';
       if (no2) { repo.finishScheduled(s.id, 'omitido', no2); continue; }
       const burbujas = texto.split('\n').map((x) => x.trim()).filter(Boolean);
       // Si el lead escribe mientras Sofía «escribe» la primera burbuja, el seguimiento ya no sale
       const control = { get cancelado() { return !sigueEnMarcha.get(s.id); } };
       if ((await setter.enviar(conv, plantilla ? [burbujas.join(' ')] : burbujas, plantilla ? regla.plantillaWhatsapp || {} : null, control)) === null) continue;
-      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
+      repo.finishScheduled(s.id, 'enviado', [plantilla ? 'plantilla' : null, arch ? 'sin el archivo (fuera de las 24 h)' : null, setter.enviaDeVerdad(conv) ? null : 'borrador (modo prueba)'].filter(Boolean).join(' · ') || null);
       if (regla.recursoId && !plantilla) { const rec = recursosMod.obtener(setter.catalogo, regla.recursoId); if (rec?.activo) await setter.enviarRecursos(conv, [rec]); }
       if (regla.ponerEtiqueta) await setter.safe(() => setter.etiquetas?.poner(conv.id, regla.ponerEtiqueta, 'regla'));
     } catch (e) {
@@ -284,30 +339,63 @@ export function cancelarCita(repo, convId) {
   repo.updateConv(convId, { prueba_fecha: null, prueba_reservada: 0 });
 }
 
-/** Mensaje programado a mano desde el panel (texto tal cual; por plantilla si ya no hay ventana). */
-export function programarManual(repo, convId, texto, cuando, ahora = new Date()) {
+/**
+ * Comprueba un mensaje programado a mano: texto y/o archivo del equipo (archivos.js) y la hora. Un archivo solo puede
+ * salir dentro de las 24 h desde el último mensaje del lead (fuera de ellas solo hay plantilla, que es texto).
+ */
+function validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora) {
+  if (plantilla) { // plantilla de WhatsApp: el texto sale de la plantilla y vale aunque hayan pasado 24 h
+    if (conv.channel !== 'whatsapp') throw new Error('Las plantillas solo son de WhatsApp.');
+    const env = plantillasWa.prepararEnvio(repo.db, plantilla, variables);
+    const f = new Date(cuando);
+    if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
+    if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
+    if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
+    return { texto: env.texto, cuando: f, archivo: null, contexto: { plantilla: env.plantilla.id, variables: env.variables } };
+  }
   const t = String(texto || '').trim();
-  if (!t) throw new Error('Escribe el mensaje.');
+  const a = archivo ? archivos.obtener(repo.db, archivo) : null;
+  if (archivo && !a) throw new Error('Ese archivo ya no está: vuelve a adjuntarlo.');
+  if (!t && !a) throw new Error('Escribe el mensaje o adjunta un archivo.');
   if (t.length > 1000) throw new Error('El mensaje puede tener como mucho 1000 caracteres.');
   const f = new Date(cuando);
   if (Number.isNaN(f.getTime())) throw new Error('Fecha y hora no válidas.');
   if (f < ahora - 60000) throw new Error('Esa fecha ya ha pasado.');
   if (f - ahora > 2 * 365 * 864e5) throw new Error('Como mucho, dentro de 2 años.');
-  if (!repo.getConv(convId)) throw new Error('El chat no existe.');
-  return Number(repo.schedule(convId, 'manual', f.toISOString(), null, 'manual', t).lastInsertRowid);
+  if (a && conv.channel === 'whatsapp' && fueraDeVentana(conv, f)) throw new Error('A esa hora habrán pasado más de 24 h desde su último mensaje: WhatsApp solo deja enviar texto por plantilla, no archivos. Prográmalo antes o quita el archivo.');
+  return { texto: t, cuando: f, archivo: a, contexto: a ? { archivo: a.id } : null };
+}
+
+/** Mensaje programado a mano desde el panel (texto tal cual y/o un archivo; por plantilla si ya no hay ventana). */
+export function programarManual(repo, convId, texto, cuando, ahora = new Date(), { archivo = null, plantilla = null, variables = [] } = {}) {
+  const conv = repo.getConv(convId);
+  if (!conv) throw new Error('El chat no existe.');
+  const v = validarManual(repo, conv, { texto, cuando, archivo, plantilla, variables }, ahora);
+  return Number(repo.schedule(convId, 'manual', v.cuando.toISOString(), v.contexto, 'manual', v.texto).lastInsertRowid);
+}
+
+/** Cambia un mensaje programado a mano que aún no ha salido (texto, hora y archivo). Devuelve false si ya no se puede. */
+export function editarManual(repo, id, { texto, cuando, archivo = null, plantilla = null, variables = [] }, ahora = new Date()) {
+  const s = repo.db.prepare("SELECT * FROM scheduled WHERE id = ? AND tipo = 'manual'").get(Number(id));
+  if (!s) throw new Error('Ese mensaje programado no existe.');
+  if (s.estado !== 'pendiente') return false;
+  const v = validarManual(repo, repo.getConv(s.conversation_id), { texto, cuando, archivo, plantilla, variables }, ahora);
+  return repo.db.prepare("UPDATE scheduled SET texto_previsto = ?, due_at = ?, contexto = ?, previsto_msg = NULL WHERE id = ? AND estado = 'pendiente'")
+    .run(v.texto, v.cuando.toISOString(), v.contexto ? JSON.stringify(v.contexto) : null, s.id).changes > 0;
 }
 
 // ---------- Lanzamientos ----------
 
 const lista = (x) => (typeof x === 'string' ? JSON.parse(x) : x) || [];
 
-/** Chats que recibirían un lanzamiento (activos en los últimos N días, sin las etiquetas excluidas, sin socios). */
+/** Chats que recibirían un lanzamiento (activos en los últimos N días, sin las etiquetas excluidas, sin socios ni «no es un lead»). */
 export function destinatarios(db, { dias_actividad = 30, canales = ['whatsapp'], excluir_etiquetas = [], solo_etiquetas = [] }) {
   const can = lista(canales); const exc = lista(excluir_etiquetas).map(Number); const solo = lista(solo_etiquetas).map(Number);
   if (!can.length) return [];
   return db.prepare(`SELECT c.id, c.channel, c.nombre, c.last_inbound_at FROM conversations c
     WHERE c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio' AND c.derivado = 0
       AND IFNULL(c.alta_estado, '') != 'preparada' AND IFNULL(c.pause_reason, '') NOT LIKE 'el lead escribió%'
+      AND ${sqlEsLead('c.id')}
       AND c.channel IN (${can.map(() => '?').join(',')})
       AND datetime(c.last_inbound_at) >= datetime('now', ?)
       ${exc.length ? `AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id IN (${exc.map(() => '?').join(',')}))` : ''}
@@ -340,7 +428,7 @@ export async function procesarLanzamientos(setter) {
   const db = repo.db;
   const ahora = setter.now();
   for (const l of db.prepare("SELECT * FROM lanzamientos WHERE estado = 'programado' AND programado_at <= ?").all(ahora.toISOString())) {
-    const dest = destinatarios(db, l);
+    const dest = destinatarios(db, l).filter((c) => !setter.permitido || setter.permitido(repo.getConv(c.id)));
     db.transaction(() => {
       dest.forEach((c, i) => repo.schedule(c.id, `lanzamiento-${l.id}`, new Date(ahora.getTime() + i * ESPACIADO_MS).toISOString(), { lanzamiento: l.id }, 'lanzamiento', l.texto));
       db.prepare("UPDATE lanzamientos SET estado = 'enviando', total = ? WHERE id = ?").run(dest.length, l.id);

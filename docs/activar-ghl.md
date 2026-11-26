@@ -72,6 +72,8 @@ Dejarlo unos días en prueba y comparar las notas de Sofía con lo que contesta 
 - Antes de contestar, Sofía repasa la conversación en GHL: si alguien del equipo ya ha escrito (desde GHL o desde
   el móvil), se aparta de ese chat. Para pararla antes de escribir, etiqueta `parar ia`; para devolvérselo,
   `continuar ia`. Los mensajes de otros workflows de GHL no la apartan.
-- Desactivar Zapp (ScaleX) en el mismo número para que no contesten los dos.
+- **Hace falta un número de WhatsApp propio de Sofía, en una subcuenta solo suya** (sin tocar el número ni los
+  workflows que ya hay): ver [aislamiento-whatsapp.md](aislamiento-whatsapp.md). Sin ese aislamiento configurado,
+  con `MODE=live` el servicio no recibe ni envía nada.
 - `MODE=live` en `zapp.env` y `systemctl restart codex-zapp`.
 - Plantilla de WhatsApp fuera de las 24 h: ver `docs/seguimientos.md`.

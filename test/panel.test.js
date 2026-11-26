@@ -131,8 +131,10 @@ test('ajustes: se validan, se guardan y cambian el horario en memoria', async ()
 
 test('panel: embudo por sede pide la clave y valida el mes', async () => {
   const repo = crearRepo(openDb(':memory:'));
-  const ghl = { req: async () => ({ contacts: [{ tags: ['parla'] }] }) };
-  const srv = crearApp({ setter: {}, repo, embudoOpciones: { ghl, dir: '/no-existe' } }).listen(0);
+  repo.upsertConv({ id: 'e1', contact_id: 'ke1', channel: 'whatsapp', nombre: 'E', telefono: '+34600123123' });
+  repo.updateConv('e1', { sede: 'parla' });
+  repo.db.prepare("UPDATE conversations SET created_at = '2026-09-10 10:00:00' WHERE id = 'e1'").run();
+  const srv = crearApp({ setter: {}, repo, embudoOpciones: { dir: '/no-existe', socios: {} } }).listen(0);
   await new Promise((r) => srv.once('listening', r));
   const base = `http://127.0.0.1:${srv.address().port}/admin/panel/embudo`;
   const h = { headers: { authorization: 'Bearer clave-test' } };
@@ -173,5 +175,40 @@ test('panel: preguntas sin respuesta — listar, responder (con las iguales de o
     assert.deepEqual(filas, [{ conversation_id: 'c1', usar: 1, enviada: 'enviada al lead' }, { conversation_id: 'c2', usar: 0, enviada: 'enviada al lead' }]);
     await api(`/panel/preguntas/${otra}/descartar`, { method: 'POST', body: '{}' });
     assert.equal((await (await api('/panel/preguntas?estado=pendiente')).json()).preguntas.length, 0);
+  } finally { srv.close(); }
+});
+
+test('ajustes: los teléfonos de prueba se añaden y quitan desde el panel y el setter los ve sin reiniciar', async () => {
+  const { srv, api } = await servidor();
+  const { esTelefonoPrueba } = await import('../src/setter.js');
+  const guardar = (lista) => api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ telefonosPrueba: lista }) });
+  try {
+    const r = await (await guardar(['600 111 222', '+34 600-111-222', '0034611222333'])).json();
+    assert.deepEqual(r.telefonosPrueba, ['+34600111222', '+34611222333']); // limpios y sin repetidos
+    assert.ok(esTelefonoPrueba('+34600111222', config.telefonosPrueba));
+    assert.equal((await guardar(['hola'])).status, 400);
+    assert.equal((await guardar(['12345'])).status, 400);
+    const q = await (await guardar(['611222333'])).json();
+    assert.deepEqual(q.telefonosPrueba, ['+34611222333']);
+    assert.ok(!esTelefonoPrueba('+34600111222', config.telefonosPrueba));
+    // Guardar otros ajustes no toca la lista
+    await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ minDelay: 1, maxDelay: 2 }) });
+    assert.deepEqual((await (await api('/admin/panel/ajustes')).json()).telefonosPrueba, ['+34611222333']);
+  } finally { await guardar([]); srv.close(); }
+});
+
+test('panel: la intensidad de los seguimientos se ve y se cambia desde Seguimientos', async () => {
+  const { srv, api } = await servidor();
+  try {
+    let s = await (await api('/admin/panel/seguimientos')).json();
+    assert.equal(s.intensidad.nivel, 'normal');
+    assert.deepEqual(s.intensidad.niveles.map((n) => n.id), ['suave', 'normal', 'intensa']);
+    assert.ok(!s.intensidad.incluidas.includes('comercial-5h'));
+    const r = await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: 'intensa' }) });
+    assert.equal(r.status, 200);
+    s = await (await api('/admin/panel/seguimientos')).json();
+    assert.equal(s.intensidad.nivel, 'intensa');
+    assert.ok(s.intensidad.incluidas.includes('comercial-5h'));
+    assert.equal((await api('/admin/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: 'brutal' }) })).status, 400);
   } finally { srv.close(); }
 });

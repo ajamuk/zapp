@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import { openDb, repo as crearRepo } from '../src/db.js';
 import { Setter } from '../src/setter.js';
 import { procesarSeguimientos } from '../src/followups.js';
+import { MENSAJE_FUERA_HORARIO } from '../src/fuera-horario.js';
 
 const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
 function montar({ respuestas = [], live = true, socio = false, telefonosPrueba = [], mensajesGhl = null } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const sal = { enviados: [], notas: [], avisos: [], altas: [] };
   let reloj = new Date(T0);
   const cola = [...respuestas];
@@ -103,8 +105,8 @@ test('fuera de horario: el teléfono de prueba recibe respuesta al momento; un l
   lead.avanzar((19 * 60 + 54) * 60000);
   await lead.setter.handleWebhook(entrante('hola', 'w1'));
   lead.avanzar(60000); await lead.setter.tick();
-  assert.deepEqual(lead.sal.enviados, []);
+  assert.deepEqual(lead.sal.enviados, [MENSAJE_FUERA_HORARIO]); // de noche, solo el aviso automático
   assert.equal(lead.repo.getConv('c1').respond_at, '2026-11-18T07:00:00.000Z');
   lead.avanzar(5 * 60000); await lead.setter.tick(); // 8:00
-  assert.deepEqual(lead.sal.enviados, ['hola, soy Sofía']);
+  assert.deepEqual(lead.sal.enviados, [MENSAJE_FUERA_HORARIO, 'hola, soy Sofía']);
 });

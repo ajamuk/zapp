@@ -20,9 +20,9 @@ for (const f of fs.readdirSync(carpeta).sort()) {
   if (!mime || !recursos.esImagenInfo(nombre)) { console.log('omitido', f); continue; }
   const [, sede, fam, tipo] = nombre.match(/^(.+)-(academy|crossfit-hyrox)-(tarifas|horarios)$/);
   const descripcion = `Imagen de ${tipo} de ${SEDE[sede]} (${fam === 'academy' ? 'Academy' : 'CrossFit + HYROX'}). Se envía sola cuando Sofía da ${tipo === 'tarifas' ? 'los precios' : 'los horarios'} de esa sede.`;
-  const viejo = db.prepare('SELECT id FROM recursos WHERE nombre = ? COLLATE NOCASE').get(nombre);
+  const viejo = db.prepare('SELECT id, pie FROM recursos WHERE nombre = ? COLLATE NOCASE').get(nombre);
   if (viejo) recursos.borrar(db, viejo.id);
-  recursos.crear(db, { nombre, descripcion, datos: fs.readFileSync(path.join(carpeta, f)).toString('base64'), mime, archivo: f });
+  recursos.crear(db, { nombre, descripcion, pie: viejo?.pie || '', datos: fs.readFileSync(path.join(carpeta, f)).toString('base64'), mime, archivo: f });
   console.log(viejo ? 'sustituido' : 'nuevo', nombre); n++;
 }
 console.log(`${n} imágenes`);

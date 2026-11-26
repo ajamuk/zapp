@@ -53,6 +53,22 @@
   .hilo { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; min-height: 0; overflow: hidden; }
   .hilo .cab { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
   .hilo .msgs { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .hilo .centro { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .hilo .resp { border-top: 1px solid var(--line); padding: 10px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: end; }
+  .hilo .resp textarea { font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 7px 9px; resize: vertical; min-height: 42px; max-height: 200px; }
+  .hilo .resp p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+  .resp-bot { display: flex; gap: 6px; align-items: center; }
+  .resp-bot .icono { padding: 6px 9px; }
+  .resp-bot .grabando { color: var(--red); border-color: var(--red); }
+  .emoji-caja { position: relative; display: inline-block; }
+  .emoji-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30; display: grid; grid-template-columns: repeat(8, 34px); gap: 2px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 6px 20px #0003; }
+  #raiz .emoji-pop button { min-height: 0; border: 0; background: none; font-size: 20px; line-height: 1; padding: 6px 0; cursor: pointer; border-radius: 6px; }
+  #raiz .emoji-pop button:hover, #raiz .emoji-pop button:focus-visible { background: var(--panel2); }
+  .prog select, .prog input:not([type="datetime-local"]) { width: 100%; max-width: 100%; box-sizing: border-box; }
+  .prog .emoji-pop { right: auto; left: 0; }
+  .arch-chip { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-size: 12px; border: 1px solid var(--line); border-radius: 99px; padding: 2px 4px 2px 10px; background: var(--panel2); }
+  .arch-chip .x { border: 0; background: none; padding: 0 6px; cursor: pointer; }
+  .hilo .resp-no { border-top: 1px solid var(--line); padding: 8px 14px; margin: 0; font-size: 12px; color: var(--muted); }
   .burbuja { max-width: 75%; padding: 7px 11px; border-radius: 12px; white-space: pre-wrap; word-wrap: break-word; }
   .burbuja .meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
   .b-lead { align-self: flex-start; background: var(--panel2); }
@@ -162,6 +178,7 @@
   #raiz .activo-f { min-height: 30px; padding: 3px 10px; border-radius: 99px; font-size: 12px; background: #e4f1df; border-color: #b9d4af; }
   #raiz .activo-f.limpiar { background: transparent; }
   .ayuda { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .tel { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--panel2); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-right: 5px; vertical-align: middle; }
   /* Etiquetas */
   .etq { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, #fff); border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -268,6 +285,10 @@
   .grupo-seg { margin-top: 18px; }
   .grupo-seg h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 2px !important; }
   .regla.apagada { opacity: .6; }
+  .intensidad { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+  .intensidad label { flex: 1 1 200px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 8px 10px; cursor: pointer; }
+  .intensidad label:has(input:checked) { border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset; }
+  .intensidad .ayuda { display: block; margin-top: 2px; }
   .prog { display: grid; gap: 6px; margin-top: 6px; }
   .prog textarea { width: 100%; font: inherit; border: 1px solid #becdb8; border-radius: 7px; padding: 6px 8px; }
   .editor input[type="radio"] { accent-color: var(--green); width: 17px; height: 17px; }
@@ -416,6 +437,64 @@
   #avisos .toast { pointer-events: auto; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; background: #fff; color: var(--red); border: 1px solid #d9b8b8; border-left: 4px solid var(--red);
     border-radius: 8px; padding: 10px 12px; font: 14px/1.4 system-ui, sans-serif; box-shadow: 0 6px 24px #0003; }
   #avisos .toast button { all: unset; cursor: pointer; padding: 0 4px; color: var(--muted); font-size: 16px; line-height: 1.2; }
+
+  /* Chats compactos: lo que se usa (vistas, lista, conversación y caja de respuesta) cabe en la ventana sin bajar la página */
+  #main:has(.chats) > h2 { display: none; }
+  #main:has(.chats) .vistas { padding: 0; margin: 0 0 6px; gap: 4px; }
+  #raiz #main:has(.chats) .vistas button { min-height: 30px; padding: 3px 7px; font-size: 12px; }
+  #main:has(.chats) .vistas .n { min-width: 0; padding: 0 5px; font-size: 11px; }
+  .panel-filtros { margin-bottom: 6px; } .activos { margin-bottom: 6px; } .activos:empty { display: none; }
+  .col-lista { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+  #raiz .col-lista .barra-filtros { flex: none; flex-wrap: nowrap; gap: 4px; margin: 0; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+  #raiz .col-lista .barra-filtros > * { min-height: 30px; padding: 3px 8px; font-size: 12.5px; }
+  #raiz .col-lista .barra-filtros input { flex: 1 1 0; min-width: 0; }
+  #raiz .col-lista .barra-filtros select { flex: none; width: 66px; padding-inline: 4px; }
+  .col-lista .lista { flex: 1; min-height: 0; border: 0; border-radius: 0; }
+  #raiz .item { padding: 7px 12px; min-height: 0; }
+  .item .fila { align-items: baseline; } .item .fila .chip { border: 0; padding: 0; }
+  .item .ult { margin: 1px 0 4px; font-size: 12.5px; }
+  .item .chips { flex-wrap: nowrap; overflow: hidden; gap: 3px; -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  .item .chips > * { flex: none; font-size: 10.5px; padding: 1px 6px; }
+  .chats { gap: 10px; }
+  .hilo .cab { padding: 6px 12px; gap: 6px 10px; flex-wrap: nowrap; align-items: flex-start; }
+  .hilo .cab .quien { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; flex: 1; min-height: 32px; }
+  .hilo .cab .quien b { font-size: 15px; margin-right: 2px; }
+  .hilo .cab .motivo-pausa { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+  .hilo .cab .acciones-f { flex: none; flex-wrap: nowrap; gap: 6px; }
+  #raiz .hilo .cab button { min-height: 32px; padding: 4px 10px; font-size: 13px; white-space: nowrap; }
+  .hilo .etq-hilo { padding: 4px 12px; gap: 4px; }
+  #raiz .hilo .etq-hilo select { min-height: 26px; padding: 1px 6px; font-size: 12.5px; }
+  #raiz .hilo .etq-hilo button.x { min-height: 24px; min-width: 22px; }
+  .hilo .msgs { padding: 10px 12px; gap: 4px; }
+  .burbuja { padding: 5px 10px; } .burbuja .meta { margin-top: 1px; font-size: 10.5px; }
+  .dia-sep { margin: 4px 0 1px; }
+  .hilo .resp { padding: 6px 12px; }
+  .hilo .resp textarea { min-height: 36px; padding: 6px 9px; resize: none; }
+  #raiz .hilo .resp button { min-height: 36px; padding: 4px 14px; }
+  .hilo .resp p:empty { display: none; }
+  .hilo .pie { padding: 8px 12px; } .pie-b { margin-bottom: 10px; }
+  @media (min-width: 1041px) {
+    .sofia { padding-top: 10px; padding-bottom: 8px; }
+    .sofia-cabecera { margin-bottom: 6px; } .sofia-cabecera h1 { font-size: 20px; }
+    #raiz #bsalir { min-height: 30px; padding: 2px 10px; font-size: 13px; }
+    .secciones { margin-bottom: 8px; gap: 4px; } .secciones a { min-height: 34px; padding: 5px 9px; font-size: 13.5px; }
+    .hilo:has(.pie) > .pie { padding: 10px 12px; }
+  }
+  @media (max-width: 1040px) {
+    .chats.con-hilo .col-lista { display: none; }
+    .col-lista { overflow: visible; }
+    /* Con un chat abierto, la conversación ocupa la pantalla: fuera cabecera y menú (se vuelve con «← Chats») */
+    .sofia:has(.chats.con-hilo) { padding-top: 8px; padding-bottom: 8px; }
+    .sofia:has(.chats.con-hilo) :is(.sofia-cabecera, .secciones) { display: none; }
+    .hilo { scroll-margin-top: 8px; }
+    .hilo .centro { flex: none; height: var(--alto-centro, calc(100dvh - 150px)); }
+    .hilo .msgs { flex: 1 1 auto; height: auto; min-height: 0; }
+    .hilo .cab { flex-wrap: wrap; }
+    .hilo .cab .quien { flex: 1 1 100%; }
+    .hilo .cab .acciones-f { width: 100%; } .hilo .cab .acciones-f button { flex: 1; }
+    #raiz .hilo .cab button { min-height: 34px; }
+    #raiz .hilo .cab .volver { flex: none; }
+  }
 </style>
 </head>
 <body>
@@ -444,7 +523,7 @@ if (integrado) {
 }
 let token = '';
 if (!integrado) try { token = localStorage.getItem('sofia_panel') || ''; } catch {}
-const estado = { seccion: location.hash.slice(1).split('/')[0] || 'resumen', filtro: 'todos', q: '', conv: null, dias: 1, info: null, prueba: { sesion: 'panel-' + Math.random().toString(36).slice(2, 7), mensajes: [] } };
+const estado = { seccion: location.hash.slice(1).split('/')[0] || 'chats', filtro: 'todos', q: '', conv: null, dias: 1, info: null, prueba: { sesion: 'panel-' + Math.random().toString(36).slice(2, 7), mensajes: [] } };
 
 // Peticiones en marcha: mientras haya alguna que tarde, se ve la barra de carga
 let enVuelo = 0;
@@ -524,19 +603,19 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['plantillas', 'Plantillas'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
 
 const hoyMes = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
 const PRIMERA = {
   resumen: () => [`/panel/resumen?dias=${estado.dias}`, '/panel/alertas'], embudo: () => [`/panel/embudo?mes=${estado.mes || hoyMes()}`],
   estadisticas: () => ['/panel/estadisticas?dias=30&sede=&canal=', '/panel/consumo?meses=6'], chats: () => ['/panel/vistas', '/panel/opciones'],
   etiquetas: () => ['/panel/etiquetas', '/panel/meta'], altas: () => ['/panel/altas'], preguntas: () => ['/panel/preguntas'], seguimientos: () => ['/panel/seguimientos'],
-  recursos: () => ['/panel/recursos'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
+  recursos: () => ['/panel/recursos'], plantillas: () => ['/panel/plantillas'], probar: () => ['/probar/conversaciones', '/panel/opciones'], ajustes: () => ['/panel/ajustes'],
 };
-/** Sección y chat (si lo hay) que dice la dirección. Una sección que no existe lleva a Resumen. */
+/** Sección y chat (si lo hay) que dice la dirección. Sin sección, el panel abre en Chats; una que no existe lleva a Resumen. */
 function leerHash() {
   const [id, sub] = location.hash.slice(1).split('/');
-  const seccion = SECCIONES.some(([x]) => x === id) ? id : 'resumen';
+  const seccion = SECCIONES.some(([x]) => x === id) ? id : id ? 'resumen' : 'chats';
   let chat = null; if (seccion === 'chats' && sub) { try { chat = decodeURIComponent(sub); } catch { chat = sub; } }
   return { seccion, sub, chat };
 }
@@ -604,7 +683,7 @@ window.addEventListener('hashchange', () => {
   }
   if (id !== 'etiquetas') estado.editEtq = null;
   if (id !== 'seguimientos') { estado.editRegla = null; estado.nuevoLanz = false; }
-  estado.seccion = id || 'resumen';
+  estado.seccion = id || 'chats';
   window.scrollTo(0, 0);
   pintar();
 });
@@ -616,7 +695,7 @@ async function pintar() {
     else a.removeAttribute('aria-current');
   });
   try {
-    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, probar, reportes, ajustes })[seccion] || resumen)();
+    await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, plantillas, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
     if (estado.info && estado.seccion === seccion) {
       $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
@@ -659,10 +738,11 @@ async function resumen({ silencioso = false } = {}) {
       ${tarjeta(r.ahora.derivadas, 'Derivadas al equipo', 'violet')}
       ${tarjeta(r.ahora.pausadas, 'Con Sofía en pausa', 'amber')}
       ${tarjeta(r.ahora.altas_pendientes, 'Altas pendientes', 'amber')}
-      ${tarjeta(r.ahora.pruebas, 'Solicitudes de prueba en Parla')}
+      ${tarjeta(r.ahora.pruebas, 'Clases de prueba por hacer en Parla')}
     </div>
     ${r.serie.length > 1 ? `<h3>Mensajes por día <span class="chip">lead</span> <span class="chip verde">Sofía</span></h3><div class="barras">${r.serie.map((x) => `<div title="${x.dia}: ${x.lead || 0} lead · ${x.ia || 0} Sofía">
       <i style="height:${(x.ia || 0) / max * 70}px;background:var(--green)"></i><i style="height:${(x.lead || 0) / max * 70}px;background:var(--muted)"></i></div>`).join('')}</div>` : ''}
+    ${r.conversaciones.no_leads ? `<p class="nota">No se cuentan <b>${r.conversaciones.no_leads}</b> chat${r.conversaciones.no_leads === 1 ? '' : 's'} de este periodo marcado${r.conversaciones.no_leads === 1 ? '' : 's'} como «no es un lead».</p>` : ''}
     <h3>Fase de los leads <span class="ayuda">con actividad en el periodo</span></h3>
     ${r.embudo.length ? `<table><tr><th>Fase</th><th>Leads</th></tr>${r.embudo.map((e) => `<tr><td>${esc(e.fase)}</td><td>${e.n}</td></tr>`).join('')}</table>` : '<div class="vacio">Sin datos todavía</div>'}
     <h3>IA</h3>
@@ -693,14 +773,18 @@ async function embudo() {
   const pedido = estado.mes;
   const r = await api('/panel/embudo?mes=' + pedido);
   if (estado.seccion !== 'embudo' || estado.mes !== pedido || !$('#emb')) return;
-  const tot = PASOS.map(([k]) => r.sedes.reduce((s, x) => s + (x[k] || 0), 0));
-  const tarjetaSede = (titulo, valores) => {
+  // Cada sede trae sus pasos (Parla con clase de prueba; Getafe y Las Rosas, de lead a primer pago)
+  const suma = (k) => (r.sedes.some((x) => x[k] != null) ? r.sedes.reduce((s, x) => s + (x[k] || 0), 0) : null);
+  const tarjetaSede = (titulo, claves, datos) => {
+    const pasos = PASOS.filter(([k]) => claves.includes(k)); const valores = pasos.map(([k]) => datos[k]);
     const base = Math.max(1, valores[0] || 0, ...valores.map((v) => v || 0));
-    return `<div class="embudo"><h3>${esc(titulo)} <span class="chip verde">${pct(valores[3] || 0, valores[0] || 0)} conversión</span></h3>
-      ${PASOS.map(([, et, color], i) => {
+    return `<div class="embudo"><h3>${esc(titulo)} <span class="chip verde">${pct(valores.at(-1) || 0, valores[0] || 0)} conversión</span></h3>
+      ${pasos.map(([k, et, color], i) => {
         const v = valores[i];
+        // El primer pago cuenta todas las altas del mes (con o sin prueba): su tasa es sobre los leads, no sobre el paso anterior
+        const tasa = k === 'pagan' && i > 1 ? `${pct(v || 0, valores[0] || 0)} de los leads` : pct(v || 0, valores[i - 1] || 0);
         const ancho = v ? Math.max(14, (v / base) * 100) : 0;
-        return `${i ? `<div class="paso"><div class="tasa">↓ ${pct(v || 0, valores[i - 1] || 0)}</div></div>` : ''}
+        return `${i ? `<div class="paso"><div class="tasa">↓ ${tasa}</div></div>` : ''}
         <div class="paso"><div class="et">${et}</div><div class="pista">
           <div class="barra ${v ? '' : 'cero'}" style="width:${v ? ancho + '%' : '42px'};background:${color}" title="${et}: ${v ?? 'sin datos'}">${v ?? '–'}</div></div></div>`;
       }).join('')}</div>`;
@@ -718,13 +802,13 @@ async function embudo() {
   $('#emb').outerHTML = `
     ${r.avisos.map((a) => `<div class="aviso">${esc(a)}</div>`).join('')}
     <div class="embudos">
-      ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, PASOS.map(([k]) => x[k]))).join('')}
-      ${tarjetaSede('Total 3 sedes', tot)}
+      ${r.sedes.map((x) => tarjetaSede(SEDES[x.sede] || x.sede, x.pasos || PASOS.map(([k]) => k), x)).join('')}
+      ${tarjetaSede('Total 3 sedes', ['leads', 'pagan'], { leads: suma('leads'), pagan: suma('pagan') })}
       ${r.canaveral ? tarjetaCanaveral(r.canaveral) : ''}
     </div>
-    <p class="nota">Leads nuevos: contactos creados en GHL este mes con etiqueta de sede, o con la sede en su origen (sin contar socios)${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más no tienen sede asignada` : ''}.
-    Reservas, asistencias y primer pago: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.
-    Primer pago = alta pagada después de la clase de prueba.</p>`;
+    <p class="nota">Leads nuevos: chats que Sofía ha abierto este mes, por la sede anotada en el chat (sin contar socios, números de prueba${r.no_leads ? ` ni <b>${r.no_leads}</b> marcado${r.no_leads === 1 ? '' : 's'} como «no es un lead»` : ''})${r.sin_sede ? ` · <b>${r.sin_sede}</b> leads más aún no tienen sede` : ''}.
+    Primer pago = alta: socios cuyo primer pago de toda su historia es de este mes, hayan hecho o no clase de prueba (registro de socios de cada sede${r.altas_actualizadas ? `, datos del ${new Date(r.altas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}).
+    Reservas y asistencias de Parla: pruebas del mes en AimHarder${r.pruebas_actualizadas ? `, datos del ${new Date(r.pruebas_actualizadas).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })}` : ''}.</p>`;
 }
 
 
@@ -756,8 +840,8 @@ const chipsConv = (c) => [
 const medioHtml = (m, ruta) => {
   if (!m.adjunto || !(m.tiene_medio || m.media_ruta)) return m.adjunto && m.media_error ? `<div class="ayuda">No se pudo descargar el ${esc(m.adjunto)} (${esc(m.media_error)})</div>` : '';
   const src = `${ruta}/media/${m.id}`;
-  if (m.adjunto === 'imagen') return `<img class="medio-img" alt="Imagen enviada por el lead" data-media="${esc(src)}">`;
-  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
+  if (m.adjunto === 'imagen') return `<img class="medio-img" alt="${m.autor === 'lead' ? 'Imagen enviada por el lead' : 'Imagen enviada al lead'}" data-media="${esc(src)}">`;
+  if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : m.autor === 'ia' ? '<div class="ayuda">Nota de voz de Sofía (debajo, lo que dice)</div>' : m.autor === 'humano' ? '<div class="ayuda">Audio del equipo</div>' : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
   return `<a href="#" data-media-desc="${esc(src)}">Descargar ${esc(m.adjunto)}</a>`;
 };
 const textoSinMarcador = (m) => (m.adjunto && /^\[(audio|imagen|video|documento|adjunto)\]$/.test(m.texto || '') ? '' : m.texto);
@@ -790,7 +874,7 @@ async function prepararTextos(items, pedir, pintar) {
 }
 
 // ---------- Chats: vistas y filtros ----------
-const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)' };
+const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)', no_leads: 'No son leads' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
 const vacios = (c) => !Object.keys(c || {}).filter((k) => k !== 'modo').length;
 const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía', ghl: 'desde GHL' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
@@ -823,25 +907,21 @@ async function chats() {
   const [vistas, opciones] = await Promise.all([api('/panel/vistas'), cargarOpciones()]);
   if (estado.seccion !== 'chats') return;
   estado.vistas = vistas;
-  if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = 'todos'; estado.crit = {}; }
+  if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = vistas.some((v) => v.id === 'leads') ? 'leads' : 'todos'; estado.crit = null; }
   estado.crit ??= { ...(vistas.find((v) => String(v.id) === String(estado.vista))?.criterios || {}) };
-  $('#main').innerHTML = `<h2>Chats</h2>
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Chats</h2><button id="bnuevochat" class="primario" title="Escribir por WhatsApp a alguien que aún no nos ha escrito">+ Nuevo chat</button></div>
     <div class="vistas" role="tablist" aria-label="Vistas de chats">${vistas.map((v) => `<button role="tab" data-v="${esc(v.id)}" aria-selected="${String(v.id) === String(estado.vista)}" class="${String(v.id) === String(estado.vista) ? 'activo' : ''} ${v.propia ? 'propia' : ''}" title="${v.propia ? 'Vista creada por vosotros' : 'Vista del sistema'}">${v.propia ? '★ ' : ''}${esc(v.nombre)} <span class="n">${v.total}</span></button>`).join('')}
       <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
-    <div class="barra-filtros">
-      <input id="q" type="search" aria-label="Buscar chat o mensaje" placeholder="Buscar nombre, teléfono o mensaje" value="${esc(estado.q)}">
-      <select id="bexp" aria-label="Exportar a CSV"><option value="">Exportar…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select>
-      <button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button>
-    </div>
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
     <div id="activos" class="activos"></div>
-    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="lista" id="lista"><div class="vacio">Cargando…</div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
+    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="col-lista"><div class="barra-filtros"><input id="q" type="search" aria-label="Buscar chat o mensaje" title="Buscar por nombre, teléfono o mensaje" placeholder="Buscar…" value="${esc(estado.q)}"><button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button><select id="bexp" aria-label="Exportar a CSV" title="Exportar a CSV"><option value="">CSV…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select></div><div class="lista" id="lista"><div class="vacio">Cargando…</div></div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
   // Cambiar de vista solo vuelve a pedir la lista (una consulta, no tres) y los contadores se ponen al día aparte
   $('#main').querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
     estado.vista = b.dataset.v; estado.crit = { ...(estado.vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.limite = 100;
     $('#main').querySelectorAll('[data-v]').forEach((x) => { const on = x === b; x.classList.toggle('activo', on); x.setAttribute('aria-selected', on); });
     cerrarHilo(); pintarFiltros(); lista(); refrescarVistas();
   });
+  $('#bnuevochat').onclick = () => nuevoChat();
   $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; cerrarHilo(); chats(); };
   $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); ajustarAltoChats(); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; estado.limite = 100; lista(); }, 300); };
@@ -849,6 +929,58 @@ async function chats() {
   $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
   await lista();
   if (estado.seccion === 'chats' && estado.conv) await abrir(estado.conv);
+}
+
+// ---------- Nuevo chat (primer contacto) ----------
+// Escribir a alguien que aún no nos ha escrito. WhatsApp solo deja abrir la conversación con una plantilla aprobada.
+async function nuevoChat() {
+  const { plantillas } = await api('/panel/plantillas');
+  if (estado.seccion !== 'chats') return;
+  const lista = plantillas.filter((x) => x.activa);
+  const v = (estado.nuevoChat ??= { telefono: '', nombre: '', plantilla: '', variables: [], motivo: '', sofiaResponde: true });
+  const m = $('#main');
+  const t = lista.find((x) => x.id === Number(v.plantilla));
+  const prev = () => (t ? `«${t.cuerpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (x, n) => v.variables[n - 1] || x)}»` : '');
+  m.innerHTML = `<div class="cab-seccion"><h2>Nuevo chat</h2><button id="ncvol">Volver</button></div>
+    <p class="intro">Escribe por WhatsApp, desde el número de Sofía, a alguien que aún no os ha escrito. El primer mensaje sale por una plantilla aprobada por Meta (WhatsApp no deja abrir una conversación con texto libre, y Meta cobra cada plantilla). Cuando responda, el chat sigue como cualquier otro.</p>
+    <form id="ncform" class="editor">
+      <section><h3>A quién</h3>
+        <div class="fila-f"><label>Móvil <input id="nctel" type="tel" inputmode="tel" autocomplete="off" placeholder="600 111 222 o +351…" value="${esc(v.telefono)}" required></label>
+          <label>Nombre <input id="ncnom" maxlength="60" placeholder="Ej: Laura" value="${esc(v.nombre)}" required></label></div></section>
+      <section><h3>Primer mensaje</h3>
+        ${lista.length ? `<label>Plantilla <select id="ncsel" required><option value="">Elige una…</option>${lista.map((x) => `<option value="${x.id}" ${x.id === Number(v.plantilla) ? 'selected' : ''}>${esc(x.nombre)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ''}</option>`).join('')}</select></label>
+        ${t ? `${Array.from({ length: t.variables }, (_, i) => `<label>Variable {{${i + 1}}} <input data-ncvar="${i}" value="${esc(v.variables[i] || '')}" maxlength="300" required></label>`).join('')}<p class="aviso-mini" id="ncprev">${esc(prev())}</p>` : ''}`
+          : '<div class="vacio">No hay plantillas activas. Dalas de alta en la pestaña Plantillas copiándolas de GHL.</div>'}</section>
+      <section><h3>Para Sofía</h3>
+        <label>Por qué le escribimos <textarea id="ncmot" rows="3" maxlength="600" placeholder="Ej: vino a una clase de prueba en Parla en 2025 y no llegó a apuntarse; ofrecerle volver a probar" required>${esc(v.motivo)}</textarea></label>
+        <label class="check"><input type="checkbox" id="ncsof" ${v.sofiaResponde ? 'checked' : ''}> Sofía contesta cuando responda <span class="ayuda">(si no, el chat queda en pausa para el equipo)</span></label></section>
+      <p class="error" id="ncerr" role="alert"></p>
+      <div class="acciones-f"><button class="primario" id="ncenv" ${lista.length ? '' : 'disabled'}>Enviar</button><button type="button" id="nccan">Cancelar</button></div>
+    </form>`;
+  const salir = (conv = null) => { estado.nuevoChat = null; if (conv) estado.conv = conv; chats(); };
+  $('#ncvol').onclick = () => salir(); $('#nccan').onclick = () => salir();
+  $('#nctel').oninput = (e) => { v.telefono = e.target.value; };
+  $('#ncnom').oninput = (e) => { v.nombre = e.target.value; };
+  $('#ncmot').oninput = (e) => { v.motivo = e.target.value; };
+  $('#ncsof').onchange = (e) => { v.sofiaResponde = e.target.checked; };
+  $('#ncsel') && ($('#ncsel').onchange = (e) => { v.plantilla = e.target.value; v.variables = []; nuevoChat(); });
+  m.querySelectorAll('[data-ncvar]').forEach((inp) => inp.oninput = () => { v.variables[Number(inp.dataset.ncvar)] = inp.value; $('#ncprev').textContent = prev(); });
+  $('#ncform').onsubmit = async (e) => {
+    e.preventDefault();
+    const b = $('#ncenv');
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Enviar ya? No se puede borrar'; return; }
+    b.disabled = true; b.textContent = 'Enviando…'; $('#ncerr').textContent = '';
+    try {
+      const r = await api('/panel/primer-contacto', { method: 'POST', body: JSON.stringify(v) });
+      if (r.existente) {
+        $('#ncerr').innerHTML = `Ya hay un chat con ese número${r.nombre ? ` (${esc(r.nombre)})` : ''}: no se ha enviado nada. <button type="button" class="mini" id="ncabrir">Abrir ese chat</button> (desde ahí puedes mandarle una plantilla).`;
+        $('#ncabrir').onclick = () => salir(r.existente);
+        b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar';
+        return;
+      }
+      salir(r.id);
+    } catch (err) { $('#ncerr').textContent = err.message; b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar'; }
+  };
 }
 
 function pintarFiltros() {
@@ -918,7 +1050,7 @@ function pintarFiltros() {
   });
   // Filtros activos como chips quitables
   const act = resumenCriterios(c, estado.opciones);
-  $('#activos').innerHTML = act.length ? act.map(([k, v, t]) => `<button type="button" class="activo-f" data-qk="${k}" data-qv="${esc(v)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ✕</button>`).join('') + (act.length > 1 ? '<button type="button" class="activo-f limpiar" id="qall">Quitar todos</button>' : '') : '';
+  $('#activos').innerHTML = act.length && cambiado ? act.map(([k, v, t]) => `<button type="button" class="activo-f" data-qk="${k}" data-qv="${esc(v)}" aria-label="Quitar filtro ${esc(t)}">${esc(t)} ✕</button>`).join('') + (act.length > 1 ? '<button type="button" class="activo-f limpiar" id="qall">Quitar todos</button>' : '') : '';
   $('#activos').querySelectorAll('[data-qk]').forEach((b) => b.onclick = () => {
     const k = b.dataset.qk; let v = b.dataset.qv; if (['etiquetas', 'sin_etiquetas'].includes(k)) v = Number(v);
     aplicar(quitarCriterio(c, k, v));
@@ -930,31 +1062,46 @@ function pintarFiltros() {
 
 const normalizar = (c) => Object.fromEntries(Object.entries(c || {}).filter(([k, v]) => (Array.isArray(v) ? v.length : v) && !(k === 'modo' && (c.etiquetas || []).length < 2)).map(([k, v]) => [k, Array.isArray(v) ? [...v].map(String).sort() : v]).sort());
 
-// Chats al día sin recargar la página: cada 30 s con la pestaña a la vista (y al volver a ella). La lista se
-// repinta sola; el chat abierto solo si ha cambiado y no estás escribiendo, reportando ni oyendo un audio en él.
-let refrescando = false;
-async function refrescarChats() {
-  if (refrescando || document.hidden || estado.seccion !== 'chats' || !estado.info || !$('#lista') || $('#q') === document.activeElement) return;
-  refrescando = true;
+// Chats al día sin recargar la página, con la pestaña a la vista (y al volver a ella): el chat abierto cada 5 s y
+// la lista cada 15 s. El chat solo se repinta si ha cambiado, y nunca mientras tecleas, reportas, programas un
+// mensaje u oyes un audio en él (lo que estés escribiendo al lead se conserva).
+let refrescandoHilo = false, refrescandoLista = false;
+async function refrescarHilo() {
+  const id = estado.conv; const hilo = $('#hilo');
+  if (refrescandoHilo || document.hidden || estado.seccion !== 'chats' || !id || !$('#msgs')) return;
+  const ocupado = () => hilo.querySelector('form:not(#fresp)') || hilo.querySelector('.emoji-pop') || Date.now() - (estado.tecleo || 0) < 4000 || $('#benv')?.disabled
+    || (hilo.contains(document.activeElement) && document.activeElement.matches('select, input, textarea:not(#rtxt)'))
+    || [...hilo.querySelectorAll('audio, video')].some((a) => !a.paused);
+  if (ocupado()) return;
+  refrescandoHilo = true;
   try {
-    await Promise.all([lista(), refrescarVistas()]);
-    const id = estado.conv; const hilo = $('#hilo');
-    if (!id || !$('#msgs') || hilo.querySelector('form') || hilo.contains(document.activeElement) || [...hilo.querySelectorAll('audio, video')].some((a) => !a.paused)) return;
     const d = await api('/panel/conversaciones/' + encodeURIComponent(id));
-    if (estado.conv === id && firmaHilo(d) !== estado.firmaHilo && !hilo.querySelector('form')) await abrir(id, { datos: d, mantener: true });
-  } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescando = false; }
+    if (estado.conv === id && $('#msgs') && firmaHilo(d) !== estado.firmaHilo && !ocupado()) await abrir(id, { datos: d, mantener: true });
+  } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescandoHilo = false; }
 }
-setInterval(refrescarChats, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refrescarChats(); });
+async function refrescarChats() {
+  if (refrescandoLista || document.hidden || estado.seccion !== 'chats' || !estado.info || !$('#lista')) return;
+  refrescandoLista = true;
+  try { await Promise.all([lista(), refrescarVistas()]); } catch { /* se reintenta en la siguiente vuelta */ } finally { refrescandoLista = false; }
+}
+setInterval(refrescarHilo, 5000);
+setInterval(refrescarChats, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refrescarChats(); refrescarHilo(); } });
 
 /** En escritorio, la zona de chats ocupa lo que queda de ventana (cambia al abrir los filtros o cambiar el tamaño). */
 function ajustarAltoChats() {
   const ch = $('#ch'); if (!ch) return;
-  if (matchMedia('(max-width: 1040px)').matches) { ch.style.removeProperty('--alto-chats'); return; }
+  if (matchMedia('(max-width: 1040px)').matches) {
+    ch.style.removeProperty('--alto-chats');
+    // Móvil: mensajes y caja de respuesta caben en la pantalla; la ficha del lead queda debajo
+    const hilo = $('#hilo'), centro = hilo?.querySelector('.centro');
+    if (centro) hilo.style.setProperty('--alto-centro', `${Math.max(260, window.innerHeight - (estado.topHilo || 0) - (centro.getBoundingClientRect().top - hilo.getBoundingClientRect().top) - 8)}px`);
+    return;
+  }
   const arriba = ch.getBoundingClientRect().top + window.scrollY;
   // Si la ventana es baja (portátil pequeño), la zona ocupa la ventana entera: se baja la página una vez y cabe todo
-  const libre = window.innerHeight - arriba - 21;
-  ch.style.setProperty('--alto-chats', `${libre >= 480 ? libre : Math.max(420, window.innerHeight - 32)}px`);
+  const libre = window.innerHeight - arriba - 9;
+  ch.style.setProperty('--alto-chats', `${libre >= 400 ? libre : Math.max(400, window.innerHeight - 20)}px`);
 }
 window.addEventListener('resize', ajustarAltoChats);
 
@@ -997,12 +1144,75 @@ async function lista() {
 }
 
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
-const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado])]);
+const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
+
+// Archivos para el lead (imagen, vídeo, audio, PDF): se suben al elegirlos y se envían o programan con su id
+// Emoticonos para el cuadro de escribir: se insertan donde está el cursor (también vale el selector del sistema: Win + . / Ctrl + Cmd + Espacio)
+const EMOJIS = '😊 😄 😃 🙂 😉 😍 🥰 😘 😅 😂 🤣 😎 🤗 🤔 😢 🙏 👍 👌 👏 🙌 👋 🤝 ✌️ 💪 🔥 ⭐ ✨ 🎉 🥳 💯 ✅ ❌ ❤️ 💙 💚 🏋️‍♀️ 🏋️‍♂️ 🤸‍♀️ 🏃‍♀️ 🏃‍♂️ 🥇 ⏰ 📅 📍 📞 📲 💬 🚀 ☀️'.split(' ');
+const botonEmoji = (para) => `<span class="emoji-caja"><button type="button" class="icono mini" data-emoji-para="${para}" title="Emoticonos" aria-label="Insertar emoticono" aria-haspopup="true" aria-expanded="false">😊</button></span>`;
+const cerrarEmojis = () => { document.querySelectorAll('.emoji-pop').forEach((x) => x.remove()); document.querySelectorAll('[data-emoji-para]').forEach((x) => x.setAttribute('aria-expanded', 'false')); };
+function enlazarEmojis(raiz) {
+  raiz.querySelectorAll('[data-emoji-para]').forEach((b) => b.onclick = () => {
+    const caja = b.parentElement; const abierto = caja.querySelector('.emoji-pop');
+    cerrarEmojis(); if (abierto) return;
+    const pop = Object.assign(document.createElement('div'), { className: 'emoji-pop' });
+    pop.setAttribute('role', 'group'); pop.setAttribute('aria-label', 'Emoticonos');
+    pop.innerHTML = EMOJIS.map((x) => `<button type="button" aria-label="${x}">${x}</button>`).join('');
+    pop.onclick = (ev) => {
+      const x = ev.target.closest('button'); const t = document.getElementById(b.dataset.emojiPara);
+      if (!x || !t || t.readOnly || t.disabled) return;
+      const i = t.selectionStart ?? t.value.length; const f = t.selectionEnd ?? i;
+      t.setRangeText(x.textContent, i, f, 'end'); t.dispatchEvent(new Event('input', { bubbles: true })); t.focus();
+    };
+    caja.append(pop); b.setAttribute('aria-expanded', 'true');
+    // Que no se salga de la pantalla (en el móvil el botón queda cerca del borde)
+    const r = pop.getBoundingClientRect(); const margen = 8;
+    if (r.left < margen) pop.style.transform = `translateX(${margen - r.left}px)`;
+    else if (r.right > innerWidth - margen) pop.style.transform = `translateX(${innerWidth - margen - r.right}px)`;
+    pop.querySelector('button')?.focus();
+  });
+}
+document.addEventListener('click', (e) => { if (!e.target.closest('.emoji-caja')) cerrarEmojis(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.emoji-pop')) { const b = document.querySelector('[data-emoji-para][aria-expanded="true"]'); cerrarEmojis(); b?.focus(); } });
+const SEG_DESHACER = 8; // segundos para arrepentirse antes de que el mensaje salga
+const ICONO_ARCH = { imagen: '🖼️', video: '🎬', audio: '🎙️', documento: '📄' };
+const ACEPTA_ARCH = 'image/jpeg,image/png,image/webp,video/mp4,audio/*,application/pdf';
+async function subirArchivoChat(convId, blob, nombre) {
+  if (blob.size > 16 * 1024 * 1024) throw new Error('Como mucho 16 MB.');
+  const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+  return api(`/panel/conversaciones/${encodeURIComponent(convId)}/adjunto`, { method: 'POST', body: JSON.stringify({ datos, mime: blob.type, archivo: nombre }) });
+}
+const chipArchivo = (a, idQuitar) => (a ? `<span class="arch-chip">${ICONO_ARCH[a.tipo] || '📎'} ${esc(a.nombre)} <span class="ayuda">${(a.tamano / 1048576).toFixed(1)} MB</span>${idQuitar ? `<button type="button" class="x" id="${idQuitar}" aria-label="Quitar archivo">✕</button>` : ''}</span>` : '');
+/** Graba una nota de voz con el micrófono. Devuelve la grabadora (rec.stop() la termina y llama a alTerminar(blob, nombre)). */
+async function grabarNota(alTerminar) {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Este navegador no permite grabar audio: adjunta un archivo de audio.');
+  let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { throw new Error('No hay permiso para usar el micrófono.'); }
+  const tipo = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/aac'].find((t) => MediaRecorder.isTypeSupported?.(t));
+  const trozos = []; const rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
+  rec.ondataavailable = (e) => trozos.push(e.data);
+  rec.onstop = () => {
+    flujo.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(trozos, { type: (rec.mimeType || tipo || 'audio/mp4').split(';')[0] });
+    alTerminar(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('webm') ? 'webm' : 'm4a'));
+  };
+  rec.start();
+  return rec;
+}
+const formProg = (p, v) => `<form id="${p}form" class="prog"><textarea id="${p}txt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead${v.archivo ? ' (pie del archivo, opcional)' : ''}">${esc(v.texto || '')}</textarea>${chipArchivo(v.archivo, p + 'quitar')}
+  <div class="fila-f">${botonEmoji(p + 'txt')}<input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button type="button" class="mini" id="${p}adj" title="Adjuntar imagen, vídeo, audio o PDF">📎 ${v.archivo ? 'Cambiar archivo' : 'Archivo'}</button><input type="file" id="${p}file" accept="${ACEPTA_ARCH}" hidden><button class="primario mini">${v.id ? 'Guardar cambios' : 'Programar'}</button>${v.id ? `<button type="button" class="mini" id="${p}cerrar">Cancelar edición</button>` : ''}</div>
+  <p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, el texto va por plantilla y no se pueden enviar archivos.</p><p class="error" id="${p}err"></p></form>`;
+
+const formPlantilla = (p, v, lista) => { const t = lista.find((x) => x.id === Number(v.plantilla)); return `<form id="${p}form" class="prog">
+  <select id="${p}sel" aria-label="Plantilla"><option value="">Elige una plantilla…</option>${lista.map((x) => `<option value="${x.id}" ${t?.id === x.id ? 'selected' : ''}>${esc(x.nombre)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ''}</option>`).join('')}</select>
+  ${t ? `${Array.from({ length: t.variables }, (_, i) => `<input data-${p}var="${i}" maxlength="1000" placeholder="Valor de {{${i + 1}}}" aria-label="Variable ${i + 1}" value="${esc(v.variables?.[i] || '')}">`).join('')}
+  <div class="previsto" id="${p}prev">«${esc(t.cuerpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v.variables?.[n - 1] || m))}»</div>
+  <div class="fila-f">${v.id ? '' : `<button type="button" class="primario mini" id="${p}ya">Enviar ahora</button><span class="ayuda">o</span>`}<input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button class="mini ${v.id ? 'primario' : ''}">${v.id ? 'Guardar cambios' : 'Programar'}</button>${v.id ? `<button type="button" class="mini" id="${p}cerrar">Cancelar edición</button>` : ''}</div>` : ''}
+  ${lista.length ? '' : '<p class="ayuda">No hay plantillas activas: añádelas en la sección Plantillas.</p>'}<p class="error" id="${p}err"></p></form>`; };
 
 async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
   if (!$('#ch').classList.contains('con-hilo') && movil) estado.scrollLista = window.scrollY;
-  if (estado.conv !== id) estado.progAbierto = false;
+  if (estado.conv !== id) { estado.progAbierto = false; estado.prog = null; estado.editProg = null; estado.respArchivo = null; estado.tplAbierto = false; estado.tpl = null; }
   estado.conv = id;
   // La dirección lleva el chat: se puede compartir el enlace y, en el móvil, «atrás» vuelve a la lista
   const dir = '#chats/' + encodeURIComponent(id);
@@ -1019,43 +1229,155 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   const antes = $('#msgs'); const y = antes?.scrollTop ?? 0;
   const alFinal = !mantener || !antes || antes.scrollHeight - antes.scrollTop - antes.clientHeight < 80;
   const c = d.conv;
+  // Lo que se estaba escribiendo al lead no se pierde cuando el chat se refresca solo
+  const rAntes = $('#rtxt'); const conFoco = rAntes && document.activeElement === rAntes; const cursor = rAntes ? [rAntes.selectionStart, rAntes.selectionEnd] : null;
+  if (rAntes && estado.respConv === id) estado.respTexto = rAntes.value;
+  if (estado.respConv !== id) { estado.respConv = id; estado.respTexto = ''; }
+  const borrador = estado.respTexto || '';
   const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
   const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
-  $('#hilo').innerHTML = `<div class="cab"><div><button class="volver" id="bv">Volver a chats</button> <b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b> ${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}
-      <div class="chips" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipsConv(c)}</div>${c.pause_reason ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${esc(c.pause_reason)}</div>` : ''}</div>
+  $('#hilo').innerHTML = `<div class="cab"><div class="quien"><button class="volver" id="bv" aria-label="Volver a chats">← Chats</button><b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b>${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}${chipsConv(c)}${c.pause_reason ? `<div class="motivo-pausa">${esc(c.pause_reason)}</div>` : ''}</div>
       <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
-    <div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
-      return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
+    <div class="centro"><div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
+      return `${sep}<div class="burbuja b-${esc(x.autor)} ${x.enviado ? '' : 'borrador'}">${botonReporte(x)}${medioHtml(x, `/panel/conversaciones/${encodeURIComponent(id)}`)}${esc(textoSinMarcador(x))}<div class="meta">${esc(ETQ[x.autor] || x.autor)} · ${f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}${x.enviado ? '' : ' · borrador, no enviado'}${x.tipo === 'plantilla' ? ' · plantilla' : ''}${x.tipo === 'fuera_horario' ? ' · aviso automático fuera de horario' : ''}</div></div>`; }).join(''); })() || '<div class="vacio">Sin mensajes</div>'}</div>
+    ${!d.escribir ? '' : d.escribir.motivo ? `<p class="resp-no">✍️ ${esc(d.escribir.motivo)}</p>`
+      : `<form class="resp" id="fresp">${chipArchivo(estado.respArchivo, 'rquitar')}<textarea id="rtxt" rows="1" maxlength="2000" placeholder="${estado.respArchivo ? 'Pie del archivo (opcional)' : 'Escribe al lead (le llega tal cual)'}" title="Ctrl+Intro para enviar" aria-label="Mensaje para el lead">${esc(borrador)}</textarea><div class="resp-bot">${botonEmoji('rtxt')}<button type="button" class="icono" id="radj" title="Adjuntar imagen, vídeo, audio o PDF" aria-label="Adjuntar archivo">📎</button><button type="button" class="icono ${estado.grabacion?.conv === id ? 'grabando' : ''}" id="rgrab" title="${estado.grabacion?.conv === id ? 'Parar y adjuntar la nota de voz' : 'Grabar nota de voz'}" aria-label="Grabar nota de voz">${estado.grabacion?.conv === id ? '⏹️' : '🎙️'}</button><input type="file" id="rfile" accept="${ACEPTA_ARCH}" hidden><button class="primario" id="benv">Enviar</button></div><p>${c.ai_paused || c.derivado ? 'Sofía está en pausa en este chat.' : d.escribir.pausa ? 'Al enviar, Sofía se aparta de este chat, igual que si escribes en el CRM.' : ''}</p><p class="error" id="rerr"></p></form>`}</div>
     <div class="pie">${[
       c.analisis ? `<b>Lo que ha entendido Sofía</b><br>${esc(c.analisis)}${c.siguiente_paso ? `<br><span>Siguiente paso: ${esc(c.siguiente_paso)}</span>` : ''}` : '',
       d.altas.length ? '<b>Altas</b><br>' + d.altas.map((a) => `${hora(a.created_at)} · <span class="chip ${a.estado === 'preparada' ? 'verde' : a.estado === 'fallida' ? 'rojo' : 'ambar'}">${esc(a.estado)}</span> ${esc(a.datos.tarifa)} · ${esc(SEDES[a.datos.sede] || a.datos.sede)} · inicio ${esc(a.datos.fecha_inicio)}<br><span>${esc(a.detalle || '')}</span>`).join('<br>') : '',
       c.prueba_fecha ? `<b>📅 Clase de prueba</b><br>${fechaCorta(c.prueba_fecha)} <button type="button" class="mini" id="banprueba" title="Cancela sus recordatorios">Anular o cambiada</button>` : '',
-      `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? `<form id="fprog" class="prog"><textarea id="ptxt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead"></textarea><div class="fila-f"><input type="datetime-local" id="pfec" value="${fechaLocal(new Date(Date.now() + 3600e3).toISOString())}" aria-label="Fecha y hora"><button class="primario mini">Programar</button></div><p class="ayuda">Sale a esa hora exacta. Si en WhatsApp han pasado más de 24 h desde su último mensaje, va por plantilla.</p><p class="error" id="perr"></p></form>` : ''}`,
+      `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? formProg('np', (estado.prog ??= { texto: '', cuando: new Date(Date.now() + 3600e3).toISOString(), archivo: null })) : ''}`,
+      d.plantillas ? `<b>📨 Plantilla de WhatsApp</b> <button type="button" class="mini" id="btpl" ${d.plantillas.motivo ? 'disabled' : ''}>${estado.tplAbierto ? 'Cerrar' : 'Elegir'}</button>${d.plantillas.motivo ? `<div class="ayuda">${esc(d.plantillas.motivo)}</div>` : '<div class="ayuda">Vale aunque hayan pasado más de 24 h desde su último mensaje.</div>'}${estado.tplAbierto && !d.plantillas.motivo ? formPlantilla('tp', (estado.tpl ??= { plantilla: '', variables: [], cuando: new Date(Date.now() + 3600e3).toISOString() }), d.plantillas.lista) : ''}` : '',
+      c.primer_contacto ? (() => { const r = JSON.parse(c.primer_contacto); return `<b>✉️ Lo empezamos nosotros</b><br>${new Date(r.at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} · plantilla ${esc(r.plantilla)}<div class="ayuda">Motivo para Sofía: ${esc(r.motivo)}</div>`; })() : '',
       c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
       d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
-        ? `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} <button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? htmlPrevisto(s.texto_previsto) : htmlPrevisto(null)}</div></div>`
+        ? (estado.editProg?.id === s.id ? `<div class="fu-chat" data-fu-id="${s.id}"><b>Editar mensaje programado</b>${estado.editProg.plantilla ? formPlantilla('ep', estado.editProg, d.plantillas?.lista || []) : formProg('ep', estado.editProg)}</div>`
+          : `<div class="fu-chat" data-fu-id="${s.id}"><div><b>${esc(s.nombre)}</b> · ${fechaCorta(s.due_at)} ${s.tipo === 'manual' ? `<button type="button" class="mini" data-fu-edit="${s.id}">Editar</button> ` : ''}<button type="button" class="mini" data-fu-cancel="${s.id}">Cancelar</button></div>${s.contexto?.motivo ? `<div class="ayuda">Motivo: ${esc(s.contexto.motivo)}</div>` : ''}${s.archivo ? chipArchivo(s.archivo) : ''}<div class="fu-texto">${s.vigente || s.tipo === 'manual' || s.tipo === 'lanzamiento' ? (s.tipo === 'manual' && !s.texto_previsto && s.archivo ? '' : htmlPrevisto(s.texto_previsto)) : htmlPrevisto(null)}</div></div>`)
         : `<div class="ayuda">${esc(s.nombre)} · ${hora(s.due_at)} · ${esc(s.estado)}${s.detalle ? ' · ' + esc(s.detalle) : ''}</div>`).join('') : '',
       d.ia.some((r) => r.error) ? '<b class="error">Errores de IA</b><br>' + d.ia.filter((r) => r.error).map((r) => `${hora(r.created_at)} · ${esc(r.error)}`).join('<br>') : '',
-    ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Las conversaciones se contestan en GHL. Desde aquí puedes revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
+    ].filter(Boolean).map((b) => `<div class="pie-b">${b}</div>`).join('') || 'Desde aquí puedes contestar al lead, revisar lo que hace Sofía, etiquetar y pausarla en este chat.'}</div>`;
   $('#msgs').scrollTop = alFinal ? 1e9 : y;
   // En móvil, el chat sube arriba de la pantalla (ya pintado, para que quepa entero con sus últimos mensajes)
-  if (!mantener && movil) $('#hilo').scrollIntoView({ block: 'start' });
+  if (!mantener && movil) { $('#hilo').scrollIntoView({ block: 'start' }); estado.topHilo = Math.max(0, $('#hilo').getBoundingClientRect().top); }
+  if (movil) { ajustarAltoChats(); $('#msgs').scrollTop = alFinal ? 1e9 : y; }
   // Ventana baja en escritorio: al abrir un chat, la zona de chats sube sola hasta ocupar la ventana
   else if (!mantener && $('#ch').getBoundingClientRect().bottom > window.innerHeight + 2) $('#ch').scrollIntoView({ block: 'start' });
   cargarMedios($('#msgs'));
+  enlazarEmojis($('#hilo'));
   $('#msgs').querySelectorAll('[data-rep]').forEach((b) => b.onclick = () => abrirReporte(b, `/panel/conversaciones/${encodeURIComponent(id)}`, Number(b.dataset.rep)));
   $('#hilo').querySelectorAll('[data-fu-cancel]').forEach((b) => b.onclick = async () => { b.disabled = true; await api(`/panel/seguimientos/${b.dataset.fuCancel}/cancelar`, { method: 'POST' }); recargar(); });
-  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; abrir(id, { datos: d, mantener: true }).then(() => $('#ptxt')?.focus()); };
+  if ($('#fresp')) {
+    const t = $('#rtxt');
+    if (conFoco) { t.focus(); t.setSelectionRange(...cursor); }
+    const crecer = () => { t.style.height = 'auto'; t.style.height = Math.min(160, t.scrollHeight + 2) + 'px'; };
+    if (t.value) crecer();
+    t.oninput = () => { estado.respTexto = t.value; estado.tecleo = Date.now(); crecer(); };
+    t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
+    const adjuntar = async (blob, nombre) => {
+      $('#rerr').textContent = 'Subiendo el archivo…';
+      try { estado.respArchivo = await subirArchivoChat(id, blob, nombre); estado.respTexto = $('#rtxt')?.value || ''; abrir(id, { datos: d, mantener: true }); }
+      catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; }
+    };
+    $('#radj').onclick = () => $('#rfile').click();
+    $('#rfile').onchange = (e) => { const f = e.target.files[0]; if (f) adjuntar(f, f.name); };
+    $('#rquitar') && ($('#rquitar').onclick = () => { estado.respArchivo = null; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true }); });
+    $('#rgrab').onclick = async () => {
+      if (estado.grabacion) { estado.grabacion.rec.stop(); return; }
+      try {
+        const rec = await grabarNota((blob, nombre) => { estado.grabacion = null; if (!blob.size) { abrir(id, { datos: d, mantener: true }); return avisar('La grabación ha salido vacía.'); } adjuntar(blob, nombre); });
+        estado.grabacion = { rec, conv: id }; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true });
+      } catch (err) { $('#rerr').textContent = err.message; }
+    };
+    // Un mensaje de WhatsApp enviado no se puede borrar: se espera unos segundos con «Deshacer» antes de mandarlo de verdad
+    $('#fresp').onsubmit = (e) => {
+      e.preventDefault();
+      const texto = t.value.trim(); const archivo = estado.respArchivo?.id || null;
+      const b = $('#benv');
+      if ((!texto && !archivo) || b.disabled) return;
+      b.disabled = true; t.readOnly = true; $('#rerr').textContent = '';
+      const deshacer = Object.assign(document.createElement('button'), { type: 'button', className: 'peligro', textContent: 'Deshacer' });
+      b.after(deshacer);
+      let quedan = SEG_DESHACER;
+      const pintar = () => { b.textContent = `Se envía en ${quedan} s`; };
+      const aviso = (ev) => { ev.preventDefault(); ev.returnValue = ''; };
+      window.addEventListener('beforeunload', aviso); pintar();
+      const fin = () => { clearInterval(reloj); window.removeEventListener('beforeunload', aviso); deshacer.remove(); };
+      const reloj = setInterval(async () => {
+        if (--quedan > 0) return pintar();
+        fin(); b.textContent = 'Enviando…';
+        try {
+          await api(`/panel/conversaciones/${encodeURIComponent(id)}/enviar`, { method: 'POST', body: JSON.stringify({ texto, archivo }) });
+          estado.respTexto = ''; estado.respArchivo = null; t.value = '';
+          if (estado.conv === id) { await recargar(); $('#rtxt')?.focus(); }
+        } catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; b.disabled = false; b.textContent = 'Enviar'; t.readOnly = false; }
+      }, 1000);
+      deshacer.onclick = () => { fin(); b.disabled = false; b.textContent = 'Enviar'; t.readOnly = false; t.focus(); };
+    };
+  }
+  $('#bprog').onclick = () => { estado.progAbierto = !estado.progAbierto; if (!estado.progAbierto) estado.prog = null; abrir(id, { datos: d, mantener: true }).then(() => $('#nptxt')?.focus()); };
   $('#banprueba') && ($('#banprueba').onclick = async () => {
     const b = $('#banprueba'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro? Se cancelan sus recordatorios'; return; }
     await api(`/panel/conversaciones/${encodeURIComponent(id)}/prueba/cancelar`, { method: 'POST' }); recargar();
   });
-  $('#fprog') && ($('#fprog').onsubmit = async (e) => {
-    e.preventDefault();
-    try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify({ texto: $('#ptxt').value, cuando: new Date($('#pfec').value).toISOString() }) }); estado.progAbierto = false; recargar(); }
-    catch (err) { $('#perr').textContent = err.message; }
+  // Formularios de mensaje programado (nuevo «np» y edición «ep»): lo escrito se guarda en `v` para que no se pierda al refrescar
+  const enlazarProg = (p, v, guardar, cerrar) => {
+    if (!$(`#${p}form`)) return;
+    const repintar = () => abrir(id, { datos: d, mantener: true });
+    $(`#${p}txt`).oninput = (e) => { v.texto = e.target.value; };
+    $(`#${p}fec`).onchange = (e) => { const f = new Date(e.target.value); if (!Number.isNaN(f.getTime())) v.cuando = f.toISOString(); };
+    $(`#${p}adj`).onclick = () => $(`#${p}file`).click();
+    $(`#${p}file`).onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      $(`#${p}err`).textContent = 'Subiendo el archivo…';
+      try { v.archivo = await subirArchivoChat(id, f, f.name); repintar(); } catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+    $(`#${p}quitar`) && ($(`#${p}quitar`).onclick = () => { v.archivo = null; repintar(); });
+    $(`#${p}cerrar`) && ($(`#${p}cerrar`).onclick = () => { cerrar(); repintar(); });
+    $(`#${p}form`).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await guardar({ texto: $(`#${p}txt`).value, cuando: new Date($(`#${p}fec`).value).toISOString(), archivo: v.archivo?.id || null }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+  };
+  enlazarProg('np', estado.prog, (b) => api(`/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: 'POST', body: JSON.stringify(b) }), () => { estado.progAbierto = false; estado.prog = null; });
+  if (!estado.editProg?.plantilla) enlazarProg('ep', estado.editProg, (b) => api(`/panel/seguimientos/${estado.editProg.id}`, { method: 'PUT', body: JSON.stringify(b) }), () => { estado.editProg = null; });
+  // Formularios de plantilla (nueva «tp» y edición «ep» de una programada)
+  const enlazarPlantilla = (p, v, cerrar) => {
+    if (!v || !$(`#${p}form`)) return;
+    const repintar = () => abrir(id, { datos: d, mantener: true });
+    const lista = d.plantillas?.lista || [];
+    const cuerpo = () => lista.find((x) => x.id === Number(v.plantilla))?.cuerpo || '';
+    $(`#${p}sel`).onchange = (e) => { v.plantilla = e.target.value; v.variables = []; repintar(); };
+    $('#hilo').querySelectorAll(`[data-${p}var]`).forEach((inp) => inp.oninput = () => {
+      v.variables[Number(inp.dataset[`${p}var`])] = inp.value;
+      const prev = $(`#${p}prev`); if (prev) prev.textContent = `«${cuerpo().replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v.variables[n - 1] || m)}»`;
+    });
+    $(`#${p}fec`) && ($(`#${p}fec`).onchange = (e) => { const f = new Date(e.target.value); if (!Number.isNaN(f.getTime())) v.cuando = f.toISOString(); });
+    $(`#${p}cerrar`) && ($(`#${p}cerrar`).onclick = () => { cerrar(); repintar(); });
+    const body = () => JSON.stringify({ plantilla: Number(v.plantilla), variables: v.variables, cuando: new Date($(`#${p}fec`).value).toISOString() });
+    $(`#${p}ya`) && ($(`#${p}ya`).onclick = async (e) => {
+      const b = e.target;
+      if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Enviar ya? No se puede borrar'; return; }
+      b.disabled = true; b.textContent = 'Enviando…';
+      try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/plantilla`, { method: 'POST', body: JSON.stringify({ plantilla: Number(v.plantilla), variables: v.variables }) }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar ahora'; }
+    });
+    $(`#${p}form`).onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api(v.id ? `/panel/seguimientos/${v.id}` : `/panel/conversaciones/${encodeURIComponent(id)}/programar`, { method: v.id ? 'PUT' : 'POST', body: body() }); cerrar(); recargar(); }
+      catch (err) { $(`#${p}err`).textContent = err.message; }
+    };
+  };
+  enlazarPlantilla('tp', estado.tpl, () => { estado.tplAbierto = false; estado.tpl = null; });
+  if (estado.editProg?.plantilla) enlazarPlantilla('ep', estado.editProg, () => { estado.editProg = null; });
+  $('#btpl') && ($('#btpl').onclick = () => { estado.tplAbierto = !estado.tplAbierto; if (!estado.tplAbierto) estado.tpl = null; abrir(id, { datos: d, mantener: true }); });
+  $('#hilo').querySelectorAll('[data-fu-edit]').forEach((b) => b.onclick = () => {
+    const s = d.seguimientos.find((x) => x.id === Number(b.dataset.fuEdit)); if (!s) return;
+    estado.editProg = s.contexto?.plantilla ? { id: s.id, plantilla: s.contexto.plantilla, variables: [...(s.contexto.variables || [])], cuando: s.due_at }
+      : { id: s.id, texto: s.texto_previsto || '', cuando: s.due_at, archivo: s.archivo || null };
+    abrir(id, { datos: d, mantener: true }).then(() => $('#eptxt')?.focus());
   });
   if (estado.info.modelo_configurado) prepararTextos(d.seguimientos.filter((x) => x.estado === 'pendiente' && !x.vigente),
     (x) => api(`/panel/seguimientos/${x.id}/previa`, { method: 'POST' }),
@@ -1077,6 +1399,7 @@ const ACCIONES = [
   ['forzar_respuesta', '⚡ Forzar respuesta', 'Sofía contesta ya (respeta su horario). No actúa con reglas de inactividad.'],
   ['derivar', '🙋 Derivar al equipo', 'Pausa a Sofía y marca el chat como derivado.'],
   ['avisar', '🔔 Avisar al equipo', 'Manda un aviso por Telegram cuando se pone.'],
+  ['no_lead', '🚫 No es un lead', 'Para proveedores, spam o números equivocados: Sofía no le escribe más (ni seguimientos ni lanzamientos) y el chat deja de contar en Resumen, Estadísticas y Embudo.'],
 ];
 const REGLA_NUEVA = { texto: { tipo: 'texto', quien: 'lead', operador: 'contiene', patron: '' }, adjunto: { tipo: 'adjunto', quien: 'lead', media: 'cualquiera' }, inactividad: { tipo: 'inactividad', horas: 24 }, fase: { tipo: 'fase', fase: 'f5 cierre' }, sede: { tipo: 'sede', sede: 'parla' } };
 
@@ -1204,6 +1527,8 @@ function editorEtiqueta(e) {
       leer();
       if (c.dataset.acc === 'pausar_ia' && c.checked) { d.acciones.reanudar_ia = false; d.acciones.forzar_respuesta = false; }
       if ((c.dataset.acc === 'reanudar_ia' || c.dataset.acc === 'forzar_respuesta') && c.checked) d.acciones.pausar_ia = false;
+      // «No es un lead» siempre pausa a Sofía y no se combina con reanudar, forzar ni derivar
+      if (d.acciones.no_lead) Object.assign(d.acciones, { pausar_ia: true, reanudar_ia: false, forzar_respuesta: false, derivar: false });
       pintar();
     });
     const salir = () => { estado.editEtq = null; etiquetas(); };
@@ -1242,15 +1567,24 @@ async function altas() {
   $('#main').innerHTML = '<h2>Altas</h2><div class="vacio">Cargando…</div>';
   const filas = await api('/panel/altas');
   if (estado.seccion !== 'altas') return;
-  const COLOR = { preparada: 'verde', fallida: 'rojo', rechazada: 'rojo' };
+  // Lo que significa cada estado de un intento de alta, en cristiano
+  const ESTADO = { preparada: ['Hecha en AimHarder', 'verde'], pendiente: ['Para el equipo', 'ambar'], existente: ['Exsocio: para el equipo', 'ambar'],
+    simulada: ['Ensayo, sin guardar', ''], fallida: ['Fallida', 'rojo'], rechazada: ['Faltan datos o no valen', 'rojo'], no_configurado: ['Sin configurar', 'rojo'] };
+  const fechaPago = (f) => new Date(f + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const pago = (a) => a.pago === 'pagada' ? `<span class="chip verde" title="${a.primer_pago ? 'Primer pago de toda su historia: alta nueva' : 'Ya había pagado antes: exsocio que vuelve'}">Pagada el ${fechaPago(a.pago_fecha)}${a.primer_pago ? '' : ' · exsocio'}</span>`
+    : a.pago === 'pendiente' ? '<span class="chip ambar">Pendiente de pago</span>' : '<span class="ayuda">–</span>';
   const i = estado.info;
   const aviso = !i.credenciales_alta ? 'Falta configurar el acceso para tramitar altas en AimHarder.' :
     i.alta_en_pruebas ? 'El guardado de altas en AimHarder está desactivado.' : '';
+  const vigentes = filas.filter((a) => !a.superada && !a.de_prueba);
+  const n = (f) => vigentes.filter(f).length;
   $('#main').innerHTML = `<h2>Altas</h2>${aviso ? `<div class="aviso">${aviso}</div>` : ''}
-    ${filas.length ? `<div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Detalle</th></tr>${filas.map((a) => `<tr>
-      <td>${hora(a.created_at)}</td><td><a href="#chats/${encodeURIComponent(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo)}</a><br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
-      <td>${esc(SEDES[a.datos.sede] || a.datos.sede)} · ${esc(a.datos.tarifa)}</td><td>${esc(a.datos.fecha_inicio)}</td>
-      <td><span class="chip ${COLOR[a.estado] || 'ambar'}">${esc(a.estado)}</span></td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Todavía no hay altas</div>'}`;
+    ${filas.length ? `<div class="tarjetas">${tarjeta(n((a) => a.pago === 'pagada'), 'Pagadas', 'green')}${tarjeta(n((a) => a.pago === 'pendiente'), 'Pendientes de pago', 'amber')}${tarjeta(n((a) => ['pendiente', 'existente'].includes(a.estado) && a.pago !== 'pagada'), 'Para terminar el equipo', 'amber')}${tarjeta(n((a) => ['fallida', 'no_configurado'].includes(a.estado)), 'Fallidas sin resolver', 'red')}</div>
+    <div style="overflow:auto"><table><tr><th>Fecha</th><th>Lead</th><th>Sede · tarifa</th><th>Inicio</th><th>Estado</th><th>Pago</th><th>Detalle</th></tr>${filas.map((a) => `<tr ${a.superada ? 'style="opacity:.55" title="Hay un intento posterior de este mismo chat"' : ''}>
+      <td>${hora(a.created_at)}</td><td><a href="#chats/${encodeURIComponent(a.conversation_id)}" style="color:var(--blue)">${esc(a.datos.nombre_completo || a.nombre || 'Sin nombre')}</a>${a.de_prueba ? ' <span class="chip">prueba</span>' : ''}<br><span style="color:var(--muted);font-size:12px">${esc(a.datos.email)}</span></td>
+      <td>${esc(SEDES[a.datos.sede] || a.datos.sede || '–')} · ${esc(a.datos.tarifa || '–')}</td><td>${esc(a.datos.fecha_inicio)}</td>
+      <td><span class="chip ${(ESTADO[a.estado] || [])[1] ?? 'ambar'}">${esc((ESTADO[a.estado] || [a.estado])[0])}</span></td><td>${pago(a)}</td><td style="font-size:12px;color:var(--muted)">${esc(a.detalle || '')}</td></tr>`).join('')}</table></div>
+    <p class="nota">Cada fila es un intento de alta de Sofía (las últimas 100); las atenuadas tienen un intento posterior del mismo chat. Pago: se busca al lead por correo o teléfono en el registro de socios de su sede; «Pagada» es que hay un pago desde el día del alta. Las tarjetas no cuentan intentos superados ni números de prueba.</p>` : '<div class="vacio">Todavía no hay altas</div>'}`;
 }
 
 // ---------- Preguntas que Sofía no sabe responder ----------
@@ -1315,7 +1649,9 @@ async function seguimientos() {
   const s = await api('/panel/seguimientos');
   if (estado.seccion !== 'seguimientos') return;
   estado.segDatos = s;
-  const tarjeta = (r) => `<div class="regla ${r.activo ? '' : 'apagada'}"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${textoEspera(r)}</span>
+  const fueraNivel = (r) => r.activo && ['silencio', 'largo-plazo'].includes(r.tipo) && !r.excluir?.soloConPrueba && !s.intensidad.incluidas.includes(r.id);
+  const nivelActual = s.intensidad.niveles.find((n) => n.id === s.intensidad.nivel);
+  const tarjeta = (r) => `<div class="regla ${r.activo && !fueraNivel(r) ? '' : 'apagada'}"><div class="cab"><div><b>${esc(r.nombre)}</b> <span class="chip">${textoEspera(r)}</span>${fueraNivel(r) ? ` <span class="chip ambar" title="Activo, pero no sale con la intensidad elegida">no sale en «${esc(nivelActual?.nombre || '')}»</span>` : ''}
       ${r.etiqueta ? pill({ nombre: r.etiqueta.nombre, color: r.etiqueta.color }) : ''} ${r.canales.map((c) => `<span class="chip">${CANAL[c]}</span>`).join(' ')}
       <span class="chip ${r.modo === 'fijo' ? 'azul' : 'violeta'}">${r.modo === 'fijo' ? 'texto fijo' : 'lo escribe Sofía'}</span>${r.plantilla && r.canales.includes('whatsapp') ? ' <span class="chip">plantilla si &gt;24 h</span>' : ''}</div>
       <div class="acciones-f"><button class="mini" data-ed="${esc(r.id)}">Editar</button><label class="interruptor"><input type="checkbox" data-on="${esc(r.id)}" aria-label="${esc(r.nombre)} activo" ${r.activo ? 'checked' : ''}><span></span></label></div></div>
@@ -1325,6 +1661,9 @@ async function seguimientos() {
   const lz = s.lanzamientos;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Seguimientos</h2><div class="acciones-f"><button id="nlanz">+ Lanzamiento</button><button class="primario" id="nregla">+ Nuevo seguimiento</button></div></div>
     <p class="intro">Antes de enviar, Sofía mira la conversación y, si no se cumple la condición, no manda nada. Lo que escribe se puede ver antes en cada chat («texto previsto»). En modo prueba quedan como borrador. Ninguno de Sofía sale si el chat está pausado o derivado (salvo los de etiqueta o cita que lo permitan).</p>
+    <section class="grupo-seg"><h3>Intensidad</h3><p class="ayuda">Cuántos mensajes recibe quien se queda callado y con qué tono. Afecta a «Si no contesta» y «Más adelante»; los recordatorios de la clase de prueba y los mensajes informativos salen siempre. Los ya programados que no entren en el nivel no se envían.</p>
+      <div class="intensidad" role="radiogroup" aria-label="Intensidad de los seguimientos">${s.intensidad.niveles.map((n) => `<label><input type="radio" name="intens" value="${esc(n.id)}" ${n.id === s.intensidad.nivel ? 'checked' : ''}> <b>${esc(n.nombre)}</b><span class="ayuda">${esc(n.descripcion)}</span></label>`).join('')}</div>
+      <span id="intens-ok" class="ayuda" aria-live="polite"></span></section>
     ${TIPOS_SEG.map(([t, titulo, ayuda]) => `<section class="grupo-seg"><h3>${titulo} <button class="mini" data-nt="${t}">+ Añadir</button></h3><p class="ayuda">${ayuda}</p>
       ${s.reglas.filter((r) => r.tipo === t).map(tarjeta).join('') || '<div class="vacio">Ninguno todavía</div>'}</section>`).join('')}
     <h3>Próximos envíos</h3>
@@ -1336,6 +1675,11 @@ async function seguimientos() {
       <td>${['programado', 'enviando'].includes(l.estado) ? `<button class="mini peligro" data-lc="${l.id}">Cancelar</button>` : ''}</td></tr>`).join('')}</table></div>` : '<div class="vacio">Ningún lanzamiento. Sirven para una oferta, una apertura o un evento con fecha.</div>'}`;
   const m = $('#main');
   $('#nregla').onclick = () => { estado.editRegla = { nuevo: 'silencio' }; seguimientos(); };
+  m.querySelectorAll('input[name="intens"]').forEach((r) => r.onchange = async () => {
+    $('#intens-ok').textContent = 'Guardando…';
+    try { estado.info.ajustes = await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ intensidadSeguimientos: r.value }) }); seguimientos(); }
+    catch (e) { $('#intens-ok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+  });
   $('#nlanz').onclick = () => { estado.nuevoLanz = true; seguimientos(); };
   m.querySelectorAll('[data-nt]').forEach((b) => b.onclick = () => { estado.editRegla = { nuevo: b.dataset.nt }; seguimientos(); });
   m.querySelectorAll('[data-ed]').forEach((b) => b.onclick = () => { estado.editRegla = { id: b.dataset.ed }; seguimientos(); });
@@ -1947,12 +2291,25 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Sofía activa</div><div class="d">Apagada, no contesta ni manda follow-ups: todo lo atiende el equipo en GHL.</div></div>${sw('ia', a.ia_activa, 'Sofía activa')}</div>
     <div class="ajuste"><div><div class="t">WhatsApp</div><div class="d">Sofía contesta en WhatsApp</div></div>${sw('cw', a.canales.whatsapp, 'WhatsApp')}</div>
     <div class="ajuste"><div><div class="t">Instagram</div><div class="d">Sofía contesta en Instagram</div></div>${sw('ci', a.canales.instagram, 'Instagram')}</div>
-    <div class="ajuste"><div><div class="t">Horario de respuesta</div><div class="d">Fuera de la franja, los mensajes se guardan y Sofía contesta al empezar el siguiente turno (0 = medianoche; en Zapp: 8 a 0)</div></div>
+    <div class="ajuste"><div><div class="t">Horario de respuesta</div><div class="d">Fuera de la franja, los mensajes se guardan y Sofía contesta al empezar el siguiente turno (si está activo, el lead recibe antes el aviso automático de abajo) (0 = medianoche; en Zapp: 8 a 0)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="hi" aria-label="Hora de inicio" min="0" max="23" value="${a.horaInicio}" style="width:64px"> a <input type="number" id="hf" aria-label="Hora de fin" min="0" max="23" value="${a.horaFin}" style="width:64px"></div></div>
     <details class="ajuste-det" ${Object.keys(a.horarioDias || {}).length ? 'open' : ''}><summary>Horario distinto según el día <span class="ayuda">(cerrar un día o darle otra franja)</span></summary><div class="dias-h">${DIAS_TXT.map(filaDia).join('')}</div></details>
-    <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Espera al azar antes de contestar, en segundos, como una persona que ve el mensaje y lo lee (en Zapp: 15 a 50)</div></div>
+    <div class="ajuste"><div><div class="t">Aviso fuera de horario</div><div class="d">Si un lead escribe cuando Sofía no está en su horario, le llega al momento este mensaje automático (uno por noche o día cerrado). Sofía le contesta de verdad en cuanto vuelve. Puedes usar <code>{nombre}</code> (su nombre) y <code>{apertura}</code> (p. ej. «mañana a las 8:00»).</div></div>${sw('fha', a.fueraHorario?.activo, 'Aviso fuera de horario')}</div>
+    <div class="ajuste" style="align-items:flex-start"><div style="flex:1"><textarea id="fhm" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box" aria-label="Mensaje del aviso fuera de horario">${esc(a.fueraHorario?.mensaje || '')}</textarea>
+      <div class="fila-f" style="margin-top:6px"><span class="ayuda">Se envía por:</span><label class="check"><input type="checkbox" id="fhw" ${a.fueraHorario?.canales?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="fhi" ${a.fueraHorario?.canales?.instagram ? 'checked' : ''}> Instagram</label></div></div></div>
+    <div class="ajuste"><div><div class="t">Notas de voz</div><div class="d">Sofía manda su respuesta como nota de voz de WhatsApp (voz de ElevenLabs) en vez de por escrito cuando se cumplen <b>todas</b> las normas de abajo. Nunca van por voz las respuestas con enlaces o correos, ni los seguimientos con plantilla; si la voz falla, sale el texto. ${a.vozEstado?.clave ? `Este mes: <b>${Number(a.vozEstado.caracteresMes).toLocaleString('es-ES')}</b> letras de ${Number(a.voz.topeMensual).toLocaleString('es-ES')}.` : '<b style="color:var(--amber)">Falta la clave de ElevenLabs en el servidor (ELEVENLABS_API_KEY): hasta entonces no sale ninguna.</b>'}</div></div>${sw('vza', a.voz?.activo, 'Notas de voz')}</div>
+    <details class="ajuste-det" ${a.voz?.activo ? 'open' : ''}><summary>Normas de las notas de voz</summary><div class="dias-h">
+      <label class="check"><input type="checkbox" id="vzp" ${a.voz?.soloPruebas ? 'checked' : ''}> Solo a los teléfonos de prueba del equipo</label>
+      <label class="check"><input type="checkbox" id="vzl" ${a.voz?.soloSiLeadAudio ? 'checked' : ''}> Solo si lo último que mandó el lead fue una nota de voz</label>
+      <div class="dia-h"><b>Máximo por conversación</b><input type="number" id="vzc" min="1" max="50" value="${a.voz?.maxPorConversacion ?? 2}" style="width:80px" aria-label="Máximo de notas de voz por conversación"></div>
+      <div class="dia-h"><b>Letras por nota, como mucho</b><input type="number" id="vzm" min="50" max="1500" value="${a.voz?.maxCaracteres ?? 350}" style="width:80px" aria-label="Máximo de letras por nota de voz"> <span class="ayuda">las respuestas más largas van por escrito (350 ≈ 25 segundos)</span></div>
+      <div class="dia-h"><b>Tope de letras al mes</b><input type="number" id="vzt" min="0" value="${a.voz?.topeMensual ?? 25000}" style="width:100px" aria-label="Tope mensual de letras"> <span class="ayuda">al llegar, todo va por escrito hasta el mes siguiente</span></div>
+      <div class="dia-h"><b>Voz (Voice ID)</b><input type="text" id="vzi" maxlength="40" value="${esc(a.voz?.vozId || '')}" placeholder="${a.vozEstado?.vozPorDefecto ? 'la del servidor' : 'pega aquí el Voice ID'}" style="width:230px" aria-label="Voice ID de ElevenLabs"></div>
+      <div class="dia-h"><b>Velocidad</b><input type="number" id="vzv" min="80" max="130" value="${a.voz?.velocidad ?? 100}" style="width:80px" aria-label="Velocidad de la voz en tanto por ciento"> <span class="ayuda">% · 100 es la voz tal cual; 108 va un poco más rápida</span></div>
+    </div></details>
+    <div class="ajuste"><div><div class="t">Tiempo de respuesta</div><div class="d">Segundos que tarda en ponerse a contestar, al azar dentro de esta franja, como una persona que ve el mensaje y lo lee. Si el lead contesta enseguida a algo que Sofía acaba de escribir, tarda menos (tramo bajo de la franja); un mensaje largo suma unos segundos de lectura. Si manda un audio, primero lo escucha entero (lo que dure, hasta 10 min) y después empieza esta espera. Menos de 10 s parece un robot; con más de 120 s se pierden leads (Zapp recomienda 45 a 90)</div></div>
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" aria-label="Retraso mínimo" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" aria-label="Retraso máximo" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
-    <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo mientras el lead ve «escribiendo…». Cuanto más largo el mensaje, más tarda (en Zapp: 4)</div></div>
+    <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo al escribir cada burbuja: cuanto más larga, más tarda, con un tope de unos 20 s y una pequeña variación para que no lleguen a intervalos iguales. Entre burbuja y burbuja hay una pausa de 1 o 2 s (Zapp recomienda de 3 a 5)</div></div>
       <input type="number" id="vel" aria-label="Velocidad de escritura" min="1" max="20" value="${a.typingSpeed}" style="width:70px"></div>
     <h3>Cuándo se aparta Sofía</h3>
     <div class="ajuste"><div><div class="t">Si escribe alguien del equipo</div><div class="d">Sofía se pausa en ese chat en cuanto una persona del equipo escribe desde GHL. Si lo apagas, solo se pausa con las palabras de abajo.</div></div>${sw('peq', a.pausarSiEquipoEscribe, 'Pausar si escribe el equipo')}</div>
@@ -1963,11 +2320,31 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Palabras para que vuelva</div><div class="d">Si el equipo las escribe en un chat, Sofía vuelve a contestar ahí. Ej: #sofia</div></div><input id="prea" value="${esc((a.palabrasReanudar || []).join(', '))}" style="width:280px" aria-label="Palabras para reanudar a Sofía"></div>
     <div class="ajuste"><div><div class="t">Chats nuevos que empiezan en pausa</div><div class="d">Sofía no contesta los chats nuevos de ese canal hasta que alguien la active en el chat.</div></div><div class="fila-f"><label class="check"><input type="checkbox" id="pwa" ${a.canalesPausa?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="pig" ${a.canalesPausa?.instagram ? 'checked' : ''}> Instagram</label></div></div>
     <div class="guardar-aj" id="gaj"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"><span class="ayuda">Los cambios no se aplican hasta que pulses Guardar.</span></span></div>
+    <h3>Números de prueba</h3>
+    <div class="ajuste tel-prueba" id="telp"></div>
     <h3>Sistema</h3>
     <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
     <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.credenciales_alta ? 'Integración por navegador' : 'Faltan las credenciales de AimHarder.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'Prueba' : 'Automática'}</span></div>
     <div class="ajuste"><div><div class="t">Modelo</div><div class="d">${i.modelo_configurado ? 'Redacta las respuestas de Sofía.' : 'Falta la clave de Anthropic.'}</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
   $('#main').querySelectorAll('[data-dmodo]').forEach((s) => s.onchange = () => { $(`[data-dfr="${s.dataset.dmodo}"]`).hidden = s.value !== 'franja'; });
+  // Números de prueba: se guardan al momento (no esperan al botón Guardar)
+  let telefonos = [...(a.telefonosPrueba || [])];
+  const pintarTel = (msg = '') => {
+    $('#telp').innerHTML = `<div style="flex:1;min-width:0"><div class="t">Teléfonos del equipo para probar a Sofía</div>
+      <div class="d">Sofía los trata siempre como lead (aunque sean socios), les contesta a cualquier hora${i.modo === 'live' ? '' : ' y, en modo prueba, son los únicos a los que escribe de verdad'}. Desde uno de ellos, el mensaje <code>${esc(a.palabraReinicio || '#reset')}</code> reinicia la conversación. Sus chats se ven en Chats, pero no cuentan en el Resumen ni en las Estadísticas.</div>
+      <div class="chips-f" style="margin-top:8px">${telefonos.map((t) => `<span class="tel"><span>${esc(t)}</span><button type="button" class="x" data-telq="${esc(t)}" aria-label="Quitar ${esc(t)}">✕</button></span>`).join('') || '<span class="ayuda">Ninguno todavía</span>'}</div>
+      <form id="ftel" class="fila-f" style="margin-top:8px;gap:6px"><input id="teln" type="tel" inputmode="tel" maxlength="24" placeholder="600 111 222" aria-label="Teléfono de prueba nuevo" style="width:180px"><button class="primario">Añadir</button><span id="telok" role="status">${msg}</span></form></div>`;
+    const guardar = async (lista, ok) => {
+      try { telefonos = (await api('/panel/ajustes', { method: 'PUT', body: JSON.stringify({ telefonosPrueba: lista }) })).telefonosPrueba; pintarTel(`<span style="color:var(--green)">${ok}</span>`); }
+      catch (e) { if ($('#telok')) $('#telok').innerHTML = `<span class="error">${esc(e.message)}</span>`; }
+    };
+    $('#telp').querySelectorAll('[data-telq]').forEach((b) => b.onclick = () => { b.disabled = true; guardar(telefonos.filter((t) => t !== b.dataset.telq), 'Quitado'); });
+    $('#ftel').onsubmit = (e) => { e.preventDefault(); const v = $('#teln').value.trim(); if (!v) return $('#teln').focus();
+      const k = v.replace(/\D/g, '').slice(-9); if (telefonos.some((t) => t.replace(/\D/g, '').slice(-9) === k)) { $('#telok').innerHTML = '<span class="error">Ese número ya está en la lista</span>'; return; }
+      guardar([...telefonos, v], 'Añadido'); };
+  };
+  pintarTel();
+  for (const ev of ['input', 'change']) $('#telp').addEventListener(ev, (e) => e.stopPropagation()); // no cuenta como «cambios sin guardar»
   const sinGuardar = () => { if (!$('#gaj') || $('#gaj').classList.contains('pendiente')) return; $('#gaj').classList.add('pendiente'); $('#ok').innerHTML = '<b style="color:var(--amber)">Tienes cambios sin guardar</b>'; };
   $('#main').oninput = $('#main').onchange = sinGuardar;
   $('#bg').onclick = async () => {
@@ -1979,6 +2356,8 @@ async function ajustes() {
         horaInicio: Number($('#hi').value), horaFin: Number($('#hf').value), minDelay: Number($('#dmin').value), maxDelay: Number($('#dmax').value), typingSpeed: Number($('#vel').value),
         pausarSiEquipoEscribe: $('#peq').checked, canaveralPlazasOcupadas: Number($('#pcan').value) || 0, palabrasParar: $('#ppar').value, palabrasReanudar: $('#prea').value,
         canalesPausa: { whatsapp: $('#pwa').checked, instagram: $('#pig').checked }, horarioDias,
+        fueraHorario: { activo: $('#fha').checked, mensaje: $('#fhm').value, canales: { whatsapp: $('#fhw').checked, instagram: $('#fhi').checked } },
+        voz: { activo: $('#vza').checked, soloPruebas: $('#vzp').checked, soloSiLeadAudio: $('#vzl').checked, maxPorConversacion: Number($('#vzc').value), maxCaracteres: Number($('#vzm').value), topeMensual: Number($('#vzt').value), vozId: $('#vzi').value, velocidad: Number($('#vzv').value) },
       }) });
       $('#gaj').classList.remove('pendiente');
       $('#ok').innerHTML = '<span style="color:var(--green)">Guardado</span>';
@@ -2067,6 +2446,45 @@ async function conciliarConsumo(dias) {
 }
 
 // ---------- Recursos ----------
+async function plantillas() {
+  const { plantillas: lista, categorias } = await api('/panel/plantillas');
+  if (estado.seccion !== 'plantillas') return;
+  const CAT = { MARKETING: 'Marketing', UTILITY: 'Utilidad' };
+  const conVars = (t) => esc(t).replace(/\{\{\s*(\d+)\s*\}\}/g, '<span class="chip violeta">{{$1}}</span>');
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Plantillas de WhatsApp</h2><button class="primario" id="tnueva">+ Añadir plantilla</button></div>
+    <p class="intro">Plantillas aprobadas por Meta para escribir a un lead cuando han pasado más de 24 h desde su último mensaje (o cuando quieras). Se envían desde cada chat, al momento o programadas. Primero se crean y se aprueban en GHL (Ajustes → WhatsApp → Plantillas); aquí se copian <b>tal cual</b> su nombre, su idioma y su texto, porque GHL no deja leerlas desde fuera. Si algo no coincide, Meta rechaza el envío.</p>
+    <div id="tform"></div>
+    ${lista.length ? lista.map((t) => `<div class="regla ${t.activa ? '' : 'apagada'}"><div class="cab"><div><b>${esc(t.nombre)}</b> <span class="chip">${esc(t.idioma)}</span> <span class="chip">${CAT[t.categoria] || esc(t.categoria)}</span> <span class="chip">${t.variables} variable${t.variables === 1 ? '' : 's'}</span>${t.activa ? '' : ' <span class="chip ambar">desactivada</span>'}</div>
+      <div class="acciones-f"><button class="mini" data-ted="${t.id}">Editar</button><button class="mini" data-tact="${t.id}" data-on="${t.activa ? 0 : 1}">${t.activa ? 'Desactivar' : 'Activar'}</button><button class="mini peligro" data-tbor="${t.id}">Borrar</button></div></div>
+      <p class="largo">${conVars(t.cuerpo)}</p>${t.descripcion ? `<p class="ayuda">${esc(t.descripcion)}</p>` : ''}</div>`).join('') : '<div class="vacio">Todavía no hay plantillas. Añade la de seguimiento (sofia_seguimiento_v1) u otra aprobada en GHL.</div>'}`;
+  const form = (t) => {
+    $('#tform').innerHTML = `<form class="editor" id="ftpl"><section><h3>${t ? `Editar «${esc(t.nombre)}»` : 'Añadir plantilla'}</h3>
+      <div class="fila-f"><label>Nombre en GHL <input name="n" required maxlength="512" placeholder="sofia_seguimiento_v1" value="${esc(t?.nombre || '')}"></label>
+      <label>Idioma <input name="i" required maxlength="6" placeholder="es" value="${esc(t?.idioma || 'es')}" style="width:80px"></label>
+      <label>Categoría <select name="c">${categorias.map((c) => `<option value="${c}" ${(t?.categoria || 'MARKETING') === c ? 'selected' : ''}>${CAT[c] || c}</option>`).join('')}</select></label></div>
+      <textarea name="b" rows="4" maxlength="1024" required placeholder="Texto exacto de la plantilla, con sus variables: hola {{1}}, ..." style="width:100%;margin-top:8px">${esc(t?.cuerpo || '')}</textarea>
+      <input name="d" maxlength="300" placeholder="Para qué se usa (opcional, lo ve el equipo)" value="${esc(t?.descripcion || '')}" style="width:100%;margin-top:8px">
+      <p class="ayuda">Las variables se escriben como en GHL: {{1}}, {{2}}… Al enviarla, el panel pide un valor para cada una.</p>
+      <div class="acciones-f"><button class="primario">${t ? 'Guardar' : 'Añadir'}</button><button type="button" id="tcanc">Cancelar</button></div><p class="error"></p></section></form>`;
+    $('#tcanc').onclick = () => { $('#tform').innerHTML = ''; };
+    $('#ftpl').onsubmit = async (e) => {
+      e.preventDefault(); const f = e.target;
+      const body = JSON.stringify({ nombre: f.n.value.trim(), idioma: f.i.value.trim(), categoria: f.c.value, cuerpo: f.b.value, descripcion: f.d.value });
+      try { await api(t ? `/panel/plantillas/${t.id}` : '/panel/plantillas', { method: t ? 'PUT' : 'POST', body }); plantillas(); }
+      catch (err) { f.querySelector('.error').textContent = err.message; }
+    };
+    f0();
+  };
+  const f0 = () => $('#ftpl input[name="n"]')?.focus();
+  $('#tnueva').onclick = () => form(null);
+  $('#main').querySelectorAll('[data-ted]').forEach((b) => b.onclick = () => form(lista.find((t) => t.id === Number(b.dataset.ted))));
+  $('#main').querySelectorAll('[data-tact]').forEach((b) => b.onclick = async () => { await api(`/panel/plantillas/${b.dataset.tact}`, { method: 'PUT', body: JSON.stringify({ activa: b.dataset.on === '1' }) }); plantillas(); });
+  $('#main').querySelectorAll('[data-tbor]').forEach((b) => b.onclick = async () => {
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Seguro?'; return; }
+    await api(`/panel/plantillas/${b.dataset.tbor}`, { method: 'DELETE' }); plantillas();
+  });
+}
+
 async function recursos() {
   const lista = await api('/panel/recursos');
   if (estado.seccion !== 'recursos') return;
@@ -2075,24 +2493,26 @@ async function recursos() {
     <p class="intro">Archivos que Sofía puede enviar cuando encajan en la conversación (horarios en PDF, fotos del box, un vídeo, cómo llegar…). Lee el nombre y «cuándo enviarlo» para decidir. Un seguimiento también puede adjuntar uno. En modo prueba no se envían: queda el borrador.</p>
     <div id="rform"></div>
     ${lista.length ? `<div class="rec-grid">${lista.map((r) => `<article class="rec ${r.activo ? '' : 'inactiva'}">${vista(r)}<div class="rec-body"><b>${esc(r.nombre)}</b> <span class="chip">${esc(r.tipo)}</span>${r.activo ? '' : ' <span class="chip ambar">no se envía</span>'}
-      <p class="ayuda">Cuándo: ${esc(r.descripcion)}</p><p class="ayuda">${(r.tamano / 1024 / 1024).toFixed(1)} MB</p>
+      <p class="ayuda">Cuándo: ${esc(r.descripcion)}</p><p class="ayuda">${r.pie ? `Texto que lo acompaña: «${esc(r.pie)}»` : 'Va sin texto'}</p><p class="ayuda">${(r.tamano / 1024 / 1024).toFixed(1)} MB</p>
       <div class="acciones-f"><button class="mini" data-red="${r.id}">Editar</button><button class="mini" data-ract="${r.id}" data-on="${r.activo ? 0 : 1}">${r.activo ? 'Desactivar' : 'Activar'}</button><button class="mini peligro" data-rbor="${r.id}">Borrar</button></div></div></article>`).join('')}</div>` : '<div class="vacio">Todavía no hay recursos. Sube por ejemplo el horario de cada sede en imagen o PDF.</div>'}`;
   cargarMedios($('#main'));
   const form = (r) => {
     $('#rform').innerHTML = `<form class="editor" id="frec"><section><h3>${r ? `Editar «${esc(r.nombre)}»` : 'Subir recurso'}</h3>
       <input name="n" placeholder="Nombre. Ej: Horario Parla" maxlength="60" value="${esc(r?.nombre || '')}" style="width:100%;margin-bottom:8px" required>
       <textarea name="d" rows="2" maxlength="500" placeholder="Cuándo enviarlo. Ej: cuando pregunte por horarios de Parla" required style="width:100%">${esc(r?.descripcion || '')}</textarea>
+      <input name="p" maxlength="1000" placeholder="Texto que lo acompaña por WhatsApp (opcional). Vacío = va sin texto" value="${esc(r?.pie || '')}" style="width:100%;margin-top:8px">
+      <p class="ayuda">Sale debajo de la imagen o del vídeo, tal cual lo escribas.</p>
       ${r ? '' : '<p><input type="file" name="f" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,application/pdf,audio/*" required></p><p class="ayuda">Imagen, vídeo MP4, PDF o audio. Máximo 25 MB.</p>'}
       <div class="acciones-f"><button class="primario">${r ? 'Guardar' : 'Subir'}</button><button type="button" id="rcanc">Cancelar</button></div><p class="error"></p></section></form>`;
     $('#rcanc').onclick = () => { $('#rform').innerHTML = ''; };
     $('#frec').onsubmit = async (e) => {
       e.preventDefault(); const f = e.target; const b = f.querySelector('.primario'); b.disabled = true; b.textContent = r ? 'Guardando…' : 'Subiendo…';
       try {
-        if (r) await api(`/panel/recursos/${r.id}`, { method: 'PUT', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value }) });
+        if (r) await api(`/panel/recursos/${r.id}`, { method: 'PUT', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, pie: f.p.value }) });
         else {
           const file = f.f.files[0]; if (file.size > 25 * 1024 * 1024) throw new Error('Como mucho 25 MB.');
           const datos = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(file); });
-          await api('/panel/recursos/adjunto', { method: 'POST', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, datos, mime: file.type, archivo: file.name }) });
+          await api('/panel/recursos/adjunto', { method: 'POST', body: JSON.stringify({ nombre: f.n.value, descripcion: f.d.value, pie: f.p.value, datos, mime: file.type, archivo: file.name }) });
         }
         recursos();
       } catch (err) { f.querySelector('.error').textContent = err.message; b.disabled = false; b.textContent = r ? 'Guardar' : 'Subir'; }

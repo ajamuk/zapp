@@ -70,17 +70,34 @@ export const config = {
     tagPlantilla: env('GHL_TAG_PLANTILLA', 'sofia-enviar-plantilla'),
     campoPlantilla: env('GHL_CAMPO_PLANTILLA', 'Sofía · Texto de seguimiento'),
   },
+  // Aislamiento en un número de WhatsApp propio (docs/aislamiento-whatsapp.md). Los dos vacíos = sin aislamiento.
+  aislamiento: {
+    numero: env('SOFIA_WA_NUMERO'),          // número propio de Sofía en formato internacional (+34…)
+    locationId: env('SOFIA_WA_LOCATION_ID'), // subcuenta de GHL de ese número; tiene que ser la misma que GHL_LOCATION_ID
+    // El número propio es el que ya tenía la subcuenta: los chats que había en la base son de esta misma línea y se
+    // pueden adoptar, uno a uno, cuando GHL lo confirma (ver docs/aislamiento-whatsapp.md)
+    adoptar: env('SOFIA_WA_ADOPTAR_CHATS', 'false') === 'true',
+    // El workflow «Sofía · enviar plantilla» de esta subcuenta envía desde el número propio (docs/seguimientos.md)
+    plantillas: env('SOFIA_WA_PLANTILLAS', 'false') === 'true',
+  },
   aimharder: {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
       access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),
     }])),
     tokenStore: env('AIMHARDER_TOKEN_STORE'),
+    // Exsocio cuya última tarifa pagada terminó hace menos de estos meses: Sofía no le contesta (lo lleva el equipo)
+    exsocioRecienteMeses: Number(env('EXSOCIO_RECIENTE_MESES', '3')),
     adminUrl: env('AIMHARDER_ADMIN_URL'),
     adminUser: env('AIMHARDER_ADMIN_USER'),
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
     // Clase de prueba de Parla reservada directamente en AimHarder (además hace falta MODE=live)
     reservaPrueba: env('AIMHARDER_RESERVA_PRUEBA', 'false') === 'true',
+    // Webhooks de AimHarder (docs/aimharder-webhooks.md): un token común en la URL y una clave privada RSA por sede
+    webhookToken: env('AIMHARDER_WEBHOOK_TOKEN'),
+    webhookClaves: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
+      pem: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}`), fichero: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}_FILE`),
+    }])),
   },
   // metro-trial-ops (pruebas de los calendarios de GHL, con asistencia y alta verificadas): su base, solo lectura
   trialOps: { db: env('TRIAL_OPS_DB', '/var/lib/metro-trial-ops/trial_ops.sqlite3') },
@@ -98,9 +115,22 @@ export const config = {
     reserva: env('TRANSCRIPTOR_RESERVA', '/usr/local/bin/cfmp-whisper-transcribe'),
     ffmpeg: env('FFMPEG', 'ffmpeg'),
   },
+  // Notas de voz de Sofía con ElevenLabs (src/voz.js). Sin clave no se genera ninguna; las normas van en Ajustes.
+  voz: {
+    apiKey: env('ELEVENLABS_API_KEY'),
+    vozId: env('ELEVENLABS_VOICE_ID'),                       // «Voice ID» de la voz (se puede cambiar en Ajustes)
+    modelo: env('ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
+    baseUrl: env('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io'),
+  },
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),
+    // Registro de socios de cada sede (clientes-analytics, se rehace solo): de ahí sale el primer pago histórico
+    sociosDb: {
+      parla: env('EMBUDO_SOCIOS_PARLA', '/opt/clientes-analytics-parla/data/clientes.sqlite'),
+      getafe: env('EMBUDO_SOCIOS_GETAFE', '/opt/clientes-analytics/data/clientes.sqlite'),
+      las_rosas: env('EMBUDO_SOCIOS_LAS_ROSAS', '/opt/clientes-analytics-rosas/data/clientes.sqlite'),
+    },
   },
   telegram: {
     token: env('TELEGRAM_BOT_TOKEN'),

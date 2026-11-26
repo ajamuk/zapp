@@ -2,7 +2,8 @@ import path from 'node:path';
 import { config, clavesDebiles } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
-import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
+import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi, SEDES } from './aimharder/index.js';
+import { manejadorWebhook, claveDeSede, crearProcesador } from './aimharder/webhook.js';
 import { reservarEnAimHarder, resultadoAimHarder } from './clase-prueba.js';
 import { sincronizarHorarios } from './horarios-sync.js';
 import { subirCopias } from './copia-drive.js';
@@ -15,6 +16,7 @@ import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
 import { rutaPruebas } from './probar.js';
+import { estadoAislamiento, chatPermitido, cuarentena, enmascarar } from './aislamiento.js';
 
 // Un fallo suelto nunca debe dejar el servicio a medias: las promesas sin capturar se registran y se sigue;
 // un error no capturado de verdad cierra el proceso y systemd lo vuelve a levantar en 5 s.
@@ -26,6 +28,14 @@ const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
 if (recuperado.chats || recuperado.seguimientos || recuperado.reportes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
+// Aislamiento en un número de WhatsApp propio: si está configurado, lo que hubiera en cola de otros chats no sale
+const aislamiento = estadoAislamiento();
+if (aislamiento.modo !== 'apagado') {
+  const q = cuarentena(repo.db, aislamiento);
+  console.log(aislamiento.modo === 'activo'
+    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)} de la subcuenta ${aislamiento.locationId}. ${aislamiento.adoptar ? 'Los chats anteriores se adoptan si GHL confirma que son de este número. ' : ''}Plantillas: ${aislamiento.plantillas ? 'permitidas' : 'bloqueadas'}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
+    : `[aislamiento] MAL CONFIGURADO (${aislamiento.motivos.join('; ')}): no entra ni sale ningún mensaje hasta arreglarlo.`);
+}
 let apisAimHarder;
 const apiSede = (sede) => (apisAimHarder ??= clientesApi())[sede];
 const aimharder = { buscarSocioPorTelefono: async (tel) => buscarSocioPorTelefono(repo, tel), prepararAlta: prepararAltaNavegador,
@@ -52,14 +62,14 @@ const avisar = async (texto, opciones = {}) => {
   return ok;
 };
 
-const ghl = new Ghl();
+const ghl = new Ghl({ aislamiento });
 const etiquetas = new Etiquetador({
-  repo, ghl, avisar,
+  repo, ghl, avisar, permitido: (conv) => chatPermitido(aislamiento, conv),
   // Seguimientos que dispara una etiqueta: se programan al ponerla y se cancelan al quitarla
   alPoner: (convId, etiquetaId) => programarPorEtiqueta(repo, repo.db, convId, etiquetaId),
   alQuitar: (convId, etiquetaId) => cancelarPorEtiqueta(repo, repo.db, convId, etiquetaId),
 });
-const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas });
+const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas, aislamiento });
 
 // ---------- Bucles (ninguno se solapa consigo mismo; los errores se registran y no paran el servicio) ----------
 const registro = {};
@@ -76,7 +86,13 @@ const salud = () => {
   return { ok: parados.length === 0 && atrasadas === 0, bucles_parados: parados, respuestas_atrasadas: atrasadas, respondiendo: setter.enCurso?.size || 0, arrancado: new Date(arrancado).toISOString() };
 };
 
-const app = crearApp({ setter, repo, etiquetas, ghl, salud });
+// Webhooks de AimHarder: solo las sedes con clave privada configurada (docs/aimharder-webhooks.md)
+const clavesWebhook = {};
+for (const sede of SEDES) { try { const k = claveDeSede(config.aimharder.webhookClaves[sede]); if (k) clavesWebhook[sede] = k; } catch (e) { console.warn(`[aimharder-webhook] clave de ${sede}: ${e.message}`); } }
+const procesarEventosAimharder = crearProcesador({ repo, apis: clientesApi() });
+const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
+  ? manejadorWebhook({ repo, claves: clavesWebhook, sedes: SEDES, despertar: () => procesarEventosAimharder() }) : null;
+const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook });
 const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
@@ -84,6 +100,7 @@ const servidor = app.listen(config.port, '127.0.0.1', () => {
 // Claves que faltan o son cortas: se avisa en el registro y en las alertas del panel (sin enseñar la clave)
 const debiles = clavesDebiles();
 if (debiles.length) { debiles.forEach((a) => console.warn('[seguridad]', a)); registrarAlerta(repo.db, { clave: 'claves-debiles', tipo: 'servidor', titulo: 'Hay claves del servicio que faltan o son demasiado cortas', detalle: debiles.join('\n'), nivel: 'aviso' }); } else resolverAlerta(repo.db, 'claves-debiles');
+if (aislamiento.modo === 'invalido') registrarAlerta(repo.db, { clave: 'aislamiento', tipo: 'servidor', titulo: 'Sofía no recibe ni envía nada: falta o está mal el aislamiento de WhatsApp', detalle: aislamiento.motivos.join('\n'), nivel: 'error' }); else resolverAlerta(repo.db, 'aislamiento');
 servidor.on('error', (e) => { console.error('No se puede abrir el puerto:', e.message); process.exit(1); });
 
 // Índice de socios desde AimHarder: cada 4 horas. Al arrancar solo se descargan las sedes con datos de más
@@ -92,6 +109,8 @@ const avisoSync = (e) => registrarAlerta(repo.db, { clave: 'aimharder-socios', t
 sincronizarSiHaceFalta(repo)
   .then((r) => { if (r) resolverAlerta(repo.db, 'aimharder-socios'); console.log(r ? `Socios sincronizados: ${JSON.stringify(r)}` : 'Socios al día (menos de 4 h): no se descargan al arrancar.'); })
   .catch(avisoSync);
+// Cola de webhooks de AimHarder: reintenta las lecturas pendientes (también las que quedaron a medias al reiniciar)
+cada('eventos-aimharder', 30 * 1000, () => procesarEventosAimharder());
 cada('socios', 4 * 3600 * 1000, () => sincronizarSocios(repo).then((r) => { resolverAlerta(repo.db, 'aimharder-socios'); console.log('Socios sincronizados:', JSON.stringify(r)); }).catch(avisoSync));
 
 if (config.ghlWebhookEnabled) {

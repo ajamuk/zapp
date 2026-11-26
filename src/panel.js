@@ -1,9 +1,27 @@
 import { knowledge } from './knowledge.js';
-import { deChats } from './etiquetas.js';
+import { deChats, sqlEsLead } from './etiquetas.js';
 import * as reglasSeg from './reglas.js';
+import * as archivos from './archivos.js';
+import * as plantillasWa from './plantillas.js';
+import fs from 'node:fs';
+import Database from 'better-sqlite3';
+import { config } from './config.js';
 
 /** Consultas del panel de control. Solo lectura, salvo lo que hace el router (pausar, reanudar, ajustes). */
 const PRUEBAS = "c.id NOT LIKE 'prueba-%'";
+// Los chats marcados con una etiqueta de «no es un lead» (proveedores, spam, equivocados) no cuentan en ninguna cifra
+const ES_LEAD = sqlEsLead('c.id');
+/**
+ * Los chats de los números de prueba (Ajustes → «Números de prueba») se ven en Chats, pero no cuentan en el Resumen,
+ * las Estadísticas ni el rendimiento. Se compara por las 9 últimas cifras, como hace el setter. Devuelve SQL para
+ * `conversations` (sin `col`, por su propio teléfono) o para una tabla que lleva `conversation_id`.
+ */
+export function sqlSinNumerosPrueba(col = null, alias = 'c', lista = config.telefonosPrueba) {
+  const nums = [...new Set((lista || []).map((t) => String(t).replace(/\D/g, '').slice(-9)).filter((t) => t.length === 9))];
+  if (!nums.length) return '1';
+  const tel = (a) => `substr(replace(replace(replace(replace(replace(replace(IFNULL(${a}telefono, ''), '+', ''), ' ', ''), '-', ''), '.', ''), '(', ''), ')', ''), -9) IN (${nums.map((n) => `'${n}'`).join(', ')})`;
+  return col ? `IFNULL(${col}, '') NOT IN (SELECT id FROM conversations WHERE ${tel('')})` : `NOT (${tel(alias + '.')})`;
+}
 
 const fmtMadrid = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' });
 const partesMadrid = (d) => Object.fromEntries(fmtMadrid.formatToParts(d).map((x) => [x.type, x.value]));
@@ -36,33 +54,42 @@ export function resumen(db, dias = 1, momento = new Date()) {
   // Comparación por fecha para usar el índice y por instante para aceptar ambos formatos UTC de SQLite e ISO.
   const uno = (sql, ...p) => db.prepare(sql).get(...p);
   const todos = (sql, ...p) => db.prepare(sql).all(...p);
+  const REALES = `${PRUEBAS} AND ${sqlSinNumerosPrueba()}`;
+  const sinPrueba = (col) => `${col} NOT LIKE 'prueba-%' AND ${sqlSinNumerosPrueba(col)}`;
   const enPeriodo = (col) => `(${col} >= '${ts.slice(0, 10)}' AND datetime(${col}) >= '${ts}')`;
 
   const conversaciones = uno(`SELECT count(*) n,
       sum(IFNULL(tipo, '') = 'socio') socios,
       sum(IFNULL(tipo, '') != 'socio') leads
-    FROM conversations c WHERE ${PRUEBAS} AND ${enPeriodo('c.created_at')}`);
+    FROM conversations c WHERE ${REALES} AND ${ES_LEAD} AND ${enPeriodo('c.created_at')}`);
+  // Para saber cuántos se han dejado fuera (se enseña al pie del Resumen)
+  // «Socios que escribieron»: los que han mandado algo en el periodo, tuvieran ya chat o no (no solo los chats nuevos)
+  conversaciones.socios = uno(`SELECT count(DISTINCT m.conversation_id) n FROM messages m JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.autor = 'lead' AND c.tipo = 'socio' AND ${REALES} AND ${ES_LEAD} AND ${enPeriodo('m.created_at')}`).n;
+  conversaciones.no_leads = uno(`SELECT count(*) n FROM conversations c WHERE ${REALES} AND NOT ${ES_LEAD} AND ${enPeriodo('c.created_at')}`).n;
+  const mEsLead = sqlEsLead('m.conversation_id');
   const mensajes = uno(`SELECT
       sum(autor = 'lead') lead, sum(autor = 'ia' AND enviado = 1) ia, sum(autor = 'ia' AND enviado = 0) borradores, sum(autor = 'humano') equipo
-    FROM messages m WHERE m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')}`);
+    FROM messages m WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`);
   const atendidas = uno(`SELECT count(DISTINCT conversation_id) n FROM messages m
-    WHERE m.autor = 'ia' AND m.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('m.created_at')}`).n;
-  const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE a.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
-  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE s.conversation_id NOT LIKE 'prueba-%' AND ${enPeriodo('s.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
+    WHERE m.autor = 'ia' AND m.enviado = 1 AND ${sinPrueba('m.conversation_id')} AND ${mEsLead} AND ${enPeriodo('m.created_at')}`).n;
+  const altas = Object.fromEntries(todos(`SELECT estado, count(*) n FROM altas a WHERE ${sinPrueba('a.conversation_id')} AND ${enPeriodo('a.created_at')} GROUP BY estado`).map((r) => [r.estado, r.n]));
+  const seguimientos = Object.fromEntries(todos(`SELECT estado, count(*) n FROM scheduled s WHERE ${sinPrueba('s.conversation_id')} AND ${enPeriodo('s.due_at')} AND datetime(s.due_at) <= datetime(?) GROUP BY estado`, momento.toISOString()).map((r) => [r.estado, r.n]));
   const ahora = uno(`SELECT sum(c.derivado = 1) derivadas, sum(c.ai_paused = 1 AND c.derivado = 0) pausadas,
-      sum(c.alta_estado = 'pendiente') altas_pendientes, sum(c.prueba_reservada = 1) pruebas
-    FROM conversations c WHERE ${PRUEBAS}`);
+      sum(c.alta_estado = 'pendiente') altas_pendientes,
+      sum(c.prueba_reservada = 1 AND (c.prueba_fecha IS NULL OR datetime(c.prueba_fecha) >= datetime(?))) pruebas
+    FROM conversations c WHERE ${REALES} AND ${ES_LEAD} AND IFNULL(c.tipo, '') != 'socio'`, momento.toISOString());
   const embudo = todos(`SELECT IFNULL(fase, 'sin fase') fase, count(*) n FROM conversations c
-    WHERE ${PRUEBAS} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
+    WHERE ${REALES} AND ${ES_LEAD} AND IFNULL(tipo, '') != 'socio' AND ${enPeriodo('c.updated_at')} GROUP BY 1 ORDER BY 1`);
   const ia = uno(`SELECT count(*) llamadas, sum(error IS NOT NULL) errores, sum(tokens_in) entrada, sum(tokens_cache_read) cache,
       sum(tokens_cache_write) cache_escritura, sum(tokens_out) salida, avg(ms) ms
     FROM ai_runs r WHERE IFNULL(r.conversation_id, '') NOT LIKE 'prueba-%' AND ${enPeriodo('r.created_at')}`);
   const intervalos = cortes.slice(0, -1).map(({ dia, utc }, i) => [dia, utc, cortes[i + 1].utc]);
   const serie = todos(`WITH dias(dia, desde, hasta) AS (VALUES ${intervalos.map(() => '(?, ?, ?)').join(', ')})
-    SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia') ia
+    SELECT d.dia, sum(m.autor = 'lead') lead, sum(m.autor = 'ia' AND m.enviado = 1) ia
     FROM dias d JOIN messages m ON m.created_at >= date(d.desde) AND m.created_at < date(d.hasta, '+1 day')
       AND datetime(m.created_at) >= d.desde AND datetime(m.created_at) < d.hasta
-    WHERE m.conversation_id NOT LIKE 'prueba-%' GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
+    WHERE ${sinPrueba('m.conversation_id')} AND ${mEsLead} GROUP BY d.dia ORDER BY d.dia`, ...intervalos.flat());
   return { dias: d, conversaciones, mensajes, atendidas, altas, seguimientos, ahora, embudo, ia, serie };
 }
 
@@ -70,7 +97,7 @@ export function resumen(db, dias = 1, momento = new Date()) {
 
 /**
  * Criterios combinables (todos opcionales; dentro de cada lista basta con uno):
- *  estado: ['ia_activa'|'pausadas'|'derivadas'|'seguimiento'|'prueba'|'alta'|'socios'|'leads']
+ *  estado: ['ia_activa'|'pausadas'|'derivadas'|'seguimiento'|'prueba'|'alta'|'socios'|'leads'|'no_leads']
  *  etiquetas: [ids], modo: 'alguna'|'todas'   ·   sin_etiquetas: [ids]   ·   sin_ninguna: true
  *  sede: ['parla'|...|'sin_sede']   ·   canal: ['whatsapp'|'instagram']   ·   fase: ['f1 apertura'|...|'sin_fase']
  *  actividad: días (último mensaje en los últimos N días)   ·   espera: 'equipo' (último mensaje del lead) | 'lead'
@@ -84,7 +111,8 @@ export const ESTADOS = {
   prueba: 'c.prueba_reservada = 1',
   alta: 'c.alta_estado IS NOT NULL',
   socios: "c.tipo = 'socio'",
-  leads: "IFNULL(c.tipo, '') != 'socio'",
+  leads: `IFNULL(c.tipo, '') != 'socio' AND ${ES_LEAD}`,
+  no_leads: `NOT ${ES_LEAD}`,
 };
 
 const lista = (v) => (Array.isArray(v) ? v : v == null || v === '' ? [] : String(v).split(',')).map((x) => String(x).trim()).filter(Boolean);
@@ -143,6 +171,7 @@ export function filtrosSql(criterios = {}) {
 }
 
 export const VISTAS_SISTEMA = [
+  { id: 'leads', nombre: 'Leads', criterios: { estado: ['leads'] } },
   { id: 'todos', nombre: 'Todos', criterios: {} },
   { id: 'ia_activa', nombre: 'IA activa', criterios: { estado: ['ia_activa'] } },
   { id: 'espera', nombre: 'Esperan respuesta', criterios: { espera: 'equipo', estado: ['leads'] } },
@@ -228,17 +257,74 @@ export function detalle(db, id) {
     seguimientos: (() => {
       const ultimo = db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(id)?.m ?? 0;
       return db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id)
-        .map((x) => ({ ...x, nombre: x.tipo === 'manual' ? 'Mensaje programado' : x.tipo === 'lanzamiento' ? 'Lanzamiento' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }));
+        .map((x) => ({ ...x, nombre: x.tipo === 'manual' ? 'Mensaje programado' : x.tipo === 'lanzamiento' ? 'Lanzamiento' : reglasSeg.obtener(db, x.regla_id)?.nombre || x.regla_id, contexto: x.contexto ? JSON.parse(x.contexto) : null, vigente: x.texto_previsto != null && x.previsto_msg === ultimo }))
+        .map((x) => (x.contexto?.archivo ? { ...x, archivo: archivos.resumen(archivos.obtener(db, x.contexto.archivo)) } : x))
+        .map((x) => (x.contexto?.plantilla ? { ...x, nombre: `Plantilla ${plantillasWa.obtener(db, x.contexto.plantilla)?.nombre || '(borrada)'}` } : x));
     })(),
     altas: db.prepare('SELECT * FROM altas WHERE conversation_id = ? ORDER BY id DESC').all(id).map((a) => ({ ...a, datos: JSON.parse(a.datos) })),
     ia: db.prepare('SELECT * FROM ai_runs WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id),
   };
 }
 
-export function altas(db, limite = 100) {
-  return db.prepare(`SELECT a.*, c.nombre, c.channel, c.sede FROM altas a LEFT JOIN conversations c ON c.id = a.conversation_id
-    WHERE a.conversation_id NOT LIKE 'prueba-%' ORDER BY a.id DESC LIMIT ?`).all(limite)
-    .map((a) => ({ ...a, datos: JSON.parse(a.datos) }));
+/**
+ * Busca en el registro de socios de cada sede (clientes-analytics, solo lectura) a quién corresponde cada alta, por
+ * correo o por las 9 últimas cifras del teléfono. Devuelve una función (sede, email, telefono) → { primer, ultimo } | null.
+ */
+function buscadorDePagos(rutas = config.embudo.sociosDb) {
+  const abiertas = {};
+  const u9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
+  const buscar = (sede, email, telefono) => {
+    const ruta = rutas?.[sede];
+    if (!ruta) return null;
+    if (!(sede in abiertas)) {
+      try {
+        const bd = fs.existsSync(ruta) ? new Database(ruta, { readonly: true, fileMustExist: true, timeout: 2000 }) : null;
+        abiertas[sede] = bd && { bd, q: bd.prepare(`SELECT first_payment primer, last_payment ultimo FROM members
+          WHERE (@email != '' AND lower(email) = @email) OR (@tel != '' AND substr(replace(replace(replace(IFNULL(phone, ''), '+', ''), ' ', ''), '-', ''), -9) = @tel)
+          ORDER BY last_payment DESC LIMIT 1`) };
+      } catch (e) { console.error(`Altas, socios de ${sede}:`, e.message); abiertas[sede] = null; }
+    }
+    if (!abiertas[sede]) return null;
+    const tel = u9(telefono);
+    try { return abiertas[sede].q.get({ email: String(email || '').trim().toLowerCase(), tel: tel.length === 9 ? tel : '' }) || { primer: null, ultimo: null }; }
+    catch (e) { console.error(`Altas, socios de ${sede}:`, e.message); return null; }
+  };
+  buscar.cerrar = () => { for (const x of Object.values(abiertas)) { try { x?.bd.close(); } catch { /* ya cerrada */ } } };
+  return buscar;
+}
+
+/**
+ * Altas que ha tramitado Sofía, de la más reciente a la más antigua. Cada fila es un intento; lleva además:
+ *  - `pago`: 'pagada' (hay un pago en el registro de socios desde el día del alta), 'pendiente' (ficha sin pago
+ *    todavía) o null (no se sabe: sede sin registro, o el intento no llegó a guardar nada). Con `pago_fecha`
+ *    y `primer_pago` (true si es el primer pago de toda su historia, es decir, un alta nueva y no un exsocio).
+ *  - `superada`: hay un intento posterior del mismo chat (este ya no es el estado del alta).
+ *  - `de_prueba`: el chat es de un número de prueba.
+ */
+export function altas(db, limite = 100, { socios } = {}) {
+  const filas = db.prepare(`SELECT a.*, c.nombre, c.channel, c.sede, c.telefono,
+      EXISTS (SELECT 1 FROM altas b WHERE b.conversation_id = a.conversation_id AND b.id > a.id) superada,
+      ${sqlSinNumerosPrueba()} real
+    FROM altas a LEFT JOIN conversations c ON c.id = a.conversation_id
+    WHERE a.conversation_id NOT LIKE 'prueba-%' ORDER BY a.id DESC LIMIT ?`).all(limite);
+  const buscar = buscadorDePagos(socios);
+  try {
+    return filas.map(({ real, telefono, ...a }) => {
+      const datos = JSON.parse(a.datos);
+      const fila = { ...a, datos, superada: Boolean(a.superada), de_prueba: real === 0, pago: null, pago_fecha: null, primer_pago: false };
+      if (['preparada', 'pendiente', 'existente'].includes(a.estado) && !fila.de_prueba) {
+        const m = buscar(datos.sede, datos.email, datos.telefono || telefono);
+        if (m) {
+          const dia = String(a.created_at).slice(0, 10);
+          const pagada = m.ultimo && m.ultimo >= dia;
+          fila.pago = pagada ? 'pagada' : 'pendiente';
+          fila.pago_fecha = pagada ? (m.primer >= dia ? m.primer : m.ultimo) : null;
+          fila.primer_pago = Boolean(pagada && m.primer && m.primer >= dia);
+        }
+      }
+      return fila;
+    });
+  } finally { buscar.cerrar(); }
 }
 
 export function seguimientos(db) {
@@ -267,11 +353,11 @@ export function seguimientos(db) {
 export function rendimiento(db, dias = 90) {
   const filas = db.prepare(`SELECT c.prompt_v v, count(*) chats,
       sum(EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead'
-        AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia'))) contestan,
+        AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia' AND x.enviado = 1))) contestan,
       sum(c.prueba_reservada = 1) prueba, sum(IFNULL(c.alta_estado, '') IN ('preparada', 'pendiente')) alta, sum(c.derivado = 1) derivados,
       sum(c.retomar IS NOT NULL) mas_adelante,
       min(c.created_at) desde, max(c.created_at) hasta
-    FROM conversations c WHERE c.prompt_v IS NOT NULL AND c.id NOT LIKE 'prueba-%' AND IFNULL(c.tipo, '') != 'socio'
+    FROM conversations c WHERE c.prompt_v IS NOT NULL AND c.id NOT LIKE 'prueba-%' AND ${sqlSinNumerosPrueba()} AND IFNULL(c.tipo, '') != 'socio'
       AND datetime(c.created_at) >= datetime('now', ?) GROUP BY c.prompt_v ORDER BY c.prompt_v DESC`).all(`-${Math.max(1, Math.min(365, Number(dias) || 90))} days`);
   const notas = Object.fromEntries(db.prepare("SELECT version, nota FROM documentos WHERE doc = 'prompt'").all().map((d) => [d.version, d.nota]));
   return filas.map((f) => ({ ...f, nota: notas[f.v] || '', errores: db.prepare("SELECT count(*) n FROM ai_runs WHERE prompt_v = ? AND error IS NOT NULL").get(f.v).n }));
@@ -286,18 +372,20 @@ const enMadrid = (iso) => {
 };
 
 /**
- * Estadísticas de los chats nuevos (leads, sin socios) en los últimos `dias`: por día y canal, mapa de cuándo
+ * Estadísticas de los chats nuevos (leads, sin socios ni marcados como «no es un lead») en los últimos `dias`: por día y canal, mapa de cuándo
  * entran (día de la semana × hora), embudo, por canal y sede, y etiquetas más puestas.
  */
-export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
-  const d = Math.max(1, Math.min(365, Number(dias) || 30));
-  const filtro = [PRUEBAS, "IFNULL(c.tipo, '') != 'socio'", `datetime(c.created_at) >= datetime('now', '-${d} days')`];
+export function estadisticas(db, { dias = 30, sede = '', canal = '', momento = new Date() } = {}) {
+  const d = Math.max(1, Math.min(365, Math.floor(Number(dias)) || 30));
+  // Días naturales de Madrid contando hoy, como el Resumen y como los dibuja el panel
+  const desde = cortesMadrid(d, momento)[0].utc;
+  const filtro = [PRUEBAS, sqlSinNumerosPrueba(), ES_LEAD, "IFNULL(c.tipo, '') != 'socio'", `(c.created_at >= '${desde.slice(0, 10)}' AND datetime(c.created_at) >= '${desde}')`];
   const p = {};
   if (sede) { filtro.push(sede === 'sin_sede' ? 'c.sede IS NULL' : 'c.sede = @sede'); p.sede = sede; }
   if (canal) { filtro.push('c.channel = @canal'); p.canal = canal; }
-  const chats = db.prepare(`SELECT c.id, c.created_at, c.channel, c.sede, c.fase, c.prueba_reservada, c.alta_estado, c.derivado, c.retomar,
-      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'ia') atendido,
-      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead' AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia')) contesta
+  const chats = db.prepare(`SELECT c.id, c.created_at, c.channel, c.sede, c.fase, c.fase_max, c.prueba_reservada, c.alta_estado, c.derivado, c.retomar,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'ia' AND m.enviado = 1) atendido,
+      EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.autor = 'lead' AND m.id > (SELECT min(id) FROM messages x WHERE x.conversation_id = c.id AND x.autor = 'ia' AND x.enviado = 1)) contesta
     FROM conversations c WHERE ${filtro.join(' AND ')}`).all(p);
   const porDia = {}; const mapa = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (const c of chats) {
@@ -306,8 +394,9 @@ export function estadisticas(db, { dias = 30, sede = '', canal = '' } = {}) {
     porDia[t.fecha][c.channel] = (porDia[t.fecha][c.channel] || 0) + 1;
     mapa[t.dia][t.hora]++;
   }
-  const ORDEN = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
-  const llego = (c, f) => ORDEN.indexOf(c.fase) >= ORDEN.indexOf(f) || c.prueba_reservada || c.alta_estado;
+  const ORDEN = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre'];
+  // Un chat «cerrado» cuenta por la fase más avanzada a la que llegó, no por estar cerrado
+  const llego = (c, f) => ORDEN.indexOf(c.fase_max || (c.fase === 'cerrada' ? '' : c.fase)) >= ORDEN.indexOf(f) || c.prueba_reservada || c.alta_estado;
   const embudo = [
     ['Chats nuevos', chats.length], ['Sofía contestó', chats.filter((c) => c.atendido).length], ['El lead siguió hablando', chats.filter((c) => c.contesta).length],
     ['Llegó a presentación', chats.filter((c) => llego(c, 'f3 presentación')).length], ['Llegó a cierre', chats.filter((c) => llego(c, 'f5 cierre')).length],

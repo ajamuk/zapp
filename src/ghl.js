@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { estadoAislamiento, plantillasPermitidas } from './aislamiento.js';
 
 const CANAL_A_TIPO = { whatsapp: 'WhatsApp', instagram: 'IG', messenger: 'FB' };
 
@@ -55,11 +56,38 @@ export function parseWebhook(raw = {}) {
   };
 }
 
+/**
+ * Mensaje de GHL ya normalizado. `locationId`, `para` (`to`: a qué número se envió) y `de` (`from`: desde cuál salió)
+ * solo se usan para el aislamiento. `to` y `from` no están en la documentación pública de GHL para WhatsApp, pero la
+ * API los devuelve con el número de la empresa en formato «+34 910 00 00 01» (comprobado en entrantes y salientes).
+ */
+const normalizarMensaje = (m) => ({
+  id: m.id, direccion: String(m.direction || '').toLowerCase(), tipo: String(m.messageType || ''), canal: canalDesdeTipo(m.messageType),
+  texto: m.body || '', adjuntos: Array.isArray(m.attachments) ? m.attachments : [], userId: m.userId || null, source: m.source || null, fecha: m.dateAdded,
+  locationId: m.locationId || null, conversationId: m.conversationId || null, contactId: m.contactId || null, para: m.to ?? null, de: m.from ?? null,
+});
+
 export class Ghl {
-  constructor({ token = config.ghl.token, baseUrl = config.ghl.baseUrl, fetchImpl = fetch } = {}) {
+  constructor({ token = config.ghl.token, baseUrl = config.ghl.baseUrl, fetchImpl = fetch, aislamiento = estadoAislamiento() } = {}) {
     this.token = token;
     this.baseUrl = baseUrl;
     this.fetch = fetchImpl;
+    // Por defecto, el de la configuración: el cliente real nunca envía fuera del número propio aunque quien lo use se olvide
+    this.aislamiento = aislamiento;
+  }
+
+  /**
+   * Cuerpo de un envío. Con aislamiento: solo WhatsApp y siempre con el número propio como emisor (`fromNumber`);
+   * si la configuración está a medias, no sale nada.
+   */
+  cuerpoEnvio(canal, resto) {
+    const type = CANAL_A_TIPO[canal];
+    if (!type) throw new Error(`Canal no soportado: ${canal}`);
+    const a = this.aislamiento;
+    if (!a || a.modo === 'apagado') return { type, ...resto };
+    if (a.modo !== 'activo') throw new Error('Aislamiento mal configurado: no se envía nada');
+    if (canal !== 'whatsapp') throw new Error(`Aislamiento: solo se envía por WhatsApp (no por ${canal})`);
+    return { type, ...resto, fromNumber: a.numero };
   }
 
   /**
@@ -102,16 +130,22 @@ export class Ghl {
   }
 
   sendMessage({ contactId, canal, texto }) {
-    const type = CANAL_A_TIPO[canal];
-    if (!type) throw new Error(`Canal no soportado: ${canal}`);
-    return this.req('POST', '/conversations/messages', { type, contactId, message: texto });
+    return this.req('POST', '/conversations/messages', this.cuerpoEnvio(canal, { contactId, message: texto }));
   }
 
-  /** Archivo (imagen, vídeo, PDF…) por WhatsApp o Instagram. `url` debe ser pública (GHL la descarga). */
-  enviarAdjunto({ contactId, canal, url, texto = '' }) {
-    const type = CANAL_A_TIPO[canal];
-    if (!type) throw new Error(`Canal no soportado: ${canal}`);
-    return this.req('POST', '/conversations/messages', { type, contactId, attachments: [url], ...(texto ? { message: texto } : {}) });
+  /**
+   * Archivo (imagen, vídeo, PDF…) por WhatsApp o Instagram. `url` debe ser pública.
+   * Por WhatsApp el archivo va en `whatsapp.media` (el formato de la bandeja de GHL): Meta descarga la URL y lo
+   * entrega con `texto` como pie. Con `attachments` a secas GHL acepta el envío, pero al lead solo le llega el texto.
+   */
+  enviarAdjunto({ contactId, canal, url, texto = '', mime = '', nombre = '' }) {
+    const resto = { contactId, ...(texto ? { message: texto } : {}) };
+    if (canal === 'whatsapp' && mime) {
+      const tipo = { image: 'image', video: 'video', audio: 'audio' }[String(mime).split('/')[0]] || 'document';
+      const archivo = nombre || decodeURIComponent(String(url).split('/').pop().split('?')[0]);
+      resto.whatsapp = { type: 'media', media: { url, type: tipo, name: archivo, mimeType: mime, ...(texto ? { caption: texto } : {}) } };
+    } else resto.attachments = [url];
+    return this.req('POST', '/conversations/messages', this.cuerpoEnvio(canal, resto));
   }
 
   /**
@@ -121,12 +155,27 @@ export class Ghl {
    * Ver docs/seguimientos.md.
    */
   async enviarPorPlantilla({ contactId, texto }) {
+    // La plantilla la envía un workflow de GHL: desde aquí no se puede fijar con qué número sale. Con aislamiento solo
+    // se usa si se ha declarado (SOFIA_WA_PLANTILLAS=true) que ese workflow envía desde el número propio.
+    if (!plantillasPermitidas(this.aislamiento)) throw new Error('Aislamiento: la plantilla la envía un workflow de GHL y no se puede fijar el número emisor');
     const campo = await this.campoPlantilla();
     await this.req('PUT', `/contacts/${contactId}`, { customFields: [{ id: campo, field_value: texto }] });
     const tag = config.ghl.tagPlantilla;
     await this.removeTags(contactId, [tag]).catch(() => null); // quitar y poner, para que el workflow salte otra vez
     await this.addTags(contactId, [tag]);
     return { messageId: null, via: 'workflow' };
+  }
+
+  /**
+   * Plantilla aprobada de WhatsApp enviada directamente (sin workflow), con el formato de la bandeja de GHL:
+   * `whatsapp.type = 'template'` y las variables del cuerpo por orden en `placeholders.body`. `texto` es la plantilla
+   * ya rellenada: es lo que GHL guarda y enseña en el chat. Con aislamiento sale del número propio (`fromNumber`).
+   */
+  enviarPlantillaWa({ contactId, nombre, idioma, categoria, variables = [], texto }) {
+    return this.req('POST', '/conversations/messages', this.cuerpoEnvio('whatsapp', {
+      contactId, message: texto,
+      whatsapp: { type: 'template', template: { name: nombre, lang: idioma, ...(categoria ? { category: categoria } : {}) }, placeholders: { header: [], body: variables, buttons: [] } },
+    }));
   }
 
   // Compatibilidad: el nombre antiguo
@@ -162,13 +211,27 @@ export class Ghl {
   async mensajes(conversationId, limit = 30) {
     const r = await this.req('GET', `/conversations/${conversationId}/messages?limit=${limit}`);
     const lista = r?.messages?.messages || (Array.isArray(r?.messages) ? r.messages : []);
-    return lista.map((m) => ({
-      id: m.id, direccion: String(m.direction || '').toLowerCase(), tipo: String(m.messageType || ''), canal: canalDesdeTipo(m.messageType),
-      texto: m.body || '', adjuntos: Array.isArray(m.attachments) ? m.attachments : [], userId: m.userId || null, source: m.source || null, fecha: m.dateAdded,
-    })).filter((m) => m.id && m.fecha).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    return lista.map(normalizarMensaje).filter((m) => m.id && m.fecha).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  }
+
+  /** Un mensaje por su id (GET /conversations/messages/{id}), normalizado; null si GHL no devuelve ese mismo mensaje. */
+  async mensaje(id) {
+    const r = await this.req('GET', `/conversations/messages/${encodeURIComponent(id)}`);
+    const m = r?.message || r;
+    return m && m.id === id ? normalizarMensaje(m) : null;
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }
+  /**
+   * Crea el contacto (o devuelve el que ya hay con ese teléfono: GHL deduplica por teléfono) para escribirle por
+   * primera vez. Devuelve { id, nuevo }.
+   */
+  async upsertContacto({ telefono, nombre, fuente = 'Sofía · primer contacto' }) {
+    const r = await this.req('POST', '/contacts/upsert', { locationId: config.ghl.locationId, phone: telefono, firstName: nombre, source: fuente });
+    const id = r?.contact?.id;
+    if (!id) throw new Error('GHL no ha devuelto el contacto');
+    return { id, nuevo: Boolean(r?.new) };
+  }
   addTags(contactId, tags) { return tags.length ? this.req('POST', `/contacts/${contactId}/tags`, { tags }) : null; }
   removeTags(contactId, tags) { return tags.length ? this.req('DELETE', `/contacts/${contactId}/tags`, { tags }) : null; }
   assign(contactId, userId) { return userId ? this.req('PUT', `/contacts/${contactId}`, { assignedTo: userId }) : null; }

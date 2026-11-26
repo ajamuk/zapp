@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS socios (
   actualizado TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS socios_tel ON socios(telefono);
+CREATE TABLE IF NOT EXISTS aimharder_eventos (
+  id TEXT PRIMARY KEY,
+  sede TEXT NOT NULL,
+  accion TEXT NOT NULL,
+  recibido TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS altas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -197,6 +203,26 @@ CREATE TABLE IF NOT EXISTS recursos (
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS plantillas_wa (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,       -- nombre exacto de la plantilla aprobada (GHL / Meta)
+  idioma TEXT NOT NULL,              -- código exacto (es, es_ES…)
+  categoria TEXT NOT NULL DEFAULT 'MARKETING',
+  cuerpo TEXT NOT NULL,              -- texto con {{1}}, {{2}}…
+  descripcion TEXT,                  -- para qué se usa (lo ve el equipo)
+  activa INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS archivos_equipo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,             -- nombre original del archivo
+  tipo TEXT NOT NULL,               -- imagen | video | documento | audio
+  media_ruta TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  tamano INTEGER,
+  token TEXT NOT NULL UNIQUE,       -- para la URL pública /r/eq_<token>
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS meta_eventos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -319,6 +345,16 @@ export function openDb(dbPath) {
 
 /** Columnas añadidas después de crear la base: se añaden si faltan. */
 const COLUMNAS_NUEVAS = {
+  // Cola de webhooks de AimHarder: el evento se guarda antes de contestar 200 y se procesa (con reintentos) después.
+  // Los eventos anteriores a la cola ya estaban procesados: quedan como «hecho».
+  aimharder_eventos: {
+    cliente_id: 'INTEGER',
+    estado: "TEXT NOT NULL DEFAULT 'hecho'", // pendiente | hecho | fallido
+    intentos: 'INTEGER NOT NULL DEFAULT 0',
+    proximo_ms: 'INTEGER NOT NULL DEFAULT 0',
+    creado_ms: 'INTEGER NOT NULL DEFAULT 0',
+    error: 'TEXT',
+  },
   conversations: {
     ghl_sync_at: 'TEXT',           // fecha del último mensaje de GHL ya revisado (Setter.sincronizar)
     ghl_sync_suelo: 'TEXT',        // no se mira GHL antes de esta fecha (conversación de prueba reiniciada)
@@ -336,6 +372,11 @@ const COLUMNAS_NUEVAS = {
     resumen: 'TEXT',              // resumen de toda la conversación (lo escribe Sofía en cada turno)
     nota_ghl_id: 'TEXT',          // nota de la ficha de GHL con la valoración y el resumen (se actualiza)
     nota_ghl_texto: 'TEXT',       // último texto enviado a esa nota (para no repetir la llamada si no cambia)
+    aislado_bloqueo: 'TEXT',      // motivo por el que Sofía no actúa en este chat con el aislamiento activo (p. ej. compartido con otra línea)
+    aislado_num: 'TEXT',          // «subcuenta:número» propio para el que se verificó su último entrante (aislamiento.js)
+    aviso_fuera_at: 'TEXT',       // último aviso automático de fuera de horario (uno por cada cierre)
+    fase_max: 'TEXT',             // fase más avanzada a la que ha llegado el chat (la actual puede ser «cerrada»)
+    primer_contacto: 'TEXT',      // JSON: { motivo, plantilla, at } si la conversación la empezó el equipo (primer-contacto.js)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento
@@ -353,6 +394,9 @@ const COLUMNAS_NUEVAS = {
     coste_usd: 'REAL',            // coste calculado al hacer la llamada, con el modelo que respondió (NULL en filas antiguas)
     respaldo: 'INTEGER NOT NULL DEFAULT 0', // 1 = respondió el modelo de respaldo porque el principal se negó
   },  // archivo que se adjunta al enviarlo
+  recursos: {
+    pie: 'TEXT',                   // texto que acompaña al archivo por WhatsApp ('' = va sin texto)
+  },
   scheduled: {
     tipo: 'TEXT',                  // silencio | etiqueta | cita | largo-plazo | manual | lanzamiento
     texto_previsto: 'TEXT',        // texto que Sofía tiene preparado ('' = decidió no enviarlo)
@@ -367,6 +411,11 @@ function migrar(db) {
     const existen = new Set(db.prepare(`PRAGMA table_info(${tabla})`).all().map((c) => c.name));
     for (const [col, tipo] of Object.entries(cols)) if (!existen.has(col)) db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
   }
+  // Chats anteriores a guardar la fase más avanzada: se parte de la que tienen ahora
+  db.exec("UPDATE conversations SET fase_max = fase WHERE fase_max IS NULL AND fase IS NOT NULL AND fase != 'cerrada'");
+  // Recursos anteriores al texto propio: conservan el que salía hasta ahora, a la vista y editable en el panel
+  db.exec(`UPDATE recursos SET pie = CASE WHEN nombre LIKE '%-tarifas' THEN 'aquí tienes las tarifas'
+    WHEN nombre LIKE '%-horarios' THEN 'y aquí los horarios' ELSE 'te lo dejo por aquí' END WHERE pie IS NULL`);
   db.exec(`UPDATE scheduled SET tipo = CASE WHEN regla_id LIKE 'largo-plazo%' THEN 'largo-plazo' ELSE 'silencio' END WHERE tipo IS NULL`);
 }
 
@@ -464,6 +513,23 @@ export function repo(db, { espejo = null } = {}) {
     guardarAjuste: (clave, valor) =>
       db.prepare(`INSERT INTO ajustes (clave, valor, actualizado) VALUES (?, ?, datetime('now'))
         ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado = excluded.actualizado`).run(clave, JSON.stringify(valor)),
+    // Webhooks de AimHarder: la entrega es «al menos una vez», así que cada evento se guarda una sola vez (por su id)
+    // antes de contestar 200 y se procesa después desde esta cola. true = nuevo, false = duplicado.
+    registrarEventoAimharder: ({ id, sede, accion, cliente_id = null, estado = 'pendiente', ahora = Date.now() }) =>
+      db.prepare('INSERT OR IGNORE INTO aimharder_eventos (id, sede, accion, cliente_id, estado, proximo_ms, creado_ms) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, sede, accion, cliente_id, estado, ahora, ahora).changes === 1,
+    eventosAimharderPendientes: (ahora = Date.now(), limite = 200) =>
+      db.prepare("SELECT * FROM aimharder_eventos WHERE estado = 'pendiente' AND proximo_ms <= ? ORDER BY creado_ms, rowid LIMIT ?").all(ahora, limite),
+    actualizarEventoAimharder: (id, { estado, intentos, proximo_ms, error = null }) =>
+      db.prepare('UPDATE aimharder_eventos SET estado = COALESCE(?, estado), intentos = COALESCE(?, intentos), proximo_ms = COALESCE(?, proximo_ms), error = ? WHERE id = ?')
+        .run(estado ?? null, intentos ?? null, proximo_ms ?? null, error, id),
+    resumenEventosAimharder: () => Object.fromEntries(db.prepare('SELECT estado, count(*) n FROM aimharder_eventos GROUP BY estado').all().map((r) => [r.estado, r.n])),
+    podarEventosAimharder: (dias = 30) => db.prepare(`DELETE FROM aimharder_eventos WHERE estado != 'pendiente' AND recibido < datetime('now', ?)`).run(`-${dias} days`),
+    /** Actualiza un solo socio (webhook) sin tocar el resto del índice. */
+    actualizarSocio: db.transaction((sede, f) => {
+      db.prepare('DELETE FROM socios WHERE sede = ? AND aimharder_id = ?').run(sede, f.aimharder_id);
+      db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)').run(f);
+    }),
     sociosPorTelefono: (tel) => db.prepare('SELECT * FROM socios WHERE telefono = ?').all(tel),
     addAlta: (convId, datos, estado, detalle = null) =>
       db.prepare('INSERT INTO altas (conversation_id, datos, estado, detalle) VALUES (?, ?, ?, ?)').run(convId, JSON.stringify(datos), estado, detalle),

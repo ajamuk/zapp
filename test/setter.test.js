@@ -10,6 +10,7 @@ const T0 = new Date('2026-11-17T11:00:00Z');
 
 function montar({ respuestas, socio = false, live = true, alta = { estado: 'preparada' }, telefonosPrueba = [] } = {}) {
   const repo = crearRepo(openDb(':memory:'));
+  repo.guardarAjuste('intensidadSeguimientos', 'intensa'); // mecánica con todos los seguimientos (los niveles, en intensidad.test.js)
   const llamadas = { enviados: [], tags: [], notas: [], avisos: [], plantillas: [], asignados: [], requests: [] };
   const ghl = {
     sendMessage: async ({ texto }) => { llamadas.enviados.push(texto); return { messageId: `m${llamadas.enviados.length}` }; },
@@ -49,7 +50,7 @@ test('webhook de GHL se normaliza', () => {
   assert.deepEqual([o.evento, o.canal, o.userId], ['outbound', 'instagram', 'u1']);
 });
 
-test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa', async () => {
+test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y no se avisa por Telegram', async () => {
   const { setter, repo, llamadas } = montar({ socio: true });
   const r = await setter.handleWebhook(entrante('no puedo reservar en la app'));
   assert.equal(r.socio, true);
@@ -57,7 +58,7 @@ test('un socio no recibe respuesta de la IA: se etiqueta, se asigna y se avisa',
   assert.equal(c.tipo, 'socio');
   assert.equal(c.ai_paused, 1);
   assert.ok(llamadas.tags.includes('socio') && llamadas.tags.includes('getafe'));
-  assert.equal(llamadas.avisos.length, 1);
+  assert.equal(llamadas.avisos.length, 0);
   assert.equal(repo.dueResponses('2100-01-01').length, 0);
 });
 
@@ -407,8 +408,8 @@ test('un punto en medio de una burbuja se devuelve para que lo parta; abreviatur
   const { puntoEnMedio, revisarRespuesta } = await import('../src/llm.js');
   assert.ok(puntoEnMedio(['el teléfono ya lo tengo de este chat. los documentos los firmas en la app']));
   assert.ok(revisarRespuesta({ mensajes: ['vale. te lo miro'] }));
-  assert.match(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd', 'e'] }), /máximo es 4/);
-  assert.equal(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd'] }), null);
+  assert.match(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd'] }), /máximo es 3/);
+  assert.equal(revisarRespuesta({ mensajes: ['a', 'b', 'c'] }), null);
   for (const ok of ['bueno... ya me dices', 'en Av. de la Paz 35', 'por ejemplo, p. ej. el lunes', 'mira https://maps.app.goo.gl/XK2R. hola', 'son 2,83 €', 'perfecto 💪']) {
     if (ok.includes('https')) continue;
     assert.equal(puntoEnMedio([ok]), false, ok);

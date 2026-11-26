@@ -13,6 +13,12 @@ import Database from 'better-sqlite3';
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRETO = 'secreto-de-la-prueba-de-extremo-a-extremo';
 const CONTACTO = 'contacto-e2e'; const CONV = 'conv-e2e'; const TELEFONO = '+34600111222';
+// Número propio de Sofía (inventado) y cómo lo devuelve GHL en `to` / `from`; MODE=live exige el aislamiento
+const NUMERO = '+34910000001'; const NUMERO_GHL = '+34 910 00 00 01'; const OTRO_GHL = '+34 910 00 00 02'; const LOC = 'loc-e2e';
+const AISLADO = { SOFIA_WA_NUMERO: NUMERO, SOFIA_WA_LOCATION_ID: LOC };
+/** Como la API real: cada mensaje lleva subcuenta, conversación y contacto, y los de WhatsApp, su línea (`to` / `from`). */
+const comoGhl = (m) => ({ locationId: LOC, conversationId: CONV, contactId: CONTACTO,
+  ...(m.messageType === 'TYPE_WHATSAPP' ? (m.direction === 'inbound' ? { to: NUMERO_GHL } : { from: NUMERO_GHL }) : {}), ...m });
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const fallos = []; const hechos = [];
 const comprobar = (ok, texto, detalle = '') => { (ok ? hechos : fallos).push(texto); console.log(`  ${ok ? '✔' : '✘'} ${texto}${!ok && detalle ? ` → ${detalle}` : ''}`); };
@@ -23,10 +29,10 @@ if (!process.env.ANTHROPIC_API_KEY) { console.error('Falta ANTHROPIC_API_KEY.');
 function ghlFalso() {
   const e = { mensajes: [], enviados: [], notas: [], tags: [], otras: [], n: 0 };
   const ahora = (ms = 0) => new Date(Date.now() + ms).toISOString();
-  e.entra = (texto, { copia = true } = {}) => {
+  e.entra = (texto, { copia = true, para = undefined } = {}) => {
     const id = `in${++e.n}`;
     if (copia) e.mensajes.push({ id: `${id}c`, direction: 'inbound', messageType: 'TYPE_CUSTOM_SMS', body: `${texto}\n\n💬Received on 34600000000`, source: 'api', dateAdded: ahora(-900) });
-    e.mensajes.push({ id, direction: 'inbound', messageType: 'TYPE_WHATSAPP', body: texto, dateAdded: ahora() });
+    e.mensajes.push({ id, direction: 'inbound', messageType: 'TYPE_WHATSAPP', body: texto, dateAdded: ahora(), ...(para ? { to: para } : {}) });
     // Después del nativo llega a veces otra copia: es lo último del chat (el caso que perdía mensajes)
     if (copia) e.mensajes.push({ id: `${id}d`, direction: 'outbound', messageType: 'TYPE_CUSTOM_SMS', body: 'copia vieja de otro mensaje \n \n💬Sent from 34600000000', source: 'api', userId: 'u-api', dateAdded: ahora(-600000) });
     return id;
@@ -50,7 +56,7 @@ function ghlFalso() {
       const ok = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
       const r = `${req.method} ${u.pathname}`;
       if (r === 'GET /conversations/search') return ok({ conversations: [{ id: CONV, lastMessageType: 'TYPE_CUSTOM_SMS' }] });
-      if (r === `GET /conversations/${CONV}/messages`) return ok({ messages: { messages: [...e.mensajes].sort((a, c) => c.dateAdded.localeCompare(a.dateAdded)).slice(0, Number(u.searchParams.get('limit')) || 20) } });
+      if (r === `GET /conversations/${CONV}/messages`) return ok({ messages: { messages: [...e.mensajes].sort((a, c) => c.dateAdded.localeCompare(a.dateAdded)).slice(0, Number(u.searchParams.get('limit')) || 20).map(comoGhl) } });
       if (r === 'POST /conversations/messages') {
         const id = `out${++e.n}`;
         e.enviados.push(b);
@@ -72,7 +78,7 @@ function ghlFalso() {
   return new Promise((listo) => srv.listen(0, '127.0.0.1', () => listo({ ...e, estado: e, url: `http://127.0.0.1:${srv.address().port}`, cerrar: () => srv.close() })));
 }
 
-async function escenario(nombre, { modo, telefonosPrueba = '' }, pasos) {
+async function escenario(nombre, { modo, telefonosPrueba = '', env = {} }, pasos) {
   console.log(`\n${nombre}`);
   const ghl = await ghlFalso(); const e = ghl.estado;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zapp-e2e-'));
@@ -83,9 +89,9 @@ async function escenario(nombre, { modo, telefonosPrueba = '' }, pasos) {
     env: {
       PATH: process.env.PATH, HOME: process.env.HOME, ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY, ...(process.env.AI_MODEL ? { AI_MODEL: process.env.AI_MODEL } : {}),
       PORT: String(puerto), DB_PATH: path.join(dir, 'setter.db'), MEDIA_DIR: path.join(dir, 'media'), PRUEBAS_DB_PATH: path.join(dir, 'pruebas.db'), MODE: modo, TEST_PHONES: telefonosPrueba,
-      GHL_WEBHOOK_ENABLED: 'true', GHL_BASE_URL: ghl.url, GHL_TOKEN: 'token-falso', GHL_LOCATION_ID: 'loc-e2e', WEBHOOK_SECRET: SECRETO, ADMIN_TOKEN: 'admin-de-la-prueba-de-extremo-a-extremo',
+      GHL_WEBHOOK_ENABLED: 'true', GHL_BASE_URL: ghl.url, GHL_TOKEN: 'token-falso', GHL_LOCATION_ID: LOC, WEBHOOK_SECRET: SECRETO, ADMIN_TOKEN: 'admin-de-la-prueba-de-extremo-a-extremo',
       AI_MIN_DELAY: '1', AI_MAX_DELAY: '2', AI_TYPING_SPEED: '20', AI_TYPING_MAX: '1', AI_HORA_INICIO: '0', AI_HORA_FIN: '0',
-      TRIAL_OPS_DB: path.join(dir, 'no-existe.sqlite3'), EMBUDO_PRUEBAS_DIR: dir, AIMHARDER_ALTA_DRY_RUN: 'true', AIMHARDER_RESERVA_PRUEBA: 'false',
+      TRIAL_OPS_DB: path.join(dir, 'no-existe.sqlite3'), EMBUDO_PRUEBAS_DIR: dir, AIMHARDER_ALTA_DRY_RUN: 'true', AIMHARDER_RESERVA_PRUEBA: 'false', ...env,
     },
   });
   hijo.stdout.on('data', (d) => registro.push(String(d)));
@@ -129,7 +135,7 @@ async function escenario(nombre, { modo, telefonosPrueba = '' }, pasos) {
 }
 
 // ---------- 1. Modo real: ráfaga, duplicados, respuesta única y el equipo que contesta ----------
-await escenario('1. Modo live: ráfaga con copias del conector, webhook repetido y respuesta del equipo', { modo: 'live' }, async ({ e, webhook, consulta, conv, hastaQueTermine }) => {
+await escenario('1. Modo live (aislado en el número propio): ráfaga con copias del conector, webhook repetido y respuesta del equipo', { modo: 'live', env: AISLADO }, async ({ e, webhook, consulta, conv, hastaQueTermine }) => {
   comprobar((await webhook('hola', {})).status === 401, 'el webhook sin secreto se rechaza (401)');
   comprobar((await webhook('hola', { 'x-setter-secret': '' })).status === 401, 'el webhook con secreto vacío se rechaza (401)');
   e.entra('hola');
@@ -143,6 +149,7 @@ await escenario('1. Modo live: ráfaga con copias del conector, webhook repetido
   const textos = e.enviados.filter((m) => m.message && !m.attachments?.length);
   comprobar(textos.length >= 1 && textos.length <= 4, `la respuesta sale en 1 a 4 burbujas (${textos.length})`);
   comprobar(e.enviados.every((m) => m.type === 'WhatsApp' && m.contactId === CONTACTO), 'todo sale por WhatsApp al contacto correcto');
+  comprobar(e.enviados.every((m) => m.fromNumber === NUMERO), 'todo sale con el número propio como emisor');
   comprobar(e.enviados.filter((m) => m.attachments?.length).every((m) => m.message), 'los archivos llevan texto (sin él, WhatsApp los rechaza)');
   comprobar(new Set(textos.map((m) => m.message)).size === textos.length, 'ninguna burbuja repetida');
   comprobar(/getafe/i.test(textos.map((m) => m.message).join(' ')), 'la respuesta tiene en cuenta el segundo mensaje (Getafe)', textos.map((m) => m.message).join(' / '));
@@ -174,6 +181,17 @@ await escenario('1. Modo live: ráfaga con copias del conector, webhook repetido
   comprobar(humanos.length === 1, 'el mensaje del equipo queda registrado una sola vez (sin su copia)', JSON.stringify(humanos));
   comprobar(conv().ai_paused === 1 && e.enviados.length === antes2, 'Sofía se aparta y no escribe después de que conteste el equipo', `pausa=${conv().ai_paused} enviados=${e.enviados.length - antes2}`);
 });
+
+// ---------- 1b. Modo real sin aislamiento, y WhatsApp a otro número: Sofía no actúa (no se llama al modelo) ----------
+const nada = async ({ e, webhook, conv }, texto, opciones) => {
+  e.entra(texto, opciones);
+  comprobar((await webhook(texto)).status === 200, 'el webhook se acepta (200)');
+  await dormir(12000);
+  comprobar(e.enviados.length === 0 && e.notas.length === 0 && e.tags.length === 0, 'no se envía nada ni se toca el contacto', `enviados=${e.enviados.length} notas=${e.notas.length} tags=${e.tags.length}`);
+  comprobar(!conv(), 'no se crea el chat');
+};
+await escenario('1b. Modo live SIN aislamiento: el servicio no actúa', { modo: 'live' }, (x) => nada(x, 'hola, quería información'));
+await escenario('1c. Modo live aislado: un WhatsApp a otro número no se atiende', { modo: 'live', env: AISLADO }, (x) => nada(x, 'hola, esto iba para el otro número', { para: OTRO_GHL }));
 
 // ---------- 2. Modo prueba: nada sale hacia el lead ----------
 await escenario('2. Modo shadow: solo deja notas', { modo: 'shadow' }, async ({ e, webhook, conv, hastaQueTermine }) => {

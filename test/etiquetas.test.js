@@ -177,6 +177,7 @@ test('filtros combinados: estado, etiquetas (alguna/todas/excluir), sede, canal,
   const v = vistas(db).find((x) => x.id === id);
   assert.equal(v.total, 1);
   assert.equal(vistas(db).find((x) => x.id === 'todos').total, 3);
+  assert.equal(vistas(db)[0].id, 'leads'); // la vista con la que se abre Chats
   assert.deepEqual(conversaciones(db, { vista: String(id) }).map((c) => c.id), ['c1']);
   // Borrar la etiqueta la quita de las vistas
   etq.borrar(db, a.id);
