@@ -33,6 +33,25 @@ test('panel: la página se sirve y los datos piden la clave', async () => {
   } finally { srv.close(); }
 });
 
+test('panel: las respuestas JSON grandes van comprimidas y las pequeñas no', async () => {
+  const { repo, srv, base } = await servidor();
+  try {
+    for (let i = 0; i < 40; i++) repo.upsertConv({ id: 'g' + i, contact_id: 'kg' + i, channel: 'whatsapp', nombre: 'Lead ficticio ' + i, telefono: '+3460000' + String(i).padStart(4, '0') });
+    const h = { authorization: 'Bearer clave-test' };
+    const grande = await fetch(base + '/admin/panel/conversaciones', { headers: { ...h, 'accept-encoding': 'gzip' } });
+    assert.equal(grande.headers.get('content-encoding'), 'gzip');
+    assert.match(grande.headers.get('vary') || '', /Accept-Encoding/i);
+    assert.ok((await grande.json()).length >= 40);
+    const pequena = await fetch(base + '/admin/panel/alertas', { headers: { ...h, 'accept-encoding': 'gzip' } });
+    assert.equal(pequena.headers.get('content-encoding'), null);
+    assert.ok(await pequena.json());
+    // Sin gzip en la petición, el JSON sale tal cual
+    const plano = await new Promise((ok, mal) => import('node:http').then(({ get }) => get(base + '/admin/panel/conversaciones', { headers: h }, (r) => { let d = ''; r.on('data', (c) => (d += c)); r.on('end', () => ok({ enc: r.headers['content-encoding'], d })); }).on('error', mal)));
+    assert.equal(plano.enc, undefined);
+    assert.ok(JSON.parse(plano.d).length >= 40);
+  } finally { srv.close(); }
+});
+
 test('MetroTools exige sesión administrativa del proxy y petición del panel', async () => {
   const { srv, base } = await servidor();
   const page = base + '/metrotools/';

@@ -169,6 +169,20 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.set('Cache-Control', 'private, no-store');
     next();
   });
+  // Respuestas JSON comprimidas: Nginx no comprime lo que llega del proxy, y la lista de chats, la batería o los
+  // seguimientos pasan de 40 KB. Por debajo de 1 KB no compensa. Los archivos y descargas no pasan por aquí.
+  admin.use((req, res, next) => {
+    if (!/\bgzip\b/i.test(req.get('accept-encoding') || '')) return next();
+    const json = res.json.bind(res);
+    res.vary('Accept-Encoding');
+    res.json = (cuerpo) => {
+      const texto = JSON.stringify(cuerpo);
+      if (texto === undefined || texto.length < 1024 || res.headersSent) return json(cuerpo);
+      res.set('Content-Encoding', 'gzip').type('json');
+      return res.end(zlib.gzipSync(texto, { level: 6 }));
+    };
+    next();
+  });
   admin.use(actividad.middleware(repo.db));
 
   // Chat de pruebas: habla con Sofía sin tocar GHL ni a ningún lead. Body: { sesion, texto, canal?, nombre? }

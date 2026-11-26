@@ -557,10 +557,18 @@ window.addEventListener('unhandledrejection', (e) => {
 const enCamino = new Map();
 // Consultas pedidas por adelantado al abrir el panel (mientras se comprueba el acceso): la sección las recoge aquí
 const precargadas = new Map();
-function precargar(...rutas) {
+function precargar(...rutas) { precargarRutas(rutas); }
+// Al acercar el ratón o el dedo a un botón del menú se piden ya sus datos (sin barra de carga): al pulsar, la sección
+// los recoge aquí y aparece antes. Cada petición del panel pasa por la comprobación de acceso de MetroTools.
+function precargarSeccion(destino) {
+  const [seccion, sub] = destino.split('/');
+  if (sub || seccion === estado.seccion || !PRIMERA[seccion]) return;
+  precargarRutas(PRIMERA[seccion](), true);
+}
+function precargarRutas(rutas, silencioso = false) {
   for (const ruta of rutas) {
     if (precargadas.has(ruta)) continue;
-    const p = pedir(ruta); p.catch(() => {}); precargadas.set(ruta, p);
+    const p = pedir(ruta, silencioso ? { silencioso } : {}); p.catch(() => {}); precargadas.set(ruta, p);
     setTimeout(() => { if (precargadas.get(ruta) === p) precargadas.delete(ruta); }, 4000);
   }
 }
@@ -574,16 +582,16 @@ function api(ruta, opciones = {}) {
   return p;
 }
 
-async function pedir(ruta, opciones = {}) {
+async function pedir(ruta, { silencioso = false, ...opciones } = {}) {
   const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
   let r;
-  ocupado(1);
+  if (!silencioso) ocupado(1);
   try {
     r = await fetch((integrado ? './api' : '/admin') + ruta, {
       ...opciones, cache: 'no-store', headers: { ...cabecera, 'content-type': 'application/json' },
     });
   } catch { throw new Error('Sin conexión con el servidor. Comprueba tu conexión e inténtalo otra vez.'); }
-  finally { ocupado(-1); }
+  finally { if (!silencioso) ocupado(-1); }
   if (integrado && r.redirected && new URL(r.url).pathname === '/access-admin/login') {
     location.assign('/access-admin/login?next=' + encodeURIComponent(location.href));
     throw new Error('La sesión de MetroTools ha caducado.');
@@ -653,6 +661,8 @@ async function iniciar() {
     </header>
     <nav class="secciones"></nav><main id="main" tabindex="-1"></main><button type="button" id="arriba" aria-label="Volver arriba" title="Volver arriba" hidden>↑</button>`;
   $('#bsalir')?.addEventListener('click', salir);
+  const alAcercarse = (e) => { const a = e.target.closest?.('[data-d]'); if (a) precargarSeccion(a.dataset.d); };
+  for (const ev of ['pointerover', 'focusin', 'touchstart']) $('.secciones').addEventListener(ev, alAcercarse, { passive: true });
   $('#arriba').onclick = () => window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   pintar();
 }
@@ -679,10 +689,12 @@ function pintarMenu() {
   const encajan = enlaces.filter((a) => dir === a.dataset.d || dir.startsWith(a.dataset.d + '/')).sort((x, y) => y.dataset.d.length - x.dataset.d.length);
   const actual = encajan[0] || enlaces.find((a) => a.dataset.d === estado.seccion);
   enlaces.forEach((a) => (a === actual ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  // Solo se desplaza la fila si el botón marcado no se ve entero (así «← Volver» queda a la vista cuando cabe)
+  // Solo se desplaza la fila si el botón marcado no se ve entero, y lo justo para que entre con su vecino asomando
+  // (antes se centraba y el primer botón quedaba cortado sin necesidad)
   if (!actual) return;
-  const r = actual.getBoundingClientRect(); const n = nav.getBoundingClientRect();
-  if (r.left < n.left || r.right > n.right) nav.scrollLeft += r.left + r.width / 2 - (n.left + n.width / 2);
+  const r = actual.getBoundingClientRect(); const n = nav.getBoundingClientRect(); const margen = 48;
+  if (r.right > n.right) nav.scrollLeft += r.right - n.right + margen;
+  else if (r.left < n.left) nav.scrollLeft -= n.left - r.left + margen;
 }
 
 /** Avisos de la cabecera y números del menú, con lo último que se sabe del servidor (se refresca solo). */
