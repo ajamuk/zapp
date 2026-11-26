@@ -345,6 +345,16 @@ export function openDb(dbPath) {
 
 /** Columnas añadidas después de crear la base: se añaden si faltan. */
 const COLUMNAS_NUEVAS = {
+  // Cola de webhooks de AimHarder: el evento se guarda antes de contestar 200 y se procesa (con reintentos) después.
+  // Los eventos anteriores a la cola ya estaban procesados: quedan como «hecho».
+  aimharder_eventos: {
+    cliente_id: 'INTEGER',
+    estado: "TEXT NOT NULL DEFAULT 'hecho'", // pendiente | hecho | fallido
+    intentos: 'INTEGER NOT NULL DEFAULT 0',
+    proximo_ms: 'INTEGER NOT NULL DEFAULT 0',
+    creado_ms: 'INTEGER NOT NULL DEFAULT 0',
+    error: 'TEXT',
+  },
   conversations: {
     ghl_sync_at: 'TEXT',           // fecha del último mensaje de GHL ya revisado (Setter.sincronizar)
     ghl_sync_suelo: 'TEXT',        // no se mira GHL antes de esta fecha (conversación de prueba reiniciada)
@@ -502,10 +512,18 @@ export function repo(db, { espejo = null } = {}) {
     guardarAjuste: (clave, valor) =>
       db.prepare(`INSERT INTO ajustes (clave, valor, actualizado) VALUES (?, ?, datetime('now'))
         ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado = excluded.actualizado`).run(clave, JSON.stringify(valor)),
-    // Webhooks de AimHarder: la entrega es «al menos una vez», así que cada evento se procesa una sola vez (por su id)
-    eventoAimharderNuevo: (id, sede, accion) => db.prepare('INSERT OR IGNORE INTO aimharder_eventos (id, sede, accion) VALUES (?, ?, ?)').run(id, sede, accion).changes === 1,
-    olvidarEventoAimharder: (id) => db.prepare('DELETE FROM aimharder_eventos WHERE id = ?').run(id),
-    podarEventosAimharder: (dias = 30) => db.prepare(`DELETE FROM aimharder_eventos WHERE recibido < datetime('now', ?)`).run(`-${dias} days`),
+    // Webhooks de AimHarder: la entrega es «al menos una vez», así que cada evento se guarda una sola vez (por su id)
+    // antes de contestar 200 y se procesa después desde esta cola. true = nuevo, false = duplicado.
+    registrarEventoAimharder: ({ id, sede, accion, cliente_id = null, estado = 'pendiente', ahora = Date.now() }) =>
+      db.prepare('INSERT OR IGNORE INTO aimharder_eventos (id, sede, accion, cliente_id, estado, proximo_ms, creado_ms) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, sede, accion, cliente_id, estado, ahora, ahora).changes === 1,
+    eventosAimharderPendientes: (ahora = Date.now(), limite = 200) =>
+      db.prepare("SELECT * FROM aimharder_eventos WHERE estado = 'pendiente' AND proximo_ms <= ? ORDER BY creado_ms, rowid LIMIT ?").all(ahora, limite),
+    actualizarEventoAimharder: (id, { estado, intentos, proximo_ms, error = null }) =>
+      db.prepare('UPDATE aimharder_eventos SET estado = COALESCE(?, estado), intentos = COALESCE(?, intentos), proximo_ms = COALESCE(?, proximo_ms), error = ? WHERE id = ?')
+        .run(estado ?? null, intentos ?? null, proximo_ms ?? null, error, id),
+    resumenEventosAimharder: () => Object.fromEntries(db.prepare('SELECT estado, count(*) n FROM aimharder_eventos GROUP BY estado').all().map((r) => [r.estado, r.n])),
+    podarEventosAimharder: (dias = 30) => db.prepare(`DELETE FROM aimharder_eventos WHERE estado != 'pendiente' AND recibido < datetime('now', ?)`).run(`-${dias} days`),
     /** Actualiza un solo socio (webhook) sin tocar el resto del índice. */
     actualizarSocio: db.transaction((sede, f) => {
       db.prepare('DELETE FROM socios WHERE sede = ? AND aimharder_id = ?').run(sede, f.aimharder_id);

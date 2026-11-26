@@ -12,9 +12,19 @@ Eventos usados: `CLIENT_CREATED`, `CLIENT_DEACTIVATED`, `CLIENT_REACTIVATED`, `M
   AimHarder no firma los avisos (solo los cifra), así que el token de la URL es lo que impide que nadie los falsifique.
 - Cifrado en sobre: AES-256-GCM, con la clave AES cifrada con la clave pública RSA de la sede (OAEP **SHA-1**).
   Cada sede tiene su propio par de claves; Sofía guarda solo la privada.
-- Responde 200 enseguida (AimHarder da 3 s) y procesa después. La entrega es «al menos una vez»: los duplicados se
-  descartan por el id del evento (tabla `aimharder_eventos`). Si la ficha no se puede leer, el evento se olvida para
-  que el reintento de AimHarder (hasta 7 en 24 h) se procese.
+- **Primero se guarda, luego se contesta.** El evento descifrado se guarda en la cola (`aimharder_eventos`, estado
+  `pendiente`) y solo entonces se responde 200 (AimHarder da 3 s). Si no se puede guardar, se responde 500 y
+  AimHarder lo reenvía. La entrega es «al menos una vez»: un id repetido se contesta 200 sin volver a procesarlo.
+- **La lectura de la ficha la reintenta Zapp**, no AimHarder (con el 200 dado, AimHarder no volvería a enviar nada).
+  Un procesador despierta al guardar y cada 30 s revisa la cola, también tras un reinicio:
+  - Fallo normal: reintentos tras 1 min, 5 min, 30 min, 2 h, 6 h y 15 h. Agotados (o pasadas 25 h) el evento queda
+    `fallido`, se registra en el log y solo lo cubre la sincronización de socios de 4 h.
+  - **429**: esa sede se pausa lo que diga `Retry-After` (mínimo 1 min, máximo 1 h), sin gastar intentos; las demás
+    sedes siguen. Zapp comparte el límite de peticiones con otras apps, así que no se insiste.
+  - Varios eventos del mismo cliente en una pasada cuestan una sola lectura (se lee la ficha tal como está ahora).
+  - Una ficha que ya no existe (404) se da por hecha.
+- Estados en la base: `SELECT estado, count(*) FROM aimharder_eventos GROUP BY estado;`. Los hechos y fallidos se
+  borran a los 30 días.
 
 ## Activarlo, sede por sede (lo hace el administrador de cada centro)
 
