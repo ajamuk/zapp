@@ -76,7 +76,7 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead, aimharderWebhook = null }) {
   const app = express();
   app.disable('x-powered-by');
   // Cabeceras de seguridad en todas las respuestas: el navegador no adivina tipos de archivo, no se puede
@@ -151,6 +151,16 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
       // Un aviso que no se puede atribuir a ningún chat no debe perderse en silencio
       if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));
     } catch (e) { console.error('Webhook:', e); }
+  });
+
+  // Webhooks de AimHarder (uno por sede: la URL lleva la sede y un token). Responde rápido; el trabajo va después.
+  app.post('/webhooks/aimharder/:sede', async (req, res) => {
+    if (!aimharderWebhook || !config.aimharder.webhookToken) return res.status(503).json({ error: 'webhooks de AimHarder desactivados' });
+    if (!igual(String(req.query.token || ''), config.aimharder.webhookToken)) return res.status(401).json({ error: 'token no válido' });
+    try {
+      const r = await aimharderWebhook(req.params.sede, req.body);
+      res.status(r.status).json(r.status === 200 ? { recibido: true } : { error: r.error || 'rechazado' });
+    } catch (e) { console.error('[aimharder-webhook]', e); res.status(500).json({ error: 'error interno' }); }
   });
 
   const admin = express.Router();

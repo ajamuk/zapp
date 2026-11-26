@@ -2,7 +2,8 @@ import path from 'node:path';
 import { config, clavesDebiles } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
-import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi } from './aimharder/index.js';
+import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi, SEDES } from './aimharder/index.js';
+import { manejadorWebhook, claveDeSede } from './aimharder/webhook.js';
 import { reservarEnAimHarder, resultadoAimHarder } from './clase-prueba.js';
 import { sincronizarHorarios } from './horarios-sync.js';
 import { subirCopias } from './copia-drive.js';
@@ -85,7 +86,12 @@ const salud = () => {
   return { ok: parados.length === 0 && atrasadas === 0, bucles_parados: parados, respuestas_atrasadas: atrasadas, respondiendo: setter.enCurso?.size || 0, arrancado: new Date(arrancado).toISOString() };
 };
 
-const app = crearApp({ setter, repo, etiquetas, ghl, salud });
+// Webhooks de AimHarder: solo las sedes con clave privada configurada (docs/aimharder-webhooks.md)
+const clavesWebhook = {};
+for (const sede of SEDES) { try { const k = claveDeSede(config.aimharder.webhookClaves[sede]); if (k) clavesWebhook[sede] = k; } catch (e) { console.warn(`[aimharder-webhook] clave de ${sede}: ${e.message}`); } }
+const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
+  ? manejadorWebhook({ repo, apis: clientesApi(), claves: clavesWebhook, sedes: SEDES }) : null;
+const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook });
 const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');

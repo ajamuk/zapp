@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS socios (
   actualizado TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS socios_tel ON socios(telefono);
+CREATE TABLE IF NOT EXISTS aimharder_eventos (
+  id TEXT PRIMARY KEY,
+  sede TEXT NOT NULL,
+  accion TEXT NOT NULL,
+  recibido TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS altas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -496,6 +502,15 @@ export function repo(db, { espejo = null } = {}) {
     guardarAjuste: (clave, valor) =>
       db.prepare(`INSERT INTO ajustes (clave, valor, actualizado) VALUES (?, ?, datetime('now'))
         ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, actualizado = excluded.actualizado`).run(clave, JSON.stringify(valor)),
+    // Webhooks de AimHarder: la entrega es «al menos una vez», así que cada evento se procesa una sola vez (por su id)
+    eventoAimharderNuevo: (id, sede, accion) => db.prepare('INSERT OR IGNORE INTO aimharder_eventos (id, sede, accion) VALUES (?, ?, ?)').run(id, sede, accion).changes === 1,
+    olvidarEventoAimharder: (id) => db.prepare('DELETE FROM aimharder_eventos WHERE id = ?').run(id),
+    podarEventosAimharder: (dias = 30) => db.prepare(`DELETE FROM aimharder_eventos WHERE recibido < datetime('now', ?)`).run(`-${dias} days`),
+    /** Actualiza un solo socio (webhook) sin tocar el resto del índice. */
+    actualizarSocio: db.transaction((sede, f) => {
+      db.prepare('DELETE FROM socios WHERE sede = ? AND aimharder_id = ?').run(sede, f.aimharder_id);
+      db.prepare('INSERT INTO socios (telefono, sede, aimharder_id, nombre, activo, tarifa) VALUES (@telefono, @sede, @aimharder_id, @nombre, @activo, @tarifa)').run(f);
+    }),
     sociosPorTelefono: (tel) => db.prepare('SELECT * FROM socios WHERE telefono = ?').all(tel),
     addAlta: (convId, datos, estado, detalle = null) =>
       db.prepare('INSERT INTO altas (conversation_id, datos, estado, detalle) VALUES (?, ?, ?, ?)').run(convId, JSON.stringify(datos), estado, detalle),
