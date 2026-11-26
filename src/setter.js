@@ -167,6 +167,40 @@ export class Setter {
     }
   }
 
+  /**
+   * Contacto recién creado: el aviso del workflow llega a los pocos segundos y GHL aún no devuelve su conversación.
+   * Sin esto el primer mensaje del lead se perdía (no entraba en el panel ni contestaba nadie). Se vuelve a preguntar
+   * a GHL unas cuantas veces; en cuanto aparece, el aviso se procesa como si hubiera llegado completo.
+   */
+  buscarConversacionLuego(evt) {
+    if (!this.ghl.buscarConversacion || evt.evento !== 'inbound' || evt.reintentoConversacion) return false;
+    const pendientes = (this.conversacionesPendientes ??= new Set());
+    if (pendientes.has(evt.contactId)) return true; // ya hay un repaso en marcha para este contacto
+    pendientes.add(evt.contactId);
+    const esperas = [...(this.repasosConversacion ?? [5000, 15000, 45000, 120000])];
+    const intentar = () => {
+      const ms = esperas.shift();
+      if (ms === undefined) {
+        pendientes.delete(evt.contactId);
+        console.warn(`[webhook] ${evt.contactId}: GHL sigue sin devolver la conversación del contacto; aviso sin procesar`);
+        return;
+      }
+      const t = setTimeout(async () => {
+        try {
+          const ya = this.repo.db.prepare('SELECT id FROM conversations WHERE contact_id = ? ORDER BY rowid DESC LIMIT 1').get(evt.contactId)?.id;
+          const id = ya || (await this.safe(() => this.ghl.buscarConversacion(evt.contactId)))?.id;
+          if (!id) return intentar();
+          pendientes.delete(evt.contactId);
+          console.log(`[webhook] ${evt.contactId}: conversación ${id} encontrada al repasar; se procesa el aviso`);
+          await this.handleWebhook({ ...evt, conversationId: id, reintentoConversacion: true });
+        } catch (e) { pendientes.delete(evt.contactId); console.error('[webhook] repaso de conversación:', e); }
+      }, ms);
+      t.unref?.();
+    };
+    intentar();
+    return true;
+  }
+
   // ---------- Entrada ----------
 
   async handleWebhook(evt) {
@@ -183,7 +217,7 @@ export class Setter {
       buscada = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
       if (buscada?.id && !evt.conversationId) evt.conversationId = buscada.id;
     }
-    if (!evt.conversationId) return { ignorado: 'faltan ids' };
+    if (!evt.conversationId) return { ignorado: 'faltan ids', reintento: this.buscarConversacionLuego(evt) };
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
     return this.enSerie(evt.conversationId, async () => {
