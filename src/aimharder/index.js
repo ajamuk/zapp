@@ -141,7 +141,8 @@ function haceMeses(meses, ahora = new Date()) {
 }
 
 /**
- * ¿Es socio ese teléfono? Socio = tarifa vigente hoy en AimHarder. Un exsocio cuya última tarifa terminó hace
+ * ¿Es socio ese teléfono? Socio = tarifa vigente hoy en AimHarder, o un pago que aún cubre hoy o más adelante
+ * (`pagoVigente`: alta nueva cuya tarifa empieza el mes que viene). Un exsocio cuya última tarifa terminó hace
  * menos de `meses` (por defecto 3) cuenta también como socio (`exSocioReciente`): Sofía no le contesta. Más antiguo,
  * o sin fecha de última tarifa, es un exsocio y se trata como lead.
  */
@@ -151,8 +152,13 @@ export function buscarSocioPorTelefono(repo, telefono, { rutas = config.embudo.s
   const filas = repo.sociosPorTelefono(tel);
   const activo = filas.find((f) => f.activo);
   if (activo) return { esSocio: true, exSocio: false, sede: activo.sede, nombre: activo.nombre || null, tarifa: activo.tarifa || null };
-  const ultima = meses > 0 ? ultimaTarifaHasta(tel, rutas) : null;
-  const reciente = Boolean(ultima && ultima.hasta >= haceMeses(meses, ahora));
+  const ultima = ultimaTarifaHasta(tel, rutas);
+  // Pago que aún cubre hoy (o que empieza más adelante): es cliente, aunque AimHarder no le marque tarifa vigente
+  // (alta nueva con inicio el mes que viene). Se trata como socio, no como exsocio.
+  if (ultima && ultima.hasta >= new Date(ahora).toISOString().slice(0, 10)) {
+    return { esSocio: true, exSocio: false, pagoVigente: true, tarifaHasta: ultima.hasta, sede: filas[0]?.sede || ultima.sede, nombre: null, tarifa: null };
+  }
+  const reciente = Boolean(meses > 0 && ultima && ultima.hasta >= haceMeses(meses, ahora));
   return {
     esSocio: reciente,
     exSocio: filas.length > 0 || Boolean(ultima),

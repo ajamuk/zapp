@@ -40,7 +40,7 @@ test('exsocio con la última tarifa hace menos de 3 meses cuenta como socio; má
     return f;
   };
   const rutas = {
-    parla: crear('parla.sqlite', [['a', '622222222', '2026-11-07'], ['b', '633333333', '2026-07-31']]),
+    parla: crear('parla.sqlite', [['a', '622222222', '2026-11-07'], ['b', '633333333', '2026-07-31'], ['f', '666666666', '2027-01-07']]),
     getafe: crear('getafe.sqlite', [['d', '+34 644 444 444', '2026-09-01'], ['e', '633333333', '2026-08-01']]),
     las_rosas: path.join(dir, 'no-existe.sqlite'),
   };
@@ -66,7 +66,15 @@ test('exsocio con la última tarifa hace menos de 3 meses cuenta como socio; má
   assert.equal(soloRegistro.sede, 'getafe');
   // Teléfono desconocido → lead
   assert.deepEqual(buscarSocioPorTelefono(repo, '655555555', { rutas, ahora }), { esSocio: false, exSocio: false, sede: null, nombre: null, tarifa: null });
-  // Con meses = 0 la regla queda desactivada
+  // Alta nueva: tarifa que empieza el mes que viene, ya pagada → socio, no exsocio
+  const nueva = buscarSocioPorTelefono(repo, '666666666', { rutas, ahora });
+  assert.equal(nueva.esSocio, true);
+  assert.equal(nueva.exSocio, false);
+  assert.equal(nueva.pagoVigente, true);
+  assert.equal(nueva.exSocioReciente, undefined);
+  assert.equal(nueva.tarifaHasta, '2027-01-07');
+  // Con meses = 0 la regla queda desactivada (el pago vigente sigue contando)
+  assert.equal(buscarSocioPorTelefono(repo, '666666666', { rutas, ahora, meses: 0 }).esSocio, true);
   assert.equal(buscarSocioPorTelefono(repo, '622222222', { rutas, ahora, meses: 0 }).esSocio, false);
 });
 
