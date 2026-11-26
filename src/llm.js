@@ -106,15 +106,15 @@ export const TOOLS = [
   },
   {
     name: 'responder',
-    description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 a 4 burbujas), etiquetas, fase y una nota interna corta para el equipo.',
+    description: 'Obligatoria al final de cada turno: mensajes que se envían al lead (1 o 2 burbujas, 3 como mucho), etiquetas, fase y una nota interna corta para el equipo.',
     // strict: la API garantiza que los argumentos cumplen el esquema (mensajes siempre como lista de textos).
-    // El modo estricto no admite límites numéricos ni de tamaño de lista: el máximo de 4 burbujas lo marca el prompt.
+    // El modo estricto no admite límites numéricos ni de tamaño de lista: el máximo de 3 burbujas lo comprueba revisarRespuesta.
     strict: true,
     input_schema: {
       type: 'object',
       additionalProperties: false,
       properties: {
-        mensajes: { type: 'array', items: { type: 'string' }, description: 'De 1 a 4 burbujas; cada una, un texto' },
+        mensajes: { type: 'array', items: { type: 'string' }, description: '1 o 2 burbujas (3 como mucho); cada una, un texto' },
         sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas', 'el_canaveral', 'desconocida'] },
         fase: { type: 'string', enum: ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'] },
         etiquetas: { type: 'array', items: { type: 'string' } },
@@ -161,8 +161,8 @@ export function revisarRespuesta(input) {
     return 'No enviado: has enumerado las sedes sin El Cañaveral. Vuelve a llamar a `responder` con los mismos mensajes, nombrando las cuatro: Parla, Getafe, Las Rosas y El Cañaveral, que es nuestra próxima apertura el 1 de febrero de 2027.';
   }
   const textos = (Array.isArray(input?.mensajes) ? input.mensajes : []).filter((m) => !/^\[(imagen|audio|video|documento): /.test(String(m).trim()));
-  if (textos.length > 4) {
-    return `No enviado: son ${textos.length} burbujas y el máximo es 4. Vuelve a llamar a \`responder\` con 4 como mucho: quédate con lo que contesta a su mensaje y la pregunta que hace avanzar.`;
+  if (textos.length > 3) {
+    return `No enviado: son ${textos.length} burbujas y el máximo es 3. Vuelve a llamar a \`responder\` con 1 o 2 (3 solo si es imprescindible): quédate con lo que contesta a su mensaje y la pregunta que hace avanzar.`;
   }
   if (puntoEnMedio(input?.mensajes)) {
     return 'No enviado: una burbuja lleva un punto en medio («… de este chat. los documentos …»). Vuelve a llamar a `responder` con lo mismo, pero cada frase en su propia burbuja (o unidas con una coma), sin puntos.';
