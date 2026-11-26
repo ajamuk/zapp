@@ -30,6 +30,10 @@
   .modo { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
   .secciones { display: flex; gap: 6px; overflow-x: auto; padding: 4px; margin: -4px -4px 20px; }
   .secciones a { display: inline-flex; gap: 7px; align-items: center; white-space: nowrap; text-decoration: none; }
+  .secciones .a-ajustes { margin-left: auto; }
+  .a-ajustes-cab { display: none !important; }
+  @media (max-width: 540px) { .a-ajustes-cab:not([hidden]) { display: inline-flex !important; } .secciones .a-ajustes { display: none; } }
+  .secciones .grupo-menu { align-self: center; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 600; margin-left: 6px; padding-left: 10px; border-left: 1px solid var(--line); }
   #main { min-width: 0; }
   #main h2 { font-size: 19px; margin: 24px 0 10px; line-height: 1.3; }
   #main > h2:first-child { margin-top: 0; }
@@ -603,7 +607,17 @@ function pintarLogin(error = '') {
   };
 }
 
-const SECCIONES = [['resumen', 'Resumen'], ['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['chats', 'Chats'], ['etiquetas', 'Etiquetas'], ['altas', 'Altas'], ['preguntas', 'Preguntas'], ['seguimientos', 'Seguimientos'], ['recursos', 'Recursos'], ['plantillas', 'Plantillas'], ['probar', 'Probar IA'], ['reportes', 'Reportes'], ['ajustes', 'Ajustes']];
+// El menú tiene dos vistas: la del día a día y, tras «Ajustes», la configuración por grupos. Cada botón lleva a
+// una dirección (#sección o #sección/sub), y las direcciones son las de siempre: los enlaces guardados siguen valiendo.
+const MENU_DIARIO = [['chats', 'Chats'], ['preguntas', 'Preguntas'], ['altas', 'Altas'], ['resumen', 'Resumen']];
+const MENU_AJUSTES = [
+  ['Sofía', [['ajustes', 'General'], ['reportes/instrucciones', 'Instrucciones']]],
+  ['Automatizaciones', [['seguimientos', 'Seguimientos'], ['etiquetas', 'Etiquetas'], ['plantillas', 'Plantillas'], ['recursos', 'Recursos']]],
+  ['Calidad', [['probar', 'Probar IA'], ['reportes', 'Reportes'], ['reportes/bateria', 'Batería']]],
+  ['Datos', [['embudo', 'Embudo'], ['estadisticas', 'Estadísticas'], ['ajustes/actividad', 'Registro']]],
+];
+const SECCIONES = [...MENU_DIARIO, ...MENU_AJUSTES.flatMap(([, botones]) => botones)].filter(([destino]) => !destino.includes('/'));
+const vistaDe = (seccion) => (MENU_DIARIO.some(([id]) => id === seccion) ? 'diario' : 'ajustes');
 
 const hoyMes = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(new Date());
 const PRIMERA = {
@@ -635,15 +649,40 @@ async function iniciar() {
   const i = estado.info;
   $('#raiz').innerHTML = `<header class="sofia-cabecera">
     <h1>ZAPP · Sofía</h1>
-    <div class="modo"><span id="chips-estado"></span>${integrado ? '' : '<button id="bsalir">Salir</button>'}</div>
+    <div class="modo"><span id="chips-estado"></span><a href="#ajustes" class="boton a-ajustes-cab" aria-label="Ajustes" title="Ajustes">⚙️</a>${integrado ? '' : '<button id="bsalir">Salir</button>'}</div>
     </header>
-    <nav class="secciones" aria-label="Secciones de ZAPP">
-      ${SECCIONES.map(([id, t]) => `<a href="#${id}" data-s="${id}">${t}<span class="n" data-n="${id}" hidden></span></a>`).join('')}
-    </nav><main id="main" tabindex="-1"></main><button type="button" id="arriba" aria-label="Volver arriba" title="Volver arriba" hidden>↑</button>`;
+    <nav class="secciones"></nav><main id="main" tabindex="-1"></main><button type="button" id="arriba" aria-label="Volver arriba" title="Volver arriba" hidden>↑</button>`;
   $('#bsalir')?.addEventListener('click', salir);
   $('#arriba').onclick = () => window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  pintarCabecera();
   pintar();
+}
+
+/** Fila de botones de la vista en la que está la sección abierta, con el botón de la dirección actual marcado. */
+function pintarMenu() {
+  const nav = $('.secciones'); if (!nav) return;
+  const vista = vistaDe(estado.seccion);
+  if (vista === 'diario') estado.ultimaDiaria = estado.seccion;
+  $('.a-ajustes-cab')?.toggleAttribute('hidden', vista !== 'diario');
+  if (nav.dataset.vista !== vista) {
+    const boton = ([destino, t]) => `<a href="#${destino}" data-d="${destino}">${t}${destino.includes('/') ? '' : `<span class="n" data-n="${destino}" hidden></span>`}</a>`;
+    nav.dataset.vista = vista;
+    nav.setAttribute('aria-label', vista === 'diario' ? 'Secciones de ZAPP' : 'Ajustes de ZAPP');
+    nav.innerHTML = vista === 'diario'
+      ? `${MENU_DIARIO.map(boton).join('')}<a href="#ajustes" class="a-ajustes">⚙️ Ajustes</a>`
+      : `<a href="#${estado.ultimaDiaria || 'chats'}" class="a-volver">← Volver</a>${MENU_AJUSTES.map(([grupo, botones]) => `<span class="grupo-menu">${grupo}</span>${botones.map(boton).join('')}`).join('')}`;
+    nav.scrollLeft = 0;
+    pintarCabecera();
+  }
+  // Se marca el botón cuya dirección encaja más larga con la actual (#reportes/bateria/3 → Batería; #reportes/3 → Reportes)
+  const dir = location.hash.slice(1);
+  const enlaces = [...nav.querySelectorAll('[data-d]')];
+  const encajan = enlaces.filter((a) => dir === a.dataset.d || dir.startsWith(a.dataset.d + '/')).sort((x, y) => y.dataset.d.length - x.dataset.d.length);
+  const actual = encajan[0] || enlaces.find((a) => a.dataset.d === estado.seccion);
+  enlaces.forEach((a) => (a === actual ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+  // Solo se desplaza la fila si el botón marcado no se ve entero (así «← Volver» queda a la vista cuando cabe)
+  if (!actual) return;
+  const r = actual.getBoundingClientRect(); const n = nav.getBoundingClientRect();
+  if (r.left < n.left || r.right > n.right) nav.scrollLeft += r.left + r.width / 2 - (n.left + n.width / 2);
 }
 
 /** Avisos de la cabecera y números del menú, con lo último que se sabe del servidor (se refresca solo). */
@@ -690,10 +729,7 @@ window.addEventListener('hashchange', () => {
 
 async function pintar() {
   const seccion = estado.seccion;
-  document.querySelectorAll('.secciones a').forEach((a) => {
-    if (a.dataset.s === seccion) { a.setAttribute('aria-current', 'page'); const n = a.parentElement; if (n.scrollWidth > n.clientWidth) n.scrollLeft = a.offsetLeft - (n.clientWidth - a.offsetWidth) / 2; }
-    else a.removeAttribute('aria-current');
-  });
+  pintarMenu();
   try {
     await (({ resumen, embudo, estadisticas, chats, etiquetas, altas, preguntas, seguimientos, recursos, plantillas, probar, reportes, ajustes })[seccion] || resumen)();
   } catch (e) {
@@ -2287,7 +2323,11 @@ async function ajustes() {
   const filaDia = ([k, t]) => { const v = a.horarioDias?.[k]; const modo = v === null ? 'cerrado' : v ? 'franja' : 'normal';
     return `<div class="dia-h"><b>${t}</b><select data-dmodo="${k}" aria-label="${t}"><option value="normal" ${modo === 'normal' ? 'selected' : ''}>Horario general</option><option value="franja" ${modo === 'franja' ? 'selected' : ''}>Otro horario</option><option value="cerrado" ${modo === 'cerrado' ? 'selected' : ''}>No contesta</option></select>
       <span data-dfr="${k}" ${modo === 'franja' ? '' : 'hidden'}><input type="number" min="0" max="23" data-ddesde="${k}" value="${v?.desde ?? a.horaInicio}" aria-label="Desde" style="width:64px"> a <input type="number" min="0" max="23" data-dhasta="${k}" value="${v?.hasta ?? a.horaFin}" aria-label="Hasta" style="width:64px"></span></div>`; };
+  const BLOQUES = [['aj-encendido', 'Encendido y horario'], ['aj-voz', 'Voz y ritmo'], ['aj-aparta', 'Cuándo se aparta'], ['aj-pruebas', 'Números de prueba'], ['aj-sistema', 'Sistema']];
+  const bloque = (id) => `<h3 id="${id}">${BLOQUES.find(([b]) => b === id)[1]}</h3>`;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Ajustes</h2><a class="boton" href="#ajustes/actividad">Registro de actividad</a></div>
+    <div class="vistas" aria-label="Ir a un bloque de ajustes">${BLOQUES.map(([id, t]) => `<button type="button" data-ir="${id}">${t}</button>`).join('')}</div>
+    ${bloque('aj-encendido')}
     <div class="ajuste"><div><div class="t">Sofía activa</div><div class="d">Apagada, no contesta ni manda follow-ups: todo lo atiende el equipo en GHL.</div></div>${sw('ia', a.ia_activa, 'Sofía activa')}</div>
     <div class="ajuste"><div><div class="t">WhatsApp</div><div class="d">Sofía contesta en WhatsApp</div></div>${sw('cw', a.canales.whatsapp, 'WhatsApp')}</div>
     <div class="ajuste"><div><div class="t">Instagram</div><div class="d">Sofía contesta en Instagram</div></div>${sw('ci', a.canales.instagram, 'Instagram')}</div>
@@ -2297,6 +2337,7 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Aviso fuera de horario</div><div class="d">Si un lead escribe cuando Sofía no está en su horario, le llega al momento este mensaje automático (uno por noche o día cerrado). Sofía le contesta de verdad en cuanto vuelve. Puedes usar <code>{nombre}</code> (su nombre) y <code>{apertura}</code> (p. ej. «mañana a las 8:00»).</div></div>${sw('fha', a.fueraHorario?.activo, 'Aviso fuera de horario')}</div>
     <div class="ajuste" style="align-items:flex-start"><div style="flex:1"><textarea id="fhm" rows="3" maxlength="1000" style="width:100%;box-sizing:border-box" aria-label="Mensaje del aviso fuera de horario">${esc(a.fueraHorario?.mensaje || '')}</textarea>
       <div class="fila-f" style="margin-top:6px"><span class="ayuda">Se envía por:</span><label class="check"><input type="checkbox" id="fhw" ${a.fueraHorario?.canales?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="fhi" ${a.fueraHorario?.canales?.instagram ? 'checked' : ''}> Instagram</label></div></div></div>
+    ${bloque('aj-voz')}
     <div class="ajuste"><div><div class="t">Notas de voz</div><div class="d">Sofía manda su respuesta como nota de voz de WhatsApp (voz de ElevenLabs) en vez de por escrito cuando se cumplen <b>todas</b> las normas de abajo. Nunca van por voz las respuestas con enlaces o correos, ni los seguimientos con plantilla; si la voz falla, sale el texto. ${a.vozEstado?.clave ? `Este mes: <b>${Number(a.vozEstado.caracteresMes).toLocaleString('es-ES')}</b> letras de ${Number(a.voz.topeMensual).toLocaleString('es-ES')}.` : '<b style="color:var(--amber)">Falta la clave de ElevenLabs en el servidor (ELEVENLABS_API_KEY): hasta entonces no sale ninguna.</b>'}</div></div>${sw('vza', a.voz?.activo, 'Notas de voz')}</div>
     <details class="ajuste-det" ${a.voz?.activo ? 'open' : ''}><summary>Normas de las notas de voz</summary><div class="dias-h">
       <label class="check"><input type="checkbox" id="vzp" ${a.voz?.soloPruebas ? 'checked' : ''}> Solo a los teléfonos de prueba del equipo</label>
@@ -2311,7 +2352,7 @@ async function ajustes() {
       <div style="display:flex;gap:6px;align-items:center"><input type="number" id="dmin" aria-label="Retraso mínimo" min="0" value="${a.minDelay}" style="width:70px"> a <input type="number" id="dmax" aria-label="Retraso máximo" min="0" value="${a.maxDelay}" style="width:70px"></div></div>
     <div class="ajuste"><div><div class="t">Velocidad de escritura</div><div class="d">Letras por segundo al escribir cada burbuja: cuanto más larga, más tarda, con un tope de unos 20 s y una pequeña variación para que no lleguen a intervalos iguales. Entre burbuja y burbuja hay una pausa de 1 o 2 s (Zapp recomienda de 3 a 5)</div></div>
       <input type="number" id="vel" aria-label="Velocidad de escritura" min="1" max="20" value="${a.typingSpeed}" style="width:70px"></div>
-    <h3>Cuándo se aparta Sofía</h3>
+    ${bloque('aj-aparta')}
     <div class="ajuste"><div><div class="t">Si escribe alguien del equipo</div><div class="d">Sofía se pausa en ese chat en cuanto una persona del equipo escribe desde GHL. Si lo apagas, solo se pausa con las palabras de abajo.</div></div>${sw('peq', a.pausarSiEquipoEscribe, 'Pausar si escribe el equipo')}</div>
     <div class="ajuste"><div><div class="t">El Cañaveral: plazas de apertura ya ocupadas</div><div class="d">${a.canaveral?.origen === 'registro'
         ? `Sofía las lee sola del registro de AimHarder que alimenta la hoja de control (se actualiza cada hora): <b>${a.canaveral.total} ocupadas</b> ahora mismo${a.canaveral.propias ? ` (${a.canaveral.base} en el registro + ${a.canaveral.propias} alta${a.canaveral.propias === 1 ? '' : 's'} de Sofía aún sin pasar a AimHarder)` : ''}. El número de esta casilla solo se usa si ese registro deja de poder leerse.`
@@ -2320,13 +2361,15 @@ async function ajustes() {
     <div class="ajuste"><div><div class="t">Palabras para que vuelva</div><div class="d">Si el equipo las escribe en un chat, Sofía vuelve a contestar ahí. Ej: #sofia</div></div><input id="prea" value="${esc((a.palabrasReanudar || []).join(', '))}" style="width:280px" aria-label="Palabras para reanudar a Sofía"></div>
     <div class="ajuste"><div><div class="t">Chats nuevos que empiezan en pausa</div><div class="d">Sofía no contesta los chats nuevos de ese canal hasta que alguien la active en el chat.</div></div><div class="fila-f"><label class="check"><input type="checkbox" id="pwa" ${a.canalesPausa?.whatsapp ? 'checked' : ''}> WhatsApp</label><label class="check"><input type="checkbox" id="pig" ${a.canalesPausa?.instagram ? 'checked' : ''}> Instagram</label></div></div>
     <div class="guardar-aj" id="gaj"><button class="primario" id="bg">Guardar</button><span id="ok" role="status"><span class="ayuda">Los cambios no se aplican hasta que pulses Guardar.</span></span></div>
-    <h3>Números de prueba</h3>
+    ${bloque('aj-pruebas')}
     <div class="ajuste tel-prueba" id="telp"></div>
-    <h3>Sistema</h3>
+    ${bloque('aj-sistema')}
     <div class="ajuste"><div><div class="t">Modo</div><div class="d">${i.modo === 'live' ? 'Enviando de verdad a los leads.' : 'Modo prueba: nada sale hacia los leads; quedan borradores para comparar con Zapp.'} El paso a real se hace en el servidor, cuando lo confirmes.</div></div><span class="chip ${i.modo === 'live' ? 'verde' : 'ambar'}">${i.modo === 'live' ? 'real' : 'prueba'}</span></div>
     <div class="ajuste"><div><div class="t">Alta en AimHarder</div><div class="d">${i.credenciales_alta ? 'Integración por navegador' : 'Faltan las credenciales de AimHarder.'}</div></div><span class="chip ${i.alta_en_pruebas ? 'ambar' : 'verde'}">${i.alta_en_pruebas ? 'Prueba' : 'Automática'}</span></div>
     <div class="ajuste"><div><div class="t">Modelo</div><div class="d">${i.modelo_configurado ? 'Redacta las respuestas de Sofía.' : 'Falta la clave de Anthropic.'}</div></div><span class="chip">${esc(i.modelo)}</span></div>`;
   $('#main').querySelectorAll('[data-dmodo]').forEach((s) => s.onchange = () => { $(`[data-dfr="${s.dataset.dmodo}"]`).hidden = s.value !== 'franja'; });
+  // Saltos a cada bloque sin tocar la dirección (el # es la sección del panel)
+  $('#main').querySelectorAll('[data-ir]').forEach((b) => b.onclick = () => $(`#${b.dataset.ir}`).scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' }));
   // Números de prueba: se guardan al momento (no esperan al botón Guardar)
   let telefonos = [...(a.telefonosPrueba || [])];
   const pintarTel = (msg = '') => {
