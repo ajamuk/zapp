@@ -23,7 +23,7 @@ export const enmascarar = (numero) => { const d = soloDigitos(numero); return d 
  * actúa; en modo prueba (shadow) sigue «apagado», como siempre. Los simuladores no pasan por aquí.
  */
 export function estadoAislamiento({ numero = config.aislamiento?.numero, locationId = config.aislamiento?.locationId, locationCliente = config.ghl.locationId, live = config.mode === 'live',
-  adoptar = config.aislamiento?.adoptar, plantillas = config.aislamiento?.plantillas } = {}) {
+  adoptar = config.aislamiento?.adoptar, plantillas = config.aislamiento?.plantillas, instagram = config.aislamiento?.instagram } = {}) {
   const n = String(numero || '').trim(); const loc = String(locationId || '').trim();
   if (!n && !loc) return live ? { modo: 'invalido', motivos: ['MODE=live exige el aislamiento en un número propio (SOFIA_WA_NUMERO y SOFIA_WA_LOCATION_ID); sin él solo se puede usar MODE=shadow'] } : { modo: 'apagado' };
   const motivos = [];
@@ -31,10 +31,13 @@ export function estadoAislamiento({ numero = config.aislamiento?.numero, locatio
   else if (!E164.test(n)) motivos.push('SOFIA_WA_NUMERO no está en formato internacional (+34…, solo cifras, sin espacios)');
   if (!loc) motivos.push('falta SOFIA_WA_LOCATION_ID');
   else if (loc !== String(locationCliente || '').trim()) motivos.push('SOFIA_WA_LOCATION_ID no coincide con GHL_LOCATION_ID (el token y las consultas irían a otra subcuenta)');
+  const ig = String(instagram || '').trim();
+  if (ig && !/^\d{5,25}$/.test(ig)) motivos.push('SOFIA_IG_PAGE_ID no es un id de página de Instagram (solo cifras)');
   if (motivos.length) return { modo: 'invalido', motivos };
   // adoptar: los chats que ya había pueden pasar a verificados si GHL confirma que son de esta línea.
   // plantillas: quien configura declara que el workflow de plantilla de esta subcuenta envía desde el número propio.
-  return { modo: 'activo', numero: n, digitos: soloDigitos(n), locationId: loc, clave: `${loc}:${soloDigitos(n)}`, adoptar: adoptar === true, plantillas: plantillas === true };
+  // instagram: id de la página de Instagram que también atiende (null = solo WhatsApp)
+  return { modo: 'activo', numero: n, digitos: soloDigitos(n), locationId: loc, clave: `${loc}:${soloDigitos(n)}`, adoptar: adoptar === true, plantillas: plantillas === true, instagram: ig || null };
 }
 
 export const APAGADO = Object.freeze({ modo: 'apagado' });
@@ -57,6 +60,7 @@ export function evaluarEntrante(aisl, m, esperado = {}) {
   if (!m.locationId) return { ok: false, motivo: 'GHL no indica la subcuenta del mensaje' };
   if (m.locationId !== aisl.locationId) return { ok: false, motivo: 'mensaje de otra subcuenta' };
   if (String(m.direccion || '').toLowerCase() !== 'inbound') return { ok: false, motivo: 'no es un mensaje entrante' };
+  if (String(m.tipo || '') === 'TYPE_INSTAGRAM') return evaluarInstagram(aisl, m, esperado);
   if (String(m.tipo || '') !== 'TYPE_WHATSAPP') return { ok: false, motivo: 'no es WhatsApp' };
   if (esperado.conversationId && m.conversationId && m.conversationId !== esperado.conversationId) return { ok: false, motivo: 'el mensaje es de otra conversación' };
   if (esperado.contactId && m.contactId && m.contactId !== esperado.contactId) return { ok: false, motivo: 'el mensaje es de otro contacto' };
@@ -66,6 +70,19 @@ export function evaluarEntrante(aisl, m, esperado = {}) {
   if (para.length !== 1 || para[0] !== aisl.digitos) return { ok: false, motivo: 'dirigido a otro número' };
   return { ok: true };
 }
+
+/** Instagram: solo si está configurada la cuenta y GHL confirma que el mensaje entró a esa página. */
+function evaluarInstagram(aisl, m, esperado) {
+  if (!aisl.instagram) return { ok: false, motivo: 'no es WhatsApp' };
+  if (esperado.conversationId && m.conversationId && m.conversationId !== esperado.conversationId) return { ok: false, motivo: 'el mensaje es de otra conversación' };
+  if (esperado.contactId && m.contactId && m.contactId !== esperado.contactId) return { ok: false, motivo: 'el mensaje es de otro contacto' };
+  if (!m.pagina) return { ok: false, motivo: 'GHL no indica a qué cuenta de Instagram se escribió' };
+  if (String(m.pagina) !== aisl.instagram) return { ok: false, motivo: 'dirigido a otra cuenta de Instagram' };
+  return { ok: true };
+}
+
+/** Cuenta de Instagram por la que fue un mensaje (null si no es Instagram o GHL no lo indica). */
+const paginaDe = (m) => (String(m?.tipo || '') === 'TYPE_INSTAGRAM' && m.pagina ? String(m.pagina) : null);
 
 /**
  * Línea de WhatsApp por la que fue un mensaje, en cifras: en un entrante, a qué número se escribió (`to`); en un
@@ -78,7 +95,12 @@ export function lineaDe(m) {
 }
 
 /** ¿Consta que este mensaje fue por una línea de WhatsApp que no es la propia? */
-export const esDeOtraLinea = (aisl, m) => { const l = lineaDe(m); return aisl?.modo === 'activo' && Boolean(l) && l !== aisl.digitos; };
+export const esDeOtraLinea = (aisl, m) => {
+  if (aisl?.modo !== 'activo') return false;
+  const l = lineaDe(m); if (l) return l !== aisl.digitos;
+  // Instagram de otra cuenta en la misma conversación (solo cuenta si Sofía atiende Instagram)
+  const pg = paginaDe(m); return Boolean(aisl.instagram && pg && pg !== aisl.instagram);
+};
 
 /**
  * ¿Demuestra este saliente, tal como lo devuelve GHL, que salió por WhatsApp desde el número propio? Solo esos cuentan
@@ -87,7 +109,8 @@ export const esDeOtraLinea = (aisl, m) => { const l = lineaDe(m); return aisl?.m
  */
 export function salienteVerificado(aisl, m) {
   return aisl?.modo === 'activo' && Boolean(m?.id) && m.locationId === aisl.locationId
-    && String(m.direccion || '').toLowerCase() === 'outbound' && lineaDe(m) === aisl.digitos;
+    && String(m.direccion || '').toLowerCase() === 'outbound'
+    && (lineaDe(m) === aisl.digitos || Boolean(aisl.instagram && paginaDe(m) === aisl.instagram));
 }
 
 /** ¿Está este chat verificado para el número y la subcuenta actuales? (lo marca su primer entrante, que pasó el control) */

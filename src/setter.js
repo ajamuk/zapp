@@ -22,6 +22,7 @@ import * as primerContacto from './primer-contacto.js';
 import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
+import { filtroInstagram, pideInformacion } from './instagram.js';
 
 const TAGS = knowledge.etiquetas;
 /** Devuelve la palabra o frase de la lista que aparece en el texto (sin tildes ni mayúsculas, palabra completa). */
@@ -199,6 +200,24 @@ export class Setter {
     };
     intentar();
     return true;
+  }
+
+  /**
+   * Instagram: nunca historias, reacciones, emojis ni mensajes sin texto; y un chat nuevo solo se abre si el mensaje
+   * pide información de forma clara. Lo que no pasa no crea chat ni toca el contacto (lo atiende el equipo en GHL).
+   * La decisión se recuerda por id de mensaje: los repasos de la conversación no vuelven a preguntar al modelo.
+   */
+  async filtrarInstagram(evt, m) {
+    this.decisionesIg ??= new Map();
+    const id = m?.id || evt.messageId;
+    if (id && this.decisionesIg.has(id)) return this.decisionesIg.get(id);
+    let v = filtroInstagram(m || { texto: evt.texto, adjuntos: evt.adjuntos });
+    if (v.ok && !this.repo.getConv(evt.conversationId)) {
+      v = await pideInformacion(m?.texto ?? evt.texto, { complete: this.completeFiltro || this.complete, onUsage: (uso) => this.safe(() => this.repo.logRun({ conversation_id: evt.conversationId, motivo: 'filtro instagram', ...uso })) });
+    }
+    if (id) { this.decisionesIg.set(id, v); if (this.decisionesIg.size > 2000) this.decisionesIg.delete(this.decisionesIg.keys().next().value); }
+    if (!v.ok) console.warn(`[instagram] entrante no atendido (${v.motivo})`); // sin texto ni datos del contacto
+    return v;
   }
 
   // ---------- Entrada ----------
@@ -446,7 +465,11 @@ export class Setter {
     if (this.aislado()) {
       const v = await this.comprobarEntrante(evt, evidencia);
       if (!v.ok) return { ignorado: `aislamiento: ${v.motivo}`, aislamiento: true };
-      evt.canal = 'whatsapp';
+      evt.canal = String(evidencia?.tipo) === 'TYPE_INSTAGRAM' ? 'instagram' : 'whatsapp';
+      if (evt.canal === 'instagram') {
+        const f = await this.filtrarInstagram(evt, evidencia);
+        if (!f.ok) return { ignorado: f.motivo, aislamiento: true };
+      }
     }
     // Un teléfono de prueba reinicia su conversación escribiendo la palabra de reinicio (para los leads es un texto más)
     const previa = this.repo.getConv(evt.conversationId);

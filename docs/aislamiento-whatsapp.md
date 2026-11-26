@@ -124,3 +124,19 @@ SOFIA_WA_PLANTILLAS=true        # el workflow «Sofía · enviar plantilla» env
 
 Código: `src/aislamiento.js` (reglas), `src/ghl.js` (emisor), `src/setter.js` (entrada y salida). Pruebas:
 `test/aislamiento.test.js`.
+
+## Instagram
+
+Con `SOFIA_IG_PAGE_ID` (el id de la página de Instagram que GHL pone en `meta.ig.pageId` de cada mensaje), Sofía
+también atiende esa cuenta de Instagram de la misma subcuenta. Vacío, Instagram queda fuera, como antes.
+
+- **Solo peticiones claras.** Un chat nuevo de Instagram solo se abre si el mensaje pide información para entrenar
+  (precios, horarios, clase de prueba, apuntarse…). Lo decide un modelo pequeño (`INSTAGRAM_FILTRO_MODEL`, Haiku por
+  defecto); si falla, un respaldo que solo deja pasar frases inequívocas. Lo que no pasa no crea chat ni toca el contacto:
+  lo atiende el equipo en GHL.
+- **Nunca historias ni reacciones.** Respuestas o reacciones a historias, publicaciones compartidas, mensajes sin texto
+  y emojis sueltos se ignoran siempre, también en un chat ya abierto (`src/instagram.js`).
+- **Misma comprobación de origen.** Entra solo lo que GHL confirma que se escribió a esa página; un mensaje de otra
+  cuenta de Instagram en la conversación la marca como compartida. Si el equipo contesta desde la cuenta, Sofía se aparta.
+- **Ventana de Instagram.** Sin plantillas: pasadas 24 h desde el último mensaje del lead no sale nada (los seguimientos
+  se omiten).
