@@ -33,7 +33,7 @@ const aislamiento = estadoAislamiento();
 if (aislamiento.modo !== 'apagado') {
   const q = cuarentena(repo.db, aislamiento);
   console.log(aislamiento.modo === 'activo'
-    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)} de la subcuenta ${aislamiento.locationId}. ${aislamiento.adoptar ? 'Los chats anteriores se adoptan si GHL confirma que son de este número. ' : ''}Plantillas: ${aislamiento.plantillas ? 'permitidas' : 'bloqueadas'}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
+    ? `Aislamiento activo: solo WhatsApp al número ${enmascarar(aislamiento.numero)}${aislamiento.instagram ? ` e Instagram de la página …${aislamiento.instagram.slice(-4)}` : ''} de la subcuenta ${aislamiento.locationId}. ${aislamiento.adoptar ? 'Los chats anteriores se adoptan si GHL confirma que son de este número. ' : ''}Plantillas: ${aislamiento.plantillas ? 'permitidas' : 'bloqueadas'}. En cuarentena: ${q.respuestas} respuestas y ${q.seguimientos} seguimientos de otros chats.`
     : `[aislamiento] MAL CONFIGURADO (${aislamiento.motivos.join('; ')}): no entra ni sale ningún mensaje hasta arreglarlo.`);
 }
 let apisAimHarder;
@@ -121,6 +121,8 @@ if (config.ghlWebhookEnabled) {
   cada('seguimientos', 60000, () => procesarSeguimientos(setter));
   // Etiquetas puestas o quitadas en GHL (también reintenta las que no llegaron a subir)
   cada('etiquetas-ghl', 15 * 60000, async () => { const r = await etiquetas.sincronizarDesdeGhl(); if (r.puestas + r.quitadas + r.subidas) console.log('Etiquetas GHL:', JSON.stringify(r)); }, 60000);
+  // Chats nuevos de los que no llegó el aviso de GHL: cada 3 minutos se repasan las conversaciones recientes
+  cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
   // Etiquetas con regla de inactividad («si no responde en X h»)
   cada('etiquetas-inactividad', 5 * 60000, () => etiquetas.revisarInactividad());
 }

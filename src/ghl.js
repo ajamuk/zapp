@@ -207,6 +207,14 @@ export class Ghl {
     return c ? { id: c.id, canal: canalDesdeTipo(c.lastMessageType || c.type) } : null;
   }
 
+  /** Conversaciones de la subcuenta con el último mensaje más reciente primero (para el barrido de chats nuevos). */
+  async conversacionesRecientes(limit = 30) {
+    const q = new URLSearchParams({ locationId: config.ghl.locationId, sortBy: 'last_message_date', sort: 'desc', limit: String(limit) });
+    const r = await this.req('GET', `/conversations/search?${q}`);
+    return (r?.conversations || []).map((c) => ({ id: c.id, contactId: c.contactId, ultimo: c.lastMessageDate ? new Date(Number(c.lastMessageDate) || c.lastMessageDate).toISOString() : null }))
+      .filter((c) => c.id && c.contactId && c.ultimo);
+  }
+
   /**
    * Últimos mensajes de una conversación, del más antiguo al más nuevo, ya normalizados. Es la fuente fiable de
    * lo que ha entrado y salido: el webhook de workflow no trae el id del mensaje, ni el canal, ni los adjuntos.
