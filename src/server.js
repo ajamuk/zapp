@@ -149,7 +149,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     try {
       const r = await setter.handleWebhook(evt);
       // Un aviso que no se puede atribuir a ningún chat no debe perderse en silencio
-      if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));
+      if (r?.ignorado === 'faltan ids' && r.reintento) console.warn(`[webhook] ${evt.contactId}: GHL aún no devuelve la conversación del contacto; se vuelve a preguntar en unos segundos`);
+      else if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));
     } catch (e) { console.error('Webhook:', e); }
   });
 
