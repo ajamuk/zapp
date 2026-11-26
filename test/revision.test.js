@@ -184,6 +184,15 @@ test('exsocio reciente: Sofía no contesta, se pausa como socio y se etiqueta ex
   assert.equal(sal.avisos.length, 0);
 });
 
+test('alta nueva con la tarifa por empezar: se pausa como socio, sin etiqueta exsocio', async () => {
+  const { repo, setter, sal } = montar({ aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: true, exSocio: false, pagoVigente: true, tarifaHasta: '2027-01-07', sede: 'getafe' }) } });
+  assert.deepEqual(await setter.handleWebhook({ evento: 'inbound', conversationId: 'c1', contactId: 'k1', canal: 'whatsapp', texto: 'ya estamos apuntados', messageId: 'm1', telefono: '+34600111222' }), { socio: true });
+  const c = repo.getConv('c1');
+  assert.equal(c.pause_reason, 'socio');
+  assert.ok(!sal.tags.includes('exsocio'));
+  assert.equal(sal.enviados.length, 0);
+});
+
 test('un webhook repetido no vuelve a pausar un chat que el equipo ya reanudó', async () => {
   const { repo, setter } = montar({});
   repo.guardarAjuste('palabrasParar', ['baja']);
