@@ -220,6 +220,34 @@ export class Setter {
     return v;
   }
 
+  /**
+   * Red de seguridad: chats nuevos de GHL de los que no llegó el aviso (workflow que falla, Sofía reiniciándose, GHL que
+   * tarda más de lo previsto). Cada pocos minutos se miran las conversaciones con actividad reciente que aún no están
+   * aquí y se ponen al día como si hubiera llegado su aviso: mismas comprobaciones (aislamiento, Instagram, equipo que
+   * ya contestó). Lo muy reciente se deja al aviso normal. Una conversación descartada no se vuelve a mirar mientras
+   * no tenga mensajes nuevos.
+   */
+  async barrerConversacionesNuevas({ minutos = 30, margenMs = 90000, limite = 30 } = {}) {
+    if (!this.ghl.conversacionesRecientes || !this.ghl.mensajes) return { revisadas: 0, recuperadas: 0 };
+    const lista = await this.safe(() => this.ghl.conversacionesRecientes(limite));
+    if (!lista) return { revisadas: 0, recuperadas: 0 };
+    const ahora = this.now().getTime();
+    this.barridoVistas ??= new Map();
+    let revisadas = 0; let recuperadas = 0;
+    for (const c of lista) {
+      const edad = ahora - new Date(c.ultimo).getTime();
+      if (edad > minutos * 60000 || edad < margenMs) continue;
+      if (this.repo.getConv(c.id) || this.barridoVistas.get(c.id) === c.ultimo) continue;
+      revisadas++;
+      const evt = { evento: 'inbound', contactId: c.contactId, conversationId: c.id, canal: 'desconocido', texto: '', messageId: null, recibido: this.now().toISOString() };
+      const r = await this.safe(() => this.enSerie(c.id, () => this.sincronizar(c.id, evt, { ventana: (minutos + 5) * 60000, horaReal: true, enMarcha: false })));
+      if (!r) continue; // GHL no responde: se vuelve a mirar en el siguiente barrido
+      this.barridoVistas.set(c.id, c.ultimo); if (this.barridoVistas.size > 2000) this.barridoVistas.delete(this.barridoVistas.keys().next().value);
+      if (this.repo.getConv(c.id)) { recuperadas++; console.warn(`[barrido] ${c.id}: chat nuevo sin aviso de GHL; recuperado`); }
+    }
+    return { revisadas, recuperadas };
+  }
+
   // ---------- Entrada ----------
 
   async handleWebhook(evt) {
@@ -281,7 +309,7 @@ export class Setter {
    *    y, si Sofía está enviando de verdad en ese chat, se aparta (ajuste «pausar si el equipo escribe»).
    * `evt` es el webhook que lo ha provocado; `visto` dice si su mensaje está en GHL (ya registrado o recién entrado).
    */
-  async sincronizar(convId, evt = null, { programar = true, enMarcha = this.enCurso?.has(convId) } = {}) {
+  async sincronizar(convId, evt = null, { programar = true, enMarcha = this.enCurso?.has(convId), ventana = VENTANA_SYNC, horaReal = false } = {}) {
     // Aislamiento: un chat de la base que no es del número propio (heredado o bloqueado) ni se consulta ni se toca
     let porAdoptar = false;
     if (this.aislado()) {
@@ -311,7 +339,7 @@ export class Setter {
     // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
     // Chat que ya existe pero sin cursor (GHL no listó nada las veces anteriores): desde su primer mensaje aquí
     const primero = cursor ? null : db.prepare('SELECT min(created_at) c FROM messages WHERE conversation_id = ?').get(convId)?.c;
-    const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity) - VENTANA_SYNC;
+    const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity) - ventana;
     const suelo = this.repo.getConv(convId)?.ghl_sync_suelo;
     const desde = [new Date(base).toISOString(), suelo].filter(Boolean).sort().pop();
     const iso = (fecha, ms) => new Date(new Date(fecha).getTime() + ms).toISOString();
@@ -332,7 +360,7 @@ export class Setter {
           else {
             const conv = this.repo.getConv(convId);
             const r = await this.onInbound({ evento: 'inbound', conversationId: convId, contactId: evt?.contactId || conv?.contact_id, canal: m.canal, texto: m.texto, messageId: m.id,
-              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha }, { programar, evidencia: m });
+              adjuntos: m.adjuntos, nombre: evt?.nombre || null, telefono: evt?.telefono || null, tags: evt?.tags ?? null, fecha: m.fecha, ...(horaReal ? { creado: m.fecha } : {}) }, { programar, evidencia: m });
             if (r?.aislamiento) out.descartados = (out.descartados || 0) + 1; else out.entrantes++;
           }
           // Recién registrado: es el del webhook aunque este se haya procesado con retraso
@@ -488,7 +516,7 @@ export class Setter {
     const ajustesC = leerAjustes(this.repo);
     if (nuevo && ajustesC.canalesPausa[conv.channel]) this.repo.updateConv(conv.id, { ai_paused: 1, pause_reason: `los chats de ${conv.channel} empiezan en pausa` });
     let adjunto = tipoAdjunto(evt.adjuntos);
-    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto });
+    const ins = this.repo.addMessage({ conversation_id: conv.id, external_id: evt.messageId, autor: 'lead', texto: evt.texto || (adjunto ? `[${adjunto}]` : ''), adjunto, ...(evt.creado ? { created_at: evt.creado } : {}) });
     // Un webhook repetido de GHL no cambia nada (tampoco vuelve a pausar un chat que el equipo ya reanudó)
     if (!ins) return { ignorado: 'duplicado' };
     const pararLead = contienePalabra(evt.texto, ajustesC.palabrasParar);
@@ -511,7 +539,7 @@ export class Setter {
       }
     }
     const ahora = this.now();
-    this.repo.updateConv(conv.id, { last_inbound_at: ahora.toISOString() });
+    this.repo.updateConv(conv.id, { last_inbound_at: evt.creado || ahora.toISOString() });
     this.repo.cancelScheduled(conv.id, 'el lead escribió', { soloCortos: true }); // los de largo plazo los revisa Sofía antes de enviar
 
     // Etiquetas de control puestas a mano en GHL
