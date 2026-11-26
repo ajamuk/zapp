@@ -546,8 +546,9 @@ export class Setter {
     if (telefono && !prueba) socio = (await this.safe(() => this.aimharder.buscarSocioPorTelefono(telefono))) || { esSocio: false };
     if (socio.esSocio) {
       const sede = normalizarSede(socio.sede);
-      this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: 'socio' });
-      const etiquetas = [TAGS.tipo.socio, TAGS.tareas.gestion_socio, sede && TAGS.sedes[sede]?.tag].filter(Boolean);
+      // Exsocio reciente (última tarifa hace menos de 3 meses): se trata igual que un socio
+      this.repo.updateConv(conv.id, { tipo: 'socio', sede, ai_paused: 1, pause_reason: socio.exSocioReciente ? 'exsocio reciente' : 'socio' });
+      const etiquetas = [TAGS.tipo.socio, TAGS.tareas.gestion_socio, sede && TAGS.sedes[sede]?.tag, socio.exSocioReciente && 'exsocio'].filter(Boolean);
       await this.safe(() => this.ghl.addTags(conv.contact_id, etiquetas));
       if (sede) await this.safe(() => this.ghl.assign(conv.contact_id, config.ghl.users[sede]));
       // Sin aviso por Telegram: los socios los lleva el equipo desde GHL (etiqueta + asignación). Telegram es solo para leads.

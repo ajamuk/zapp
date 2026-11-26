@@ -19,10 +19,55 @@ test('índice de socios: socio con tarifa vigente, exsocio sin ella', async () =
   ] };
   const r = await sincronizarSocios(repo, { getafe: fake });
   assert.deepEqual(r.getafe, { clientes: 3, socios: 1 });
-  assert.deepEqual(buscarSocioPorTelefono(repo, '+34611111111'), { esSocio: true, exSocio: false, sede: 'getafe', nombre: 'A', tarifa: 'Tarifa L' });
-  const ex = buscarSocioPorTelefono(repo, '622222222');
+  assert.deepEqual(buscarSocioPorTelefono(repo, '+34611111111', { rutas: {} }), { esSocio: true, exSocio: false, sede: 'getafe', nombre: 'A', tarifa: 'Tarifa L' });
+  const ex = buscarSocioPorTelefono(repo, '622222222', { rutas: {} });
   assert.equal(ex.esSocio, false);
   assert.equal(ex.exSocio, true);
+});
+
+test('exsocio con la última tarifa hace menos de 3 meses cuenta como socio; más antiguo, como lead', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const Database = (await import('better-sqlite3')).default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'socios-'));
+  const crear = (nombre, filas) => {
+    const f = path.join(dir, nombre);
+    const db = new Database(f);
+    db.exec('CREATE TABLE members (id TEXT, phone TEXT, active_until TEXT)');
+    for (const [id, phone, hasta] of filas) db.prepare('INSERT INTO members VALUES (?, ?, ?)').run(id, phone, hasta);
+    db.close();
+    return f;
+  };
+  const rutas = {
+    parla: crear('parla.sqlite', [['a', '622222222', '2026-11-07'], ['b', '633333333', '2026-07-31']]),
+    getafe: crear('getafe.sqlite', [['d', '+34 644 444 444', '2026-09-01'], ['e', '633333333', '2026-08-01']]),
+    las_rosas: path.join(dir, 'no-existe.sqlite'),
+  };
+  const repo = crearRepo(openDb(':memory:'));
+  await sincronizarSocios(repo, { parla: { clientes: async () => [
+    { id: 1, name: 'Baja médica', mobile_number: '622222222', current_memberships: [] },
+    { id: 2, name: 'Antiguo', mobile_number: '633333333', current_memberships: [] },
+  ] } });
+  const ahora = new Date('2026-11-26T16:00:00Z');
+  const reciente = buscarSocioPorTelefono(repo, '+34 622 222 222', { rutas, ahora });
+  assert.equal(reciente.esSocio, true);
+  assert.equal(reciente.exSocioReciente, true);
+  assert.equal(reciente.tarifaHasta, '2026-11-07');
+  assert.equal(reciente.sede, 'parla');
+  // Última tarifa (la más reciente de todas las sedes) el 1 de agosto: más de 3 meses → lead
+  const antiguo = buscarSocioPorTelefono(repo, '633333333', { rutas, ahora });
+  assert.equal(antiguo.esSocio, false);
+  assert.equal(antiguo.exSocio, true);
+  assert.equal(antiguo.exSocioReciente, undefined);
+  // Sin ficha en el índice de AimHarder pero con pago reciente en el registro de socios
+  const soloRegistro = buscarSocioPorTelefono(repo, '644444444', { rutas, ahora });
+  assert.equal(soloRegistro.esSocio, true);
+  assert.equal(soloRegistro.sede, 'getafe');
+  // Teléfono desconocido → lead
+  assert.deepEqual(buscarSocioPorTelefono(repo, '655555555', { rutas, ahora }), { esSocio: false, exSocio: false, sede: null, nombre: null, tarifa: null });
+  // Con meses = 0 la regla queda desactivada
+  assert.equal(buscarSocioPorTelefono(repo, '622222222', { rutas, ahora, meses: 0 }).esSocio, false);
 });
 
 test('token compartido: se relee en cada petición y nunca se renueva', async () => {

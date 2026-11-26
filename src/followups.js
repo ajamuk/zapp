@@ -177,7 +177,7 @@ export async function procesarSeguimientos(setter) {
     if (s.tipo !== 'manual' && conv.tipo !== 'socio' && conv.telefono && !setter.esDePrueba?.(conv) && setter.aimharder?.buscarSocioPorTelefono) {
       const socio = await setter.safe(() => setter.aimharder.buscarSocioPorTelefono(conv.telefono));
       if (socio?.esSocio) {
-        repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: 'socio' });
+        repo.updateConv(conv.id, { tipo: 'socio', ai_paused: 1, pause_reason: socio.exSocioReciente ? 'exsocio reciente' : 'socio' });
         repo.cancelScheduled(conv.id, 'ya es socio', { tipos: ['silencio', 'largo-plazo', 'etiqueta'] });
         repo.finishScheduled(s.id, 'omitido', 'ya es socio');
         continue;
