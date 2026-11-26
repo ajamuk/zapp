@@ -28,9 +28,11 @@ versión probar (por ejemplo un borrador antes de ponerlo en producción).
    - *no_prompt*: no se arregla ahí (configuración, seguimientos, integraciones, datos de AimHarder);
    - *duda*: falta un dato del negocio → pregunta al equipo; al responder se vuelve a analizar.
 3. **Comprobación**: repite la conversación hasta justo antes de la respuesta reportada con las instrucciones
-   cambiadas (en una base temporal en memoria) y un segundo análisis juzga si la nueva respuesta arregla lo reportado
-   sin problemas nuevos. Si no, hace un segundo intento con lo aprendido; si tampoco, queda «Ningún cambio funcionó»
-   (se puede aplicar igualmente).
+   cambiadas. Es un turno completo de Sofía, con sus herramientas simuladas (derivar, enviar un archivo, reservar…),
+   en una base temporal en memoria. Un segundo análisis, que tiene delante las instrucciones corregidas, la base de
+   conocimiento y las tarifas, juzga si la nueva respuesta (y lo que hizo) arregla lo reportado sin problemas graves
+   nuevos. Si no, hace un segundo intento con lo aprendido; si tampoco, queda «Ningún cambio funcionó» (se puede
+   aplicar igualmente). Si no hay conversación que repetir (reporte general), el cambio queda listo «sin comprobar».
 4. **Aplicar**: crea una versión nueva en producción con la nota «Reporte #N: …». Si las instrucciones cambiaron
    mientras tanto y el cambio ya no encaja, avisa para volver a analizarlo.
 

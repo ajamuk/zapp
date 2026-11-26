@@ -11,6 +11,8 @@ import { Setter } from './setter.js';
 import { pedirJSON } from './llm.js';
 import * as docs from './documentos.js';
 import { casoDesdeReporte } from './bateria.js';
+import { Etiquetador } from './etiquetas.js';
+import { knowledge } from './knowledge.js';
 
 /** Apunta en ai_runs lo que gasta el optimizador (para Consumo). */
 const registrar = (db, id, motivo) => (uso) => apuntarUso(db, { conversation_id: `reporte-${id}`, motivo, ...uso });
@@ -88,12 +90,33 @@ const ESQUEMA_DIAGNOSTICO = {
   },
 };
 
-const SISTEMA_JUEZ = `Comparas dos respuestas de Sofía (setter de CrossFit MetroPolitano) en la misma conversación: la que el equipo reportó y la nueva, generada con las instrucciones corregidas. Decide si la NUEVA resuelve lo que pide el reporte sin introducir problemas nuevos (datos inventados, tono distinto al de Sofía, reglas rotas). No exijas que sea idéntica a lo que pidió el equipo: basta con que haga lo que se pedía. Responde en español.`;
+const SISTEMA_JUEZ = `Comparas dos respuestas de Sofía (setter por chat de CrossFit MetroPolitano) en la misma conversación: la que el equipo reportó y la NUEVA, generada con las instrucciones corregidas. Decide si la NUEVA resuelve lo que pide el reporte.
+
+Cómo juzgar:
+- "arreglado": la NUEVA ya no comete el fallo reportado y hace, en lo esencial, lo que el equipo pedía. No exijas que sea idéntica ni que use sus mismas palabras (el «texto exacto», si lo hay, es un ejemplo). Juzga solo lo que se reportó: no la suspendas por detalles de estilo o por cosas que el reporte no menciona.
+- Sofía contesta en varias burbujas cortas (una por línea). La respuesta reportada puede ser solo una de las burbujas de su turno; la NUEVA es el turno entero.
+- Sofía también actúa con herramientas (derivar al equipo, enviar un archivo, reservar una prueba, preparar un alta…). Lo que hizo en el turno nuevo está en <acciones_nuevas>: si el reporte pedía una acción, mira ahí si la hizo. En la comprobación esas herramientas están simuladas.
+- "hay_problemas_nuevos": true solo si la NUEVA introduce un problema GRAVE que la reportada no tenía: un dato falso, una regla de sus instrucciones rota o un tono claramente impropio. Para saber si un dato es correcto mira las instrucciones, la base de conocimiento y las tarifas de abajo y lo que devolvieron sus herramientas: lo que está ahí no es inventado. Diferencias menores no cuentan. Si no hay ninguno, false y "problemas_nuevos" vacío.
+Responde en español, con un motivo corto para alguien que no es técnico.`;
+
+/** Sistema del juez: sus reglas y, cacheadas, las instrucciones (ya corregidas) y las tarifas con las que contesta Sofía. */
+const sistemaJuez = (textos) => [
+  { type: 'text', text: SISTEMA_JUEZ },
+  { type: 'text', text: `<instrucciones_de_sofia>\n${textos.prompt || '(no disponibles)'}\n</instrucciones_de_sofia>\n\n<base_de_conocimiento>\n${textos.negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
+];
 
 const ESQUEMA_JUEZ = {
-  type: 'object', additionalProperties: false, required: ['arreglado', 'motivo', 'problemas_nuevos'],
-  properties: { arreglado: { type: 'boolean' }, motivo: { type: 'string' }, problemas_nuevos: { type: 'string', description: 'Vacío si no hay.' } },
+  type: 'object', additionalProperties: false, required: ['arreglado', 'motivo', 'hay_problemas_nuevos', 'problemas_nuevos'],
+  properties: { arreglado: { type: 'boolean' }, motivo: { type: 'string' }, hay_problemas_nuevos: { type: 'boolean' }, problemas_nuevos: { type: 'string', description: 'Vacío si no hay.' } },
 };
+
+/** «Ninguno», «No hay», «N/A»… no son un problema: el juez a veces lo escribe en vez de dejarlo vacío. */
+const SIN_PROBLEMAS = /^(no|ningun[oa]s?|nada|no hay( ningun[oa])?|no se (observan?|detectan?|aprecian?)( ningun[oa])?|sin problemas?( nuevos)?|n\/?a|vac[ií]o|-+)?( problemas?)?( nuevos?)?[\s.]*$/i;
+export function problemasNuevos(juicio) {
+  const texto = String(juicio?.problemas_nuevos ?? '').trim();
+  const hay = typeof juicio?.hay_problemas_nuevos === 'boolean' ? juicio.hay_problemas_nuevos : !SIN_PROBLEMAS.test(texto);
+  return hay ? (texto || 'El juez ve un problema nuevo, pero no lo ha descrito.') : '';
+}
 
 const AUTOR = { lead: 'LEAD', ia: 'SOFÍA', humano: 'EQUIPO' };
 const conversacionTexto = (mensajes) => mensajes.map((m) => {
@@ -113,24 +136,50 @@ function contenidoDiagnostico(r, textos, intentoPrevio) {
   ].filter(Boolean).join('\n\n');
 }
 
+/** Los mensajes anteriores al turno reportado (sin las burbujas de Sofía de ese turno). */
+function mensajesPrevios(r) {
+  const previos = [...(r.contexto.mensajes || [])];
+  // Si Sofía contestó en varias burbujas seguidas, se quitan todas las de ese turno
+  while (previos.length && previos.at(-1).autor === 'ia') previos.pop();
+  return previos;
+}
+
 /**
  * Repite la conversación hasta justo antes de la respuesta reportada con otras instrucciones y devuelve lo que
- * Sofía contestaría ahora. Corre en una base temporal en memoria: no toca ningún chat.
+ * Sofía haría ahora: { texto, acciones }. Es un turno completo de Sofía, con sus herramientas simuladas (derivar,
+ * enviar un archivo, reservar…), en una base temporal en memoria: no toca ningún chat, GHL ni AimHarder.
  */
 export async function repetir(r, textos, { complete, catalogo }) {
   // Lo que gasta Sofía al repetir la conversación se apunta también en la base real (Consumo), aunque falle
   const tmp = crearRepo(openDb(':memory:'), { espejo: { db: catalogo, campos: { conversation_id: `reporte-${r.id}`, motivo: 'reporte-comprobacion' } } });
   const meta = r.contexto.meta || {};
-  tmp.upsertConv({ id: 'reporte', contact_id: 'reporte', channel: meta.channel || 'whatsapp', nombre: meta.nombre || null });
-  tmp.updateConv('reporte', { sede: meta.sede || null, tipo: meta.tipo || 'captacion', fase: meta.fase || null });
-  const msgs = r.contexto.mensajes || [];
-  const previos = r.respuesta_ia && msgs.at(-1)?.autor === 'ia' ? msgs.slice(0, -1) : msgs;
-  // Si Sofía contestó en varias burbujas seguidas, se quitan todas las de ese turno
-  while (previos.length && previos.at(-1).autor === 'ia') previos.pop();
-  for (const m of previos) tmp.addMessage({ conversation_id: 'reporte', autor: m.autor, texto: m.texto, adjunto: m.adjunto || null, transcripcion: m.transcripcion || null });
-  const setter = new Setter({ repo: tmp, catalogo, complete, live: true, sleep: async () => {}, ghl: {}, aimharder: {} });
-  const texto = await setter.redactar('reporte', '', { docs: textos });
-  return texto;
+  const id = 'prueba-reporte';
+  tmp.upsertConv({ id, contact_id: id, channel: meta.channel || 'whatsapp', nombre: meta.nombre || null, telefono: '+34600000000' });
+  tmp.updateConv(id, { sede: meta.sede || null, tipo: meta.tipo || 'captacion', fase: meta.fase || null });
+  for (const m of mensajesPrevios(r)) tmp.addMessage({ conversation_id: id, autor: m.autor, texto: m.texto, adjunto: m.adjunto || null, transcripcion: m.transcripcion || null });
+  const avisos = [];
+  const ghl = { sendMessage: async () => ({ messageId: null }), enviarAdjunto: async () => ({}), enviarPorPlantilla: async () => ({}), addTags: async () => {}, removeTags: async () => {}, assign: async () => {}, addNote: async () => {}, getContact: async () => ({ contact: {} }) };
+  const setter = new Setter({
+    repo: tmp, catalogo, complete, ghl, live: true, sleep: async () => {}, avisar: async (t) => avisos.push(t),
+    etiquetas: new Etiquetador({ repo: tmp, catalogo, enviarMeta: async () => null }),
+    aimharder: {
+      buscarSocioPorTelefono: async () => ({ esSocio: false, sede: null }),
+      prepararAlta: async (d) => ({ estado: 'preparada', pendiente: d.primer_recibo ?? 22.67, tarifa: d.tarifa, detalle: 'alta simulada (comprobación de un reporte)' }),
+      fichaEnSede: async () => null,
+    },
+  });
+  // Las instrucciones con el cambio propuesto todavía no están guardadas como versión: se le pasan tal cual
+  const sistema = setter.sistema.bind(setter);
+  setter.sistema = (conv, extra) => sistema(conv, extra, textos);
+  const antes = tmp.ultimoMensajeId(id);
+  const res = await setter.responder(id, { avisarFallo: false });
+  const texto = tmp.db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor = 'ia' AND id > ? ORDER BY id").all(id, antes).map((m) => m.texto).filter(Boolean).join('\n');
+  const c = tmp.getConv(id) || {};
+  const acciones = {
+    herramientas: (res?.turno?.herramientas || []).map((h) => ({ nombre: h.nombre, entrada: h.entrada })),
+    derivado_al_equipo: Boolean(c.derivado), prueba_pedida: Boolean(c.prueba_reservada), alta: c.alta_estado || null, avisos_al_equipo: avisos,
+  };
+  return { texto, acciones };
 }
 
 /** Analiza un reporte de principio a fin. Guarda cada paso en la base para que el panel lo vaya viendo. */
@@ -163,16 +212,24 @@ export async function analizar(db, id, { complete, completeJSON } = {}) {
       if (!d.cambios?.length) throw new Error('El optimizador no ha propuesto ningún cambio.');
       const propuesta = { doc: d.documento, cambios: d.cambios, resumen: d.resumen, version_base: versionBase[d.documento] };
       actualizar(db, id, { clasificacion: 'cambiar', explicacion: d.explicacion, propuesta });
-      // Comprobación
-      const despues = await repetir(r, { ...base, [d.documento]: nuevo }, { complete, catalogo: db });
+      // Comprobación. Sin ningún mensaje del lead (reporte general, o de la primera burbuja de Sofía) no hay
+      // conversación que repetir: el cambio queda listo para que el equipo lo revise y lo aplique.
+      if (!mensajesPrevios(r).some((m) => m.autor === 'lead')) {
+        actualizar(db, id, { estado: 'propuesto', comprobacion: { antes: r.respuesta_ia || '', despues: '', arreglado: null, sin_conversacion: true, motivo: 'No hay conversación que repetir para comprobarlo: revisa el cambio antes de aplicarlo.', problemas_nuevos: '', intentos: intento } });
+        return obtener(db, id);
+      }
+      const textosNuevos = { ...base, [d.documento]: nuevo };
+      const { texto: despues, acciones } = await repetir(r, textosNuevos, { complete, catalogo: db });
+      const hizo = acciones.herramientas.length || acciones.derivado_al_equipo || acciones.prueba_pedida || acciones.alta;
       const juicio = await pedirJSON({
-        system: SISTEMA_JUEZ, schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: registrar(db, id, 'reporte'),
-        contenido: `<conversacion>\n${conversacionTexto((r.contexto.mensajes || []).slice(0, -1))}\n</conversacion>\n<reporte>\nQué falló: ${r.que_fallo}\n${r.que_esperaba ? `Qué esperaban: ${r.que_esperaba}\n` : ''}${r.texto_exacto ? `Texto exacto: «${r.texto_exacto}»\n` : ''}${r.respuesta_usuario ? `Aclaración: ${r.respuesta_usuario}\n` : ''}</reporte>\n<respuesta_reportada>\n${r.respuesta_ia || ''}\n</respuesta_reportada>\n<respuesta_nueva>\n${despues || '(no envía nada)'}\n</respuesta_nueva>`,
+        system: sistemaJuez(textosNuevos), schema: ESQUEMA_JUEZ, complete: completeJSON, onUsage: registrar(db, id, 'reporte'),
+        contenido: `<conversacion>\n${conversacionTexto(mensajesPrevios(r)) || '(sin mensajes anteriores)'}\n</conversacion>\n<reporte>\nQué falló: ${r.que_fallo}\n${r.que_esperaba ? `Qué esperaban: ${r.que_esperaba}\n` : ''}${r.texto_exacto ? `Texto exacto: «${r.texto_exacto}»\n` : ''}${r.respuesta_usuario ? `Aclaración: ${r.respuesta_usuario}\n` : ''}</reporte>\n<respuesta_reportada>\n${r.respuesta_ia || ''}\n</respuesta_reportada>\n<respuesta_nueva>\n${despues || '(no envía nada)'}\n</respuesta_nueva>\n<acciones_nuevas>\n${hizo ? JSON.stringify(acciones, null, 1) : '(ninguna: solo ha contestado)'}\n</acciones_nuevas>`,
       });
-      const comprobacion = { antes: r.respuesta_ia || '', despues, arreglado: Boolean(juicio.arreglado && !juicio.problemas_nuevos), motivo: juicio.motivo, problemas_nuevos: juicio.problemas_nuevos, intentos: intento };
+      const problemas = problemasNuevos(juicio);
+      const comprobacion = { antes: r.respuesta_ia || '', despues, acciones: acciones.herramientas.map((h) => h.nombre), arreglado: Boolean(juicio.arreglado && !problemas), motivo: juicio.motivo, problemas_nuevos: problemas, intentos: intento };
       actualizar(db, id, { comprobacion });
       if (comprobacion.arreglado) { actualizar(db, id, { estado: 'propuesto' }); return obtener(db, id); }
-      previo = { documento: d.documento, cambios: d.cambios, motivo: [juicio.motivo, juicio.problemas_nuevos].filter(Boolean).join(' '), despues };
+      previo = { documento: d.documento, cambios: d.cambios, motivo: [juicio.motivo, problemas].filter(Boolean).join(' '), despues };
     }
     actualizar(db, id, { estado: 'fallido' });
     return obtener(db, id);

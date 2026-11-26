@@ -1916,8 +1916,9 @@ async function fichaReporte(id) {
       ${p ? `<section><h3>Cambio propuesto en «${esc(DOC_NOMBRE[p.doc])}»</h3>${p.resumen ? `<p><b>${esc(p.resumen)}</b></p>` : ''}
         <p class="ayuda"><ins>verde</ins>: se añade · <del>rojo</del>: se quita</p>
         ${p.cambios.map((x, k) => `<p class="ayuda">Cambio ${k + 1}${x.buscar ? '' : ' (se añade al final)'}</p>${htmlDiffPalabras(x.buscar, x.reemplazar)}`).join('')}</section>` : ''}
-      ${c ? `<section><h3>Comprobación ${c.arreglado ? '<span class="chip verde">funciona</span>' : '<span class="chip rojo">no lo arregla</span>'}</h3>
-        <div class="antes-despues"><div><b>Antes</b><div class="burbuja b-ia">${esc(c.antes) || '—'}</div></div><div><b>Con el cambio</b><div class="burbuja b-ia">${esc(c.despues) || '(no enviaría nada)'}</div></div></div>
+      ${c ? `<section><h3>Comprobación ${c.sin_conversacion ? '<span class="chip ambar">sin comprobar</span>' : c.arreglado ? '<span class="chip verde">funciona</span>' : '<span class="chip rojo">no lo arregla</span>'}</h3>
+        ${c.sin_conversacion ? '' : `<div class="antes-despues"><div><b>Antes</b><div class="burbuja b-ia">${esc(c.antes) || '—'}</div></div><div><b>Con el cambio</b><div class="burbuja b-ia">${esc(c.despues) || '(no enviaría nada)'}</div></div></div>`}
+        ${c.acciones?.length ? `<p class="ayuda">Además de contestar, Sofía usaría: ${esc(c.acciones.join(', '))} (simulado)</p>` : ''}
         <p class="ayuda">${esc(c.motivo)}${c.problemas_nuevos ? ` · Problemas: ${esc(c.problemas_nuevos)}` : ''}${c.intentos > 1 ? ` · ${c.intentos} intentos` : ''}</p></section>` : ''}
       <p class="error" id="rerr" role="alert"></p>
       <div class="acciones-f">

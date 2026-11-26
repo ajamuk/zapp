@@ -150,3 +150,60 @@ test('API: reportar desde Probar IA, ver el reporte y usar un borrador en la pru
     assert.deepEqual(lista.prompt.versiones.map((x) => [x.version, x.estado]), [[3, 'produccion'], [2, 'borrador'], [1, 'archivada']]);
   } finally { srv.close(); }
 });
+
+test('el juez escribe «Ninguno» en problemas nuevos: no cuenta como problema y el cambio queda listo', async () => {
+  const db = openDb(':memory:');
+  const linea = docs.enProduccion(db, 'prompt').texto.split('\n').find((l) => l.startsWith('- **Precio:**'));
+  const cambio = { clasificacion: 'cambiar', explicacion: 'x', pregunta: '', documento: 'prompt', cambios: [{ buscar: linea, reemplazar: `${linea} NUNCA PROMETAS.` }], resumen: 'r' };
+  for (const texto of ['Ninguno.', 'No hay', 'N/A', 'No se observan problemas nuevos.']) {
+    const r = await reportes.analizar(db, nuevoReporte(db), { complete: sofia, completeJSON: optimizador([cambio, { arreglado: true, motivo: 'ok', problemas_nuevos: texto }]) });
+    assert.equal(r.estado, 'propuesto', texto);
+    assert.equal(r.comprobacion.problemas_nuevos, '');
+  }
+  // Con el campo explícito manda el campo; un problema de verdad sigue tumbando el cambio
+  assert.equal(reportes.problemasNuevos({ hay_problemas_nuevos: false, problemas_nuevos: 'Cambia un poco el tono' }), '');
+  assert.match(reportes.problemasNuevos({ hay_problemas_nuevos: true, problemas_nuevos: 'Inventa un precio' }), /Inventa/);
+  assert.match(reportes.problemasNuevos({ problemas_nuevos: 'Inventa un precio' }), /Inventa/);
+});
+
+test('la comprobación es un turno completo: Sofía puede derivar y el juez ve la acción y las instrucciones', async () => {
+  const db = openDb(':memory:');
+  const linea = docs.enProduccion(db, 'prompt').texto.split('\n').find((l) => l.startsWith('- **Precio:**'));
+  const id = reportes.crear(db, {
+    origen: 'chat', respuesta_ia: 'puedes entrenar sin problema',
+    contexto: [{ autor: 'lead', texto: 'tengo una hernia discal operada, puedo apuntarme?' }, { autor: 'ia', texto: 'claro!' }, { autor: 'ia', texto: 'puedes entrenar sin problema' }],
+    meta: { channel: 'whatsapp', sede: 'parla' }, que_fallo: 'no derivó un tema de salud', que_esperaba: 'que lo pase al equipo',
+  });
+  let paso = 0;
+  const sofiaDeriva = (req) => {
+    if (paso === 0) assert.equal(req.messages.length, 1); // solo el mensaje del lead: sin las burbujas del turno reportado
+    return paso++ === 0
+      ? { content: [{ type: 'tool_use', id: 'd', name: 'derivar_a_equipo', input: { motivo: 'salud', resumen: 'Hernia discal operada, pregunta si puede apuntarse' } }] }
+      : { content: [{ type: 'tool_use', id: 't', name: 'responder', input: { mensajes: ['eso lo revisa una persona del equipo y te escribe por aquí'], fase: 'f2 diagnóstico' } }] };
+  };
+  const opt = optimizador([
+    { clasificacion: 'cambiar', explicacion: 'x', pregunta: '', documento: 'prompt', cambios: [{ buscar: linea, reemplazar: `${linea} SALUD SIEMPRE AL EQUIPO.` }], resumen: 'Derivar salud' },
+    { arreglado: true, motivo: 'Ahora deriva.', hay_problemas_nuevos: false, problemas_nuevos: '' },
+  ]);
+  const r = await reportes.analizar(db, id, { complete: sofiaDeriva, completeJSON: opt });
+  assert.equal(r.estado, 'propuesto');
+  assert.deepEqual(r.comprobacion.acciones, ['derivar_a_equipo']);
+  assert.match(r.comprobacion.despues, /persona del equipo/);
+  const juez = opt.llamadas[1];
+  assert.match(juez.messages[0].content, /<acciones_nuevas>[\s\S]*derivar_a_equipo[\s\S]*"derivado_al_equipo": true/);
+  assert.match(juez.system[1].text, /SALUD SIEMPRE AL EQUIPO/); // juzga con las instrucciones ya corregidas
+  assert.match(juez.system[1].text, /<tarifas>/);
+  assert.equal(db.prepare("SELECT count(*) n FROM conversations").get().n, 0); // no toca chats reales
+});
+
+test('reporte general (sin conversación): el cambio queda listo sin comprobación en vez de «ningún cambio funcionó»', async () => {
+  const db = openDb(':memory:');
+  const linea = docs.enProduccion(db, 'prompt').texto.split('\n').find((l) => l.startsWith('- **Precio:**'));
+  const id = reportes.crear(db, { origen: 'general', que_fallo: 'Sofía debería tutear siempre' });
+  const opt = optimizador([{ clasificacion: 'cambiar', explicacion: 'x', pregunta: '', documento: 'prompt', cambios: [{ buscar: linea, reemplazar: `${linea} Tutea siempre.` }], resumen: 'Tutear' }]);
+  const r = await reportes.analizar(db, id, { complete: () => { throw new Error('no debe repetir nada'); }, completeJSON: opt });
+  assert.equal(r.estado, 'propuesto');
+  assert.equal(r.comprobacion.sin_conversacion, true);
+  assert.equal(opt.llamadas.length, 1);
+  assert.equal(reportes.aplicar(db, id).version, 2);
+});
