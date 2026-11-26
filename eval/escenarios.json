@@ -484,5 +484,19 @@
    "No pide permiso con «te parece?», «te animas?» o parecidos"
   ],
   "turnos": 6
+ },
+ {
+  "id": "no-repetir-info",
+  "nombre": "No repite lo ya dicho salvo que se lo pidan",
+  "tema": "repeticion",
+  "perfil": "Te llamas Lucía, 31 años, vives en Getafe (El Bercial). Nunca has hecho CrossFit. Empiezas preguntando cuánto cuesta. Después de que te den el precio, preguntas por los horarios de tarde y, cuando te los den, dices que te lo vas a pensar y haces una pregunta nueva sobre si hay que llevar algo a la primera clase. En el último turno dices «perdona, cuánto era al mes?».",
+  "apertura": "hola, cuánto cuesta en Getafe? nunca he hecho crossfit",
+  "criterios": [
+   "En los turnos después de dar el precio y los horarios, no vuelve a dar el precio ni a listar los horarios cuando el lead no los ha pedido",
+   "No repite explicaciones ya dadas (cómo funciona Academy, sin matrícula ni permanencia, primer recibo) en turnos posteriores",
+   "Contesta a la pregunta nueva del lead (qué llevar) con información nueva, sin resumir lo anterior",
+   "Cuando el lead pregunta expresamente «cuánto era al mes?», sí le repite la cuota, solo la cuota"
+  ],
+  "turnos": 6
  }
 ]
