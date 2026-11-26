@@ -25,7 +25,13 @@ export class AimHarderApi {
     }
     const text = await r.text();
     let data; try { data = JSON.parse(text); } catch { data = text; }
-    if (!r.ok) throw new Error(`AimHarder ${method} ${path} → ${r.status}: ${String(text).slice(0, 200)}`);
+    if (!r.ok) {
+      const e = new Error(`AimHarder ${method} ${path} → ${r.status}: ${String(text).slice(0, 200)}`);
+      e.status = r.status;
+      const espera = Number(r.headers?.get?.('retry-after')); // segundos; una fecha HTTP no se interpreta
+      if (espera > 0) e.retryAfter = espera;
+      throw e;
+    }
     return data;
   }
 

@@ -3,7 +3,7 @@ import { config, clavesDebiles } from './config.js';
 import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
 import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi, SEDES } from './aimharder/index.js';
-import { manejadorWebhook, claveDeSede } from './aimharder/webhook.js';
+import { manejadorWebhook, claveDeSede, crearProcesador } from './aimharder/webhook.js';
 import { reservarEnAimHarder, resultadoAimHarder } from './clase-prueba.js';
 import { sincronizarHorarios } from './horarios-sync.js';
 import { subirCopias } from './copia-drive.js';
@@ -89,8 +89,9 @@ const salud = () => {
 // Webhooks de AimHarder: solo las sedes con clave privada configurada (docs/aimharder-webhooks.md)
 const clavesWebhook = {};
 for (const sede of SEDES) { try { const k = claveDeSede(config.aimharder.webhookClaves[sede]); if (k) clavesWebhook[sede] = k; } catch (e) { console.warn(`[aimharder-webhook] clave de ${sede}: ${e.message}`); } }
+const procesarEventosAimharder = crearProcesador({ repo, apis: clientesApi() });
 const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
-  ? manejadorWebhook({ repo, apis: clientesApi(), claves: clavesWebhook, sedes: SEDES }) : null;
+  ? manejadorWebhook({ repo, claves: clavesWebhook, sedes: SEDES, despertar: () => procesarEventosAimharder() }) : null;
 const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook });
 const servidor = app.listen(config.port, '127.0.0.1', () => {
   console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
@@ -108,6 +109,8 @@ const avisoSync = (e) => registrarAlerta(repo.db, { clave: 'aimharder-socios', t
 sincronizarSiHaceFalta(repo)
   .then((r) => { if (r) resolverAlerta(repo.db, 'aimharder-socios'); console.log(r ? `Socios sincronizados: ${JSON.stringify(r)}` : 'Socios al día (menos de 4 h): no se descargan al arrancar.'); })
   .catch(avisoSync);
+// Cola de webhooks de AimHarder: reintenta las lecturas pendientes (también las que quedaron a medias al reiniciar)
+cada('eventos-aimharder', 30 * 1000, () => procesarEventosAimharder());
 cada('socios', 4 * 3600 * 1000, () => sincronizarSocios(repo).then((r) => { resolverAlerta(repo.db, 'aimharder-socios'); console.log('Socios sincronizados:', JSON.stringify(r)); }).catch(avisoSync));
 
 if (config.ghlWebhookEnabled) {
