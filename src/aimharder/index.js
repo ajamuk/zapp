@@ -73,6 +73,15 @@ export async function sincronizarSiHaceFalta(repo, { apis = clientesApi(), maxHo
   return sincronizarSocios(repo, Object.fromEntries(pendientes.map((s) => [s, apis[s]])));
 }
 
+/** Fila del índice de socios a partir de un cliente de la API (null si no tiene teléfono). */
+export function filaSocio(sede, c) {
+  const tel = normalizarTelefono(c.mobile_number) || normalizarTelefono(c.land_number);
+  if (!tel) return null;
+  const tarifas = c.current_memberships || [];
+  return { telefono: tel, sede, aimharder_id: c.id, nombre: [c.name, c.first_surname].filter(Boolean).join(' '),
+    activo: tarifas.length > 0 && !c.deactivation_date ? 1 : 0, tarifa: tarifas.map((m) => m.membership_name).join(', ') || null };
+}
+
 /**
  * La API no busca por teléfono: se descargan los clientes de cada sede (con sus tarifas vigentes)
  * y se guarda un índice teléfono → socio en SQLite. Se repite cada pocas horas.
@@ -84,11 +93,8 @@ export async function sincronizarSocios(repo, apis = clientesApi()) {
     const clientes = await api.clientes({ conTarifas: true });
     const filas = [];
     for (const c of clientes) {
-      const tel = normalizarTelefono(c.mobile_number) || normalizarTelefono(c.land_number);
-      if (!tel) continue;
-      const tarifas = c.current_memberships || [];
-      filas.push({ telefono: tel, sede, aimharder_id: c.id, nombre: [c.name, c.first_surname].filter(Boolean).join(' '),
-        activo: tarifas.length > 0 && !c.deactivation_date ? 1 : 0, tarifa: tarifas.map((m) => m.membership_name).join(', ') || null });
+      const f = filaSocio(sede, c);
+      if (f) filas.push(f);
     }
     // Una lista vacía o a menos de la mitad que la anterior es un fallo de AimHarder, no una fuga de socios:
     // se conserva el índice que había (si no, Sofía trataría a los socios como leads).

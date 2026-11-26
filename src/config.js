@@ -91,6 +91,11 @@ export const config = {
     altaDryRun: env('AIMHARDER_ALTA_DRY_RUN', 'true') !== 'false',
     // Clase de prueba de Parla reservada directamente en AimHarder (además hace falta MODE=live)
     reservaPrueba: env('AIMHARDER_RESERVA_PRUEBA', 'false') === 'true',
+    // Webhooks de AimHarder (docs/aimharder-webhooks.md): un token común en la URL y una clave privada RSA por sede
+    webhookToken: env('AIMHARDER_WEBHOOK_TOKEN'),
+    webhookClaves: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
+      pem: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}`), fichero: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}_FILE`),
+    }])),
   },
   // metro-trial-ops (pruebas de los calendarios de GHL, con asistencia y alta verificadas): su base, solo lectura
   trialOps: { db: env('TRIAL_OPS_DB', '/var/lib/metro-trial-ops/trial_ops.sqlite3') },
