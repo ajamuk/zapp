@@ -18,6 +18,7 @@ import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
 import * as archivos from './archivos.js';
 import * as plantillasWa from './plantillas.js';
+import * as primerContacto from './primer-contacto.js';
 import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
 import { APAGADO, evaluarEntrante, chatPermitido, esDeOtraLinea, salienteVerificado, plantillasPermitidas } from './aislamiento.js';
@@ -664,6 +665,7 @@ export class Setter {
       this.notaAvisoFuera(conv),
       this.notaVoz(conv),
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
+      primerContacto.contextoIA(conv),
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,
@@ -1368,6 +1370,42 @@ export class Setter {
       const r = await this.enviarPlantilla(conv, env);
       const res = await this.onOutbound({ evento: 'outbound', conversationId: conv.id, canal: conv.channel, texto: r.texto, messageId: r.messageId, userId: 'panel', medio: r.medio }, { verificado: true });
       return { ...res, pausada: Boolean(this.repo.getConv(conv.id)?.ai_paused) };
+    });
+  }
+
+  /**
+   * Primer contacto: el equipo escribe a alguien que aún no nos ha escrito. Crea (o recupera) el contacto en GHL,
+   * le envía la plantilla elegida desde el número de Sofía y deja el chat creado aquí con el motivo, para que Sofía
+   * lo sepa si responde. `d`: { telefono, nombre, plantilla, variables, motivo, sofiaResponde }.
+   * Si ya hay un chat con ese número no envía nada: devuelve `existente` para abrirlo (ahí se puede mandar la plantilla).
+   */
+  async iniciarConversacion(d = {}) {
+    const fallo = (m) => { const e = new Error(m); e.usuario = true; return e; };
+    let v, env;
+    try { v = primerContacto.validar(d); env = plantillasWa.prepararEnvio(this.repo.db, v.plantilla, v.variables); } catch (e) { e.usuario = true; throw e; }
+    if (!this.ghl?.enviarPlantillaWa || !this.ghl?.upsertContacto) throw fallo('El envío de plantillas no está configurado.');
+    if (this.aislado() && this.aislamiento.modo !== 'activo') throw fallo('El número de Sofía está mal configurado: no se envía nada.');
+    const previo = primerContacto.chatExistente(this.repo.db, { telefono: v.telefono });
+    if (previo) return { existente: previo.id, nombre: previo.nombre };
+    const contacto = await this.ghl.upsertContacto({ telefono: v.telefono, nombre: v.nombre });
+    const previoGhl = primerContacto.chatExistente(this.repo.db, { contactId: contacto.id });
+    if (previoGhl) return { existente: previoGhl.id, nombre: previoGhl.nombre };
+    const r = await this.ghl.enviarPlantillaWa({ contactId: contacto.id, nombre: env.plantilla.nombre, idioma: env.plantilla.idioma, categoria: env.plantilla.categoria, variables: env.variables, texto: env.texto });
+    const convId = r?.conversationId || (await this.safe(() => this.ghl.buscarConversacion?.(contacto.id)))?.id;
+    if (!convId) throw fallo('La plantilla ha salido, pero GHL no ha dicho en qué conversación: el chat aparecerá aquí cuando responda.');
+    const ahora = this.now().toISOString();
+    return this.enSerie(convId, async () => {
+      this.repo.upsertConv({ id: convId, contact_id: contacto.id, channel: 'whatsapp', nombre: v.nombre, telefono: v.telefono });
+      this.repo.updateConv(convId, {
+        primer_contacto: JSON.stringify({ motivo: v.motivo, plantilla: env.plantilla.nombre, at: ahora }),
+        // El chat sale del número propio: queda verificado para el aislamiento igual que uno que entra
+        ...(this.aislamiento.modo === 'activo' ? { aislado_num: this.aislamiento.clave } : {}),
+        ...(v.sofiaResponde ? {} : { ai_paused: 1, pause_reason: 'primer contacto: lo lleva el equipo' }),
+      });
+      // Se anota como mensaje del equipo, pero sin apartar a Sofía: abrir la conversación no es contestarla
+      this.repo.addMessage({ conversation_id: convId, external_id: r?.messageId || null, autor: 'humano', texto: env.texto, tipo: 'plantilla' });
+      await this.safe(() => this.ghl.addNote(contacto.id, `[Primer contacto desde el panel] Plantilla «${env.plantilla.nombre}». Motivo: ${v.motivo}`));
+      return { id: convId, contacto: contacto.id, nuevo: contacto.nuevo, texto: env.texto, sofiaResponde: v.sofiaResponde };
     });
   }
 

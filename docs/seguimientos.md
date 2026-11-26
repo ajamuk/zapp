@@ -72,3 +72,23 @@ plantilla saliera por otra línea, Sofía lo ve al repasar la conversación y de
 
 Cada plantilla de marketing la cobra Meta. Qué reglas la usan se decide en el panel (Seguimientos → «enviar por
 plantilla si han pasado 24 h»); hoy: «cierre a los 4 días», los dos de largo plazo y los de la clase de prueba.
+
+## Primer contacto (Chats → «+ Nuevo chat»)
+
+Para escribir a alguien que aún no nos ha escrito: una persona que vino a una prueba hace tiempo, un contacto de un
+evento, una recomendación… El equipo pone el **móvil** (9 cifras si es español, o con prefijo), el **nombre**, la
+**plantilla** del primer mensaje con sus variables y **por qué le escribimos** (es lo que Sofía sabrá si responde).
+
+- WhatsApp no deja abrir una conversación con texto libre: el primer mensaje siempre es una plantilla aprobada de la
+  pestaña Plantillas, enviada directamente (`Ghl.enviarPlantillaWa`) desde el número de Sofía. Meta la cobra.
+- El contacto se crea en GHL (o se reutiliza: GHL deduplica por teléfono) con la fuente «Sofía · primer contacto» y
+  una nota con el motivo.
+- Si ya hay un chat con ese número, no se envía nada: el panel ofrece abrir ese chat (desde ahí se le puede mandar
+  una plantilla).
+- El chat queda creado con el mensaje enviado y el motivo (`conversations.primer_contacto`). Por defecto Sofía
+  contesta cuando la persona responda, sabiendo que la conversación la empezamos nosotros; con la casilla
+  desmarcada el chat queda en pausa para el equipo. Al responder se comprueba si es socio como en cualquier chat.
+- Con el aislamiento activo, el chat queda verificado para el número propio (sale con `fromNumber`).
+
+Antes de usarlo hace falta una plantilla de marketing aprobada pensada para un primer mensaje (que diga quiénes
+somos), dada de alta en GHL y copiada en la pestaña Plantillas.

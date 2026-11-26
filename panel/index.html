@@ -909,7 +909,7 @@ async function chats() {
   estado.vistas = vistas;
   if (!estado.vista || !vistas.some((v) => String(v.id) === String(estado.vista))) { estado.vista = vistas.some((v) => v.id === 'leads') ? 'leads' : 'todos'; estado.crit = null; }
   estado.crit ??= { ...(vistas.find((v) => String(v.id) === String(estado.vista))?.criterios || {}) };
-  $('#main').innerHTML = `<h2>Chats</h2>
+  $('#main').innerHTML = `<div class="cab-seccion"><h2>Chats</h2><button id="bnuevochat" class="primario" title="Escribir por WhatsApp a alguien que aún no nos ha escrito">+ Nuevo chat</button></div>
     <div class="vistas" role="tablist" aria-label="Vistas de chats">${vistas.map((v) => `<button role="tab" data-v="${esc(v.id)}" aria-selected="${String(v.id) === String(estado.vista)}" class="${String(v.id) === String(estado.vista) ? 'activo' : ''} ${v.propia ? 'propia' : ''}" title="${v.propia ? 'Vista creada por vosotros' : 'Vista del sistema'}">${v.propia ? '★ ' : ''}${esc(v.nombre)} <span class="n">${v.total}</span></button>`).join('')}
       <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
@@ -921,6 +921,7 @@ async function chats() {
     $('#main').querySelectorAll('[data-v]').forEach((x) => { const on = x === b; x.classList.toggle('activo', on); x.setAttribute('aria-selected', on); });
     cerrarHilo(); pintarFiltros(); lista(); refrescarVistas();
   });
+  $('#bnuevochat').onclick = () => nuevoChat();
   $('#vnueva').onclick = () => { estado.vista = 'todos'; estado.crit = {}; estado.panelFiltros = true; estado.creandoVista = true; cerrarHilo(); chats(); };
   $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); ajustarAltoChats(); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; estado.limite = 100; lista(); }, 300); };
@@ -928,6 +929,58 @@ async function chats() {
   $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
   await lista();
   if (estado.seccion === 'chats' && estado.conv) await abrir(estado.conv);
+}
+
+// ---------- Nuevo chat (primer contacto) ----------
+// Escribir a alguien que aún no nos ha escrito. WhatsApp solo deja abrir la conversación con una plantilla aprobada.
+async function nuevoChat() {
+  const { plantillas } = await api('/panel/plantillas');
+  if (estado.seccion !== 'chats') return;
+  const lista = plantillas.filter((x) => x.activa);
+  const v = (estado.nuevoChat ??= { telefono: '', nombre: '', plantilla: '', variables: [], motivo: '', sofiaResponde: true });
+  const m = $('#main');
+  const t = lista.find((x) => x.id === Number(v.plantilla));
+  const prev = () => (t ? `«${t.cuerpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (x, n) => v.variables[n - 1] || x)}»` : '');
+  m.innerHTML = `<div class="cab-seccion"><h2>Nuevo chat</h2><button id="ncvol">Volver</button></div>
+    <p class="intro">Escribe por WhatsApp, desde el número de Sofía, a alguien que aún no os ha escrito. El primer mensaje sale por una plantilla aprobada por Meta (WhatsApp no deja abrir una conversación con texto libre, y Meta cobra cada plantilla). Cuando responda, el chat sigue como cualquier otro.</p>
+    <form id="ncform" class="editor">
+      <section><h3>A quién</h3>
+        <div class="fila-f"><label>Móvil <input id="nctel" type="tel" inputmode="tel" autocomplete="off" placeholder="600 111 222 o +351…" value="${esc(v.telefono)}" required></label>
+          <label>Nombre <input id="ncnom" maxlength="60" placeholder="Ej: Laura" value="${esc(v.nombre)}" required></label></div></section>
+      <section><h3>Primer mensaje</h3>
+        ${lista.length ? `<label>Plantilla <select id="ncsel" required><option value="">Elige una…</option>${lista.map((x) => `<option value="${x.id}" ${x.id === Number(v.plantilla) ? 'selected' : ''}>${esc(x.nombre)}${x.descripcion ? ` · ${esc(x.descripcion)}` : ''}</option>`).join('')}</select></label>
+        ${t ? `${Array.from({ length: t.variables }, (_, i) => `<label>Variable {{${i + 1}}} <input data-ncvar="${i}" value="${esc(v.variables[i] || '')}" maxlength="300" required></label>`).join('')}<p class="aviso-mini" id="ncprev">${esc(prev())}</p>` : ''}`
+          : '<div class="vacio">No hay plantillas activas. Dalas de alta en la pestaña Plantillas copiándolas de GHL.</div>'}</section>
+      <section><h3>Para Sofía</h3>
+        <label>Por qué le escribimos <textarea id="ncmot" rows="3" maxlength="600" placeholder="Ej: vino a una clase de prueba en Parla en 2025 y no llegó a apuntarse; ofrecerle volver a probar" required>${esc(v.motivo)}</textarea></label>
+        <label class="check"><input type="checkbox" id="ncsof" ${v.sofiaResponde ? 'checked' : ''}> Sofía contesta cuando responda <span class="ayuda">(si no, el chat queda en pausa para el equipo)</span></label></section>
+      <p class="error" id="ncerr" role="alert"></p>
+      <div class="acciones-f"><button class="primario" id="ncenv" ${lista.length ? '' : 'disabled'}>Enviar</button><button type="button" id="nccan">Cancelar</button></div>
+    </form>`;
+  const salir = (conv = null) => { estado.nuevoChat = null; if (conv) estado.conv = conv; chats(); };
+  $('#ncvol').onclick = () => salir(); $('#nccan').onclick = () => salir();
+  $('#nctel').oninput = (e) => { v.telefono = e.target.value; };
+  $('#ncnom').oninput = (e) => { v.nombre = e.target.value; };
+  $('#ncmot').oninput = (e) => { v.motivo = e.target.value; };
+  $('#ncsof').onchange = (e) => { v.sofiaResponde = e.target.checked; };
+  $('#ncsel') && ($('#ncsel').onchange = (e) => { v.plantilla = e.target.value; v.variables = []; nuevoChat(); });
+  m.querySelectorAll('[data-ncvar]').forEach((inp) => inp.oninput = () => { v.variables[Number(inp.dataset.ncvar)] = inp.value; $('#ncprev').textContent = prev(); });
+  $('#ncform').onsubmit = async (e) => {
+    e.preventDefault();
+    const b = $('#ncenv');
+    if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Enviar ya? No se puede borrar'; return; }
+    b.disabled = true; b.textContent = 'Enviando…'; $('#ncerr').textContent = '';
+    try {
+      const r = await api('/panel/primer-contacto', { method: 'POST', body: JSON.stringify(v) });
+      if (r.existente) {
+        $('#ncerr').innerHTML = `Ya hay un chat con ese número${r.nombre ? ` (${esc(r.nombre)})` : ''}: no se ha enviado nada. <button type="button" class="mini" id="ncabrir">Abrir ese chat</button> (desde ahí puedes mandarle una plantilla).`;
+        $('#ncabrir').onclick = () => salir(r.existente);
+        b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar';
+        return;
+      }
+      salir(r.id);
+    } catch (err) { $('#ncerr').textContent = err.message; b.disabled = false; b.dataset.seguro = ''; b.textContent = 'Enviar'; }
+  };
 }
 
 function pintarFiltros() {
@@ -1197,6 +1250,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
       c.prueba_fecha ? `<b>📅 Clase de prueba</b><br>${fechaCorta(c.prueba_fecha)} <button type="button" class="mini" id="banprueba" title="Cancela sus recordatorios">Anular o cambiada</button>` : '',
       `<b>✉️ Programar mensaje</b> <button type="button" class="mini" id="bprog">${estado.progAbierto ? 'Cerrar' : 'Escribir'}</button>${estado.progAbierto ? formProg('np', (estado.prog ??= { texto: '', cuando: new Date(Date.now() + 3600e3).toISOString(), archivo: null })) : ''}`,
       d.plantillas ? `<b>📨 Plantilla de WhatsApp</b> <button type="button" class="mini" id="btpl" ${d.plantillas.motivo ? 'disabled' : ''}>${estado.tplAbierto ? 'Cerrar' : 'Elegir'}</button>${d.plantillas.motivo ? `<div class="ayuda">${esc(d.plantillas.motivo)}</div>` : '<div class="ayuda">Vale aunque hayan pasado más de 24 h desde su último mensaje.</div>'}${estado.tplAbierto && !d.plantillas.motivo ? formPlantilla('tp', (estado.tpl ??= { plantilla: '', variables: [], cuando: new Date(Date.now() + 3600e3).toISOString() }), d.plantillas.lista) : ''}` : '',
+      c.primer_contacto ? (() => { const r = JSON.parse(c.primer_contacto); return `<b>✉️ Lo empezamos nosotros</b><br>${new Date(r.at).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} · plantilla ${esc(r.plantilla)}<div class="ayuda">Motivo para Sofía: ${esc(r.motivo)}</div>`; })() : '',
       c.retomar ? (() => { const r = JSON.parse(c.retomar); return `<b>🗓️ Lo deja para más adelante</b><br>Retomar el ${new Date(r.fecha + 'T12:00:00Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}${r.motivo ? ` · ${esc(r.motivo)}` : ''}`; })() : '',
       d.seguimientos.length ? '<b>Follow-ups</b>' + d.seguimientos.map((s) => s.estado === 'pendiente'
         ? (estado.editProg?.id === s.id ? `<div class="fu-chat" data-fu-id="${s.id}"><b>Editar mensaje programado</b>${estado.editProg.plantilla ? formPlantilla('ep', estado.editProg, d.plantillas?.lista || []) : formProg('ep', estado.editProg)}</div>`

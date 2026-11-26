@@ -491,6 +491,19 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
       res.status(502).json({ error: `GHL no ha aceptado la plantilla: no se ha enviado (${String(e.message).slice(0, 300)}).` });
     }
   });
+  // Primer contacto: escribir a alguien que aún no nos ha escrito (conversación nueva, siempre por plantilla).
+  // Body: { telefono, nombre, plantilla, variables: [], motivo, sofiaResponde }. Si ya hay chat: 200 con `existente`.
+  admin.post('/panel/primer-contacto', async (req, res) => {
+    if (!setter?.iniciarConversacion) return res.status(503).json({ error: 'El envío no está disponible.' });
+    try {
+      const r = await setter.iniciarConversacion(req.body || {});
+      res.status(r.existente ? 200 : 201).json(r);
+    } catch (e) {
+      if (e.usuario) return res.status(409).json({ error: e.message });
+      console.error('[panel] primer contacto:', e.message);
+      res.status(502).json({ error: `GHL no ha aceptado el envío: no ha salido nada (${String(e.message).slice(0, 300)}).` });
+    }
+  });
   // Archivo para enviar a un lead (imagen, vídeo, audio o PDF en base64). Devuelve su id para «enviar» o «programar».
   admin.post('/panel/conversaciones/:id/adjunto', async (req, res) => {
     if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
