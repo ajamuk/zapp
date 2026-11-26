@@ -44,6 +44,8 @@ export const config = {
     modeloLead: env('BATERIA_LEAD_MODEL', 'claude-haiku-5-5'),
     // Modelo que redacta los textos de los seguimientos (tarea corta: Haiku cuesta 20 veces menos que Sonnet)
     modeloSeguimientos: env('SEGUIMIENTOS_MODEL', 'claude-haiku-5-5'),
+    // Modelo que decide si un mensaje nuevo de Instagram pide información de verdad (sí/no)
+    modeloFiltroInstagram: env('INSTAGRAM_FILTRO_MODEL', 'claude-haiku-5-5'),
     // Esfuerzo de razonamiento de Sofía (low | medium | high | xhigh | max). Vacío = el del modelo (high en Sonnet 5.5)
     effort: env('AI_EFFORT', 'medium'),
     // Duración de la caché del prompt y la base de conocimiento: 1h (los leads contestan con minutos u horas de pausa) o 5m
@@ -79,6 +81,8 @@ export const config = {
     adoptar: env('SOFIA_WA_ADOPTAR_CHATS', 'false') === 'true',
     // El workflow «Sofía · enviar plantilla» de esta subcuenta envía desde el número propio (docs/seguimientos.md)
     plantillas: env('SOFIA_WA_PLANTILLAS', 'false') === 'true',
+    // Cuenta de Instagram que también atiende Sofía (id de la página que GHL pone en meta.ig.pageId). Vacío = solo WhatsApp
+    instagram: env('SOFIA_IG_PAGE_ID'),
   },
   aimharder: {
     tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {

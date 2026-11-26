@@ -65,6 +65,7 @@ const normalizarMensaje = (m) => ({
   id: m.id, direccion: String(m.direction || '').toLowerCase(), tipo: String(m.messageType || ''), canal: canalDesdeTipo(m.messageType),
   texto: m.body || '', adjuntos: Array.isArray(m.attachments) ? m.attachments : [], userId: m.userId || null, source: m.source || null, fecha: m.dateAdded,
   locationId: m.locationId || null, conversationId: m.conversationId || null, contactId: m.contactId || null, para: m.to ?? null, de: m.from ?? null,
+  pagina: m.meta?.ig?.pageId ?? null, // Instagram: cuenta (página) a la que se escribió o desde la que salió
 });
 
 export class Ghl {
@@ -86,6 +87,8 @@ export class Ghl {
     const a = this.aislamiento;
     if (!a || a.modo === 'apagado') return { type, ...resto };
     if (a.modo !== 'activo') throw new Error('Aislamiento mal configurado: no se envía nada');
+    // Instagram solo si Sofía atiende esa cuenta: GHL responde por la página de la conversación
+    if (canal === 'instagram' && a.instagram) return { type, ...resto };
     if (canal !== 'whatsapp') throw new Error(`Aislamiento: solo se envía por WhatsApp (no por ${canal})`);
     return { type, ...resto, fromNumber: a.numero };
   }

@@ -304,7 +304,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
  * reportes, que no habla con leads. `complete` se puede sustituir en tests.
  */
 export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000, onUsage }) {
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, { timeout: 240000, maxRetries: 1 }));
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, ...opcionesRespaldo(modelo) }, { timeout: 240000, maxRetries: 1 }));
   const res = await llamar({
     model: modelo, max_tokens: maxTokens, system,
     messages: [{ role: 'user', content: contenido }],
