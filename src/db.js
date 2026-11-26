@@ -376,6 +376,7 @@ const COLUMNAS_NUEVAS = {
     aislado_num: 'TEXT',          // «subcuenta:número» propio para el que se verificó su último entrante (aislamiento.js)
     aviso_fuera_at: 'TEXT',       // último aviso automático de fuera de horario (uno por cada cierre)
     fase_max: 'TEXT',             // fase más avanzada a la que ha llegado el chat (la actual puede ser «cerrada»)
+    primer_contacto: 'TEXT',      // JSON: { motivo, plantilla, at } si la conversación la empezó el equipo (primer-contacto.js)
   },
   messages: {
     adjunto: 'TEXT',              // imagen | audio | video | documento

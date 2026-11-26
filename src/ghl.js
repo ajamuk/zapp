@@ -222,6 +222,16 @@ export class Ghl {
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }
+  /**
+   * Crea el contacto (o devuelve el que ya hay con ese teléfono: GHL deduplica por teléfono) para escribirle por
+   * primera vez. Devuelve { id, nuevo }.
+   */
+  async upsertContacto({ telefono, nombre, fuente = 'Sofía · primer contacto' }) {
+    const r = await this.req('POST', '/contacts/upsert', { locationId: config.ghl.locationId, phone: telefono, firstName: nombre, source: fuente });
+    const id = r?.contact?.id;
+    if (!id) throw new Error('GHL no ha devuelto el contacto');
+    return { id, nuevo: Boolean(r?.new) };
+  }
   addTags(contactId, tags) { return tags.length ? this.req('POST', `/contacts/${contactId}/tags`, { tags }) : null; }
   removeTags(contactId, tags) { return tags.length ? this.req('DELETE', `/contacts/${contactId}/tags`, { tags }) : null; }
   assign(contactId, userId) { return userId ? this.req('PUT', `/contacts/${contactId}`, { assignedTo: userId }) : null; }
