@@ -408,8 +408,8 @@ test('un punto en medio de una burbuja se devuelve para que lo parta; abreviatur
   const { puntoEnMedio, revisarRespuesta } = await import('../src/llm.js');
   assert.ok(puntoEnMedio(['el teléfono ya lo tengo de este chat. los documentos los firmas en la app']));
   assert.ok(revisarRespuesta({ mensajes: ['vale. te lo miro'] }));
-  assert.match(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd', 'e'] }), /máximo es 4/);
-  assert.equal(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd'] }), null);
+  assert.match(revisarRespuesta({ mensajes: ['a', 'b', 'c', 'd'] }), /máximo es 3/);
+  assert.equal(revisarRespuesta({ mensajes: ['a', 'b', 'c'] }), null);
   for (const ok of ['bueno... ya me dices', 'en Av. de la Paz 35', 'por ejemplo, p. ej. el lunes', 'mira https://maps.app.goo.gl/XK2R. hola', 'son 2,83 €', 'perfecto 💪']) {
     if (ok.includes('https')) continue;
     assert.equal(puntoEnMedio([ok]), false, ok);
