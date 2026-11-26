@@ -57,7 +57,7 @@ test('el evento queda guardado antes del 200 y la lectura se hace después', asy
   assert.equal(r.status, 200);
   assert.equal(api.llamadas.length, 0, 'el 200 no espera a la API');
   assert.equal(fila('e1').estado, 'pendiente');
-  assert.equal(buscarSocioPorTelefono(repo, '622222222').esSocio, false);
+  assert.equal(buscarSocioPorTelefono(repo, '622222222', { rutas: {} }).esSocio, false);
 
   assert.deepEqual(await procesar({ ahora: T0 }), { hechos: 1, reintentos: 0, pausados: 0, fallidos: 0 });
   assert.equal(fila('e1').estado, 'hecho');

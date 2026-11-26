@@ -171,6 +171,19 @@ test('dos mensajes casi a la vez de un chat nuevo: se clasifica una vez y no se 
   assert.equal(setter.colas.size, 0);
 });
 
+test('exsocio reciente: Sofía no contesta, se pausa como socio y se etiqueta exsocio', async () => {
+  const { repo, setter, sal } = montar({ aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: true, exSocio: true, exSocioReciente: true, tarifaHasta: '2026-11-07', sede: 'parla' }) } });
+  const r = await setter.handleWebhook({ evento: 'inbound', conversationId: 'c1', contactId: 'k1', canal: 'whatsapp', texto: 'sigo de baja médica', messageId: 'm1', telefono: '+34600111222' });
+  assert.deepEqual(r, { socio: true });
+  const c = repo.getConv('c1');
+  assert.equal(c.tipo, 'socio');
+  assert.equal(c.ai_paused, 1);
+  assert.equal(c.pause_reason, 'exsocio reciente');
+  assert.ok(sal.tags.includes('exsocio'));
+  assert.equal(sal.enviados.length, 0);
+  assert.equal(sal.avisos.length, 0);
+});
+
 test('un webhook repetido no vuelve a pausar un chat que el equipo ya reanudó', async () => {
   const { repo, setter } = montar({});
   repo.guardarAjuste('palabrasParar', ['baja']);

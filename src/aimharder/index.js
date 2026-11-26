@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import Database from 'better-sqlite3';
 import path from 'node:path';
 import { config } from '../config.js';
 import { AimHarderApi } from './api.js';
@@ -85,7 +86,8 @@ export function filaSocio(sede, c) {
 /**
  * La API no busca por teléfono: se descargan los clientes de cada sede (con sus tarifas vigentes)
  * y se guarda un índice teléfono → socio en SQLite. Se repite cada pocas horas.
- * Socio = tiene alguna tarifa vigente hoy. Con ficha pero sin tarifa = exsocio (se trata como lead).
+ * Socio = tiene alguna tarifa vigente hoy. Con ficha pero sin tarifa = exsocio: si su última tarifa pagada terminó
+ * hace menos de `exsocioRecienteMeses` se trata como socio (ver buscarSocioPorTelefono); si no, como lead.
  */
 export async function sincronizarSocios(repo, apis = clientesApi()) {
   const resumen = {};
@@ -106,17 +108,58 @@ export async function sincronizarSocios(repo, apis = clientesApi()) {
   return resumen;
 }
 
-export function buscarSocioPorTelefono(repo, telefono) {
+/**
+ * Hasta cuándo cubría el último pago de cuota de ese teléfono, según el registro de socios de cada sede
+ * (clientes-analytics: `members.active_until`, AAAA-MM-DD). Devuelve { hasta, sede } o null.
+ * `rutas`: { sede: fichero SQLite }. Una sede sin registro legible se salta.
+ */
+export function ultimaTarifaHasta(telefono, rutas = config.embudo.sociosDb) {
+  const tel = normalizarTelefono(telefono);
+  if (!tel) return null;
+  let mejor = null;
+  for (const [sede, ruta] of Object.entries(rutas || {})) {
+    if (!ruta || !fs.existsSync(ruta)) continue;
+    let db;
+    try {
+      db = new Database(ruta, { readonly: true, fileMustExist: true, timeout: 2000 });
+      const filas = db.prepare("SELECT phone, active_until FROM members WHERE replace(replace(replace(replace(phone, ' ', ''), '-', ''), '.', ''), '+', '') LIKE ? AND active_until IS NOT NULL AND active_until != ''").all(`%${tel}`);
+      for (const f of filas) {
+        if (normalizarTelefono(f.phone) !== tel) continue;
+        const hasta = String(f.active_until).slice(0, 10);
+        if (!mejor || hasta > mejor.hasta) mejor = { hasta, sede };
+      }
+    } catch (e) { console.error(`Socios de ${sede} (última tarifa):`, e.message); } finally { try { db?.close(); } catch { /* ya cerrada */ } }
+  }
+  return mejor;
+}
+
+/** Fecha (AAAA-MM-DD) de hace `meses` meses. */
+function haceMeses(meses, ahora = new Date()) {
+  const d = new Date(ahora);
+  d.setMonth(d.getMonth() - meses);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * ¿Es socio ese teléfono? Socio = tarifa vigente hoy en AimHarder. Un exsocio cuya última tarifa terminó hace
+ * menos de `meses` (por defecto 3) cuenta también como socio (`exSocioReciente`): Sofía no le contesta. Más antiguo,
+ * o sin fecha de última tarifa, es un exsocio y se trata como lead.
+ */
+export function buscarSocioPorTelefono(repo, telefono, { rutas = config.embudo.sociosDb, meses = config.aimharder.exsocioRecienteMeses ?? 3, ahora = new Date() } = {}) {
   const tel = normalizarTelefono(telefono);
   if (!tel) return { esSocio: false };
   const filas = repo.sociosPorTelefono(tel);
   const activo = filas.find((f) => f.activo);
+  if (activo) return { esSocio: true, exSocio: false, sede: activo.sede, nombre: activo.nombre || null, tarifa: activo.tarifa || null };
+  const ultima = meses > 0 ? ultimaTarifaHasta(tel, rutas) : null;
+  const reciente = Boolean(ultima && ultima.hasta >= haceMeses(meses, ahora));
   return {
-    esSocio: Boolean(activo),
-    exSocio: !activo && filas.length > 0,
-    sede: activo?.sede || filas[0]?.sede || null,
-    nombre: activo?.nombre || null,
-    tarifa: activo?.tarifa || null,
+    esSocio: reciente,
+    exSocio: filas.length > 0 || Boolean(ultima),
+    ...(reciente ? { exSocioReciente: true, tarifaHasta: ultima.hasta } : {}),
+    sede: filas[0]?.sede || ultima?.sede || null,
+    nombre: null,
+    tarifa: null,
   };
 }
 

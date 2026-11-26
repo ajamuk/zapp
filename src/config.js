@@ -85,6 +85,8 @@ export const config = {
       access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),
     }])),
     tokenStore: env('AIMHARDER_TOKEN_STORE'),
+    // Exsocio cuya última tarifa pagada terminó hace menos de estos meses: Sofía no le contesta (lo lleva el equipo)
+    exsocioRecienteMeses: Number(env('EXSOCIO_RECIENTE_MESES', '3')),
     adminUrl: env('AIMHARDER_ADMIN_URL'),
     adminUser: env('AIMHARDER_ADMIN_USER'),
     adminPassword: env('AIMHARDER_ADMIN_PASSWORD'),
