@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { openDb, repo as crearRepo } from '../src/db.js';
 import { Setter } from '../src/setter.js';
 import { Ghl } from '../src/ghl.js';
+import { crearAvisos } from '../src/avisos-ghl.js';
 import { Etiquetador, crear as crearEtiqueta } from '../src/etiquetas.js';
 import { procesarSeguimientos, programarManual } from '../src/followups.js';
 import { estadoAislamiento, evaluarEntrante, chatPermitido, cuarentena, enmascarar, lineaDe, esDeOtraLinea, salienteVerificado } from '../src/aislamiento.js';
@@ -49,7 +50,6 @@ function montar({ aislamiento = AISL, live = true, lista = [], sueltos = null, t
       return { content: [{ type: 'tool_use', id: 't', name: 'responder', input: { fase: 'f2 diagnóstico', sede: 'desconocida', mensajes: m } }], usage: { input_tokens: 1, output_tokens: 1 } };
     },
   });
-  setter.repasosAislamiento = [];
   return { repo, setter, sal, avanzar: (ms) => { reloj = new Date(reloj.getTime() + ms); } };
 }
 /** Aviso del workflow de GHL: sin id de mensaje, con el teléfono DEL CONTACTO (que no dice a qué número escribió). */
@@ -147,14 +147,33 @@ test('la lista de la conversación no trae el destinatario pero el mensaje por s
 test('GHL todavía no lista el mensaje: no entra «tal como vino»; entra al repasar si resulta ser del número propio', async () => {
   let lista = [];
   const { repo, setter, sal } = montar({ lista: () => lista });
-  setter.repasosAislamiento = [5];
-  const r = await setter.handleWebhook(aviso());
+  let ms = T0.getTime();
+  const avisos = crearAvisos({ repo, setter, reloj: () => ms, log: { log() {}, warn() {}, error() {} } });
+  const r = await avisos.procesar(avisos.guardar(aviso()));
   assert.match(r.ignorado, /aislamiento/);
+  assert.equal(r.reintento, 'aislamiento');
   assert.equal(chats(repo), 0);
   sinEfectos(sal);
+  // El repaso está en la base (sobrevive a un reinicio) y toca a los 8 s
   lista = [deGhl('m1')];
-  await new Promise((ok) => setTimeout(ok, 40));
+  ms += 7000; await avisos.pendientes().terminado;
+  assert.equal(chats(repo), 0, 'aún no le toca');
+  ms += 1000; await avisos.pendientes().terminado;
   assert.equal(repo.getConv('c1')?.aislado_num, AISL.clave);
+  assert.equal(repo.db.prepare('SELECT estado FROM ghl_avisos').get().estado, 'hecho');
+});
+
+test('GHL nunca lista el mensaje: dos repasos y el aviso queda descartado, sin efectos', async () => {
+  const { repo, setter, sal } = montar({ lista: [] });
+  let lecturas = 0; const leer = setter.ghl.mensajes; setter.ghl.mensajes = async (...a) => { lecturas++; return leer(...a); };
+  let ms = T0.getTime();
+  const avisos = crearAvisos({ repo, setter, reloj: () => ms, log: { log() {}, warn() {}, error() {} } });
+  await avisos.procesar(avisos.guardar(aviso()));
+  for (let i = 0; i < 4; i++) { ms += 60000; await avisos.pendientes().terminado; }
+  assert.equal(lecturas, 1 + 2);
+  assert.equal(repo.db.prepare('SELECT estado FROM ghl_avisos').get().estado, 'descartado');
+  assert.equal(chats(repo), 0);
+  sinEfectos(sal);
 });
 
 test('aviso con id de mensaje (evento de la app): tampoco basta; se comprueba en la conversación de GHL', async () => {

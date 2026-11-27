@@ -2,6 +2,8 @@ import { config } from './config.js';
 import { estadoAislamiento, plantillasPermitidas } from './aislamiento.js';
 
 const CANAL_A_TIPO = { whatsapp: 'WhatsApp', instagram: 'IG', messenger: 'FB' };
+// Tope de páginas por lectura de mensajes o conversaciones (cada página, `limit` elementos): nunca un bucle sin fin
+export const MAX_PAGINAS = 10;
 
 export function canalDesdeTipo(t) {
   const s = String(t || '').toLowerCase();
@@ -208,22 +210,77 @@ export class Ghl {
     return c ? { id: c.id, canal: canalDesdeTipo(c.lastMessageType || c.type) } : null;
   }
 
-  /** Conversaciones de la subcuenta con el último mensaje más reciente primero (para el barrido de chats nuevos). */
-  async conversacionesRecientes(limit = 30) {
-    const q = new URLSearchParams({ locationId: config.ghl.locationId, sortBy: 'last_message_date', sort: 'desc', limit: String(limit) });
-    const r = await this.req('GET', `/conversations/search?${q}`);
-    return (r?.conversations || []).map((c) => ({ id: c.id, contactId: c.contactId, ultimo: c.lastMessageDate ? new Date(Number(c.lastMessageDate) || c.lastMessageDate).toISOString() : null }))
+  /**
+   * Conversaciones de la subcuenta con el último mensaje más reciente primero (para el barrido de chats nuevos).
+   * GHL las da de `limit` en `limit` (GET /conversations/search). La página siguiente se pide con `startAfterDate`,
+   * que según la documentación de GHL lleva «el valor de orden del último documento»: con sortBy=last_message_date,
+   * su `lastMessageDate` en milisegundos. Se siguen pidiendo páginas mientras la última conversación sea de después de
+   * `desdeMs`, como mucho `maxPaginas`. Sin `desdeMs`, una sola página. Un número como argumento es el `limit`.
+   */
+  async conversacionesRecientes(opciones = {}) {
+    const { limit = 30, desdeMs = null, maxPaginas = MAX_PAGINAS } = typeof opciones === 'number' ? { limit: opciones } : opciones;
+    const enMs = (v) => Number(v) || Date.parse(v) || null;
+    const vistas = new Map(); let despues = null;
+    for (let pagina = 1; pagina <= maxPaginas; pagina++) {
+      const q = new URLSearchParams({ locationId: config.ghl.locationId, sortBy: 'last_message_date', sort: 'desc', limit: String(limit), ...(despues ? { startAfterDate: String(despues) } : {}) });
+      let r;
+      try { r = await this.req('GET', `/conversations/search?${q}`); } catch (e) {
+        if (pagina === 1) throw e;
+        console.warn(`[ghl] conversaciones recientes: falla la página ${pagina}; se usan las ${vistas.size} ya leídas (${e.message})`);
+        break;
+      }
+      const lista = r?.conversations || [];
+      for (const c of lista) if (c.id && !vistas.has(c.id)) vistas.set(c.id, c);
+      const ultima = enMs(lista.at(-1)?.lastMessageDate);
+      // Página corta, ya por debajo de la ventana o sin avanzar (misma fecha que la anterior): no hay más que pedir
+      if (lista.length < limit || desdeMs == null || !ultima || ultima < desdeMs || (despues && ultima >= despues)) break;
+      despues = ultima;
+    }
+    return [...vistas.values()].map((c) => ({ id: c.id, contactId: c.contactId, ultimo: enMs(c.lastMessageDate) ? new Date(enMs(c.lastMessageDate)).toISOString() : null }))
       .filter((c) => c.id && c.contactId && c.ultimo);
   }
 
   /**
-   * Últimos mensajes de una conversación, del más antiguo al más nuevo, ya normalizados. Es la fuente fiable de
-   * lo que ha entrado y salido: el webhook de workflow no trae el id del mensaje, ni el canal, ni los adjuntos.
+   * Mensajes de una conversación, del más antiguo al más nuevo, ya normalizados. Es la fuente fiable de lo que ha
+   * entrado y salido: el webhook de workflow no trae el id del mensaje, ni el canal, ni los adjuntos.
+   *
+   * GHL los da del más nuevo al más antiguo, de `limit` en `limit` (GET /conversations/:id/messages). Cada respuesta
+   * trae `nextPage` (quedan más) y `lastMessageId` (el último de la página), que se pasa como `lastMessageId` para
+   * pedir la siguiente. Opciones:
+   *  - `desde` (ISO): se piden páginas hasta tener un mensaje anterior a esa fecha. `null`: todo el historial.
+   *    Sin `desde`, una sola página (como antes).
+   *  - `maxPaginas`: tope de peticiones. Si se llega al tope sin cubrir lo pedido, la lista lleva `incompleta = 'tope'`;
+   *    si falla una página que no es la primera, `incompleta = 'error'` (con lo ya leído).
+   *  - `parar(pagina)`: si devuelve true para una página (ya normalizada), no se piden más (ya se sabe lo que se buscaba).
+   * Un número como segundo argumento es el tamaño de la página (una sola).
    */
-  async mensajes(conversationId, limit = 30) {
-    const r = await this.req('GET', `/conversations/${conversationId}/messages?limit=${limit}`);
-    const lista = r?.messages?.messages || (Array.isArray(r?.messages) ? r.messages : []);
-    return lista.map(normalizarMensaje).filter((m) => m.id && m.fecha).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  async mensajes(conversationId, opciones = {}) {
+    const { limit = 30, desde, maxPaginas = MAX_PAGINAS, parar = null } = typeof opciones === 'number' ? { limit: opciones } : opciones;
+    const hasta = desde === undefined ? undefined : desde === null ? null : Date.parse(desde);
+    const vistos = new Map(); let despues = null; let incompleta = null;
+    for (let pagina = 1; ; pagina++) {
+      const q = new URLSearchParams({ limit: String(limit), ...(despues ? { lastMessageId: despues } : {}) });
+      let r;
+      try { r = await this.req('GET', `/conversations/${conversationId}/messages?${q}`); } catch (e) {
+        if (pagina === 1) throw e;
+        console.warn(`[ghl] ${conversationId}: falla la página ${pagina} de mensajes; se usan los ${vistos.size} ya leídos (${e.message})`);
+        incompleta = 'error'; break;
+      }
+      // GHL envuelve la página en `messages` ({ messages: { lastMessageId, nextPage, messages: [...] } })
+      const pag = Array.isArray(r?.messages) ? r : (r?.messages || {});
+      const crudos = Array.isArray(pag.messages) ? pag.messages : [];
+      const nuevos = crudos.filter((m) => m?.id && m.dateAdded && !vistos.has(m.id)).map(normalizarMensaje);
+      for (const m of nuevos) vistos.set(m.id, m);
+      if (parar?.(nuevos)) break;
+      const masAntiguo = Math.min(...crudos.map((m) => Date.parse(m?.dateAdded)).filter(Number.isFinite));
+      const quedan = pag.nextPage === true && pag.lastMessageId && pag.lastMessageId !== despues && crudos.length > 0;
+      if (!quedan || hasta === undefined || (hasta !== null && masAntiguo < hasta)) break;
+      if (pagina >= maxPaginas) { incompleta = 'tope'; break; }
+      despues = pag.lastMessageId;
+    }
+    const lista = [...vistos.values()].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+    if (incompleta) lista.incompleta = incompleta;
+    return lista;
   }
 
   /** Un mensaje por su id (GET /conversations/messages/{id}), normalizado; null si GHL no devuelve ese mismo mensaje. */

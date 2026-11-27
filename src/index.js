@@ -16,6 +16,7 @@ import { crearApp } from './server.js';
 import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
+import { crearAvisos } from './avisos-ghl.js';
 import { rutaPruebas } from './probar.js';
 import { estadoAislamiento, chatPermitido, cuarentena, enmascarar } from './aislamiento.js';
 
@@ -35,7 +36,7 @@ if (isLive() && clavesDebiles().length) {
 const ghlConfigurado = Boolean(config.ghl.token && config.ghl.locationId);
 const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
-if (recuperado.chats || recuperado.seguimientos || recuperado.reportes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
+if (recuperado.chats || recuperado.seguimientos || recuperado.reportes || recuperado.avisos) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
 // Aislamiento en un número de WhatsApp propio: si está configurado, lo que hubiera en cola de otros chats no sale
 const aislamiento = estadoAislamiento();
@@ -79,6 +80,8 @@ const etiquetas = new Etiquetador({
   alQuitar: (convId, etiquetaId) => cancelarPorEtiqueta(repo, repo.db, convId, etiquetaId),
 });
 const setter = new Setter({ repo, ghl, aimharder, avisar, etiquetas, aislamiento });
+// Avisos de GHL: se guardan antes de contestar 200 y sus reintentos van en la base (sobreviven a un reinicio)
+const avisosGhl = crearAvisos({ repo, setter });
 
 // ---------- Bucles (ninguno se solapa consigo mismo; los errores se registran y no paran el servicio) ----------
 const registro = {};
@@ -104,7 +107,7 @@ for (const sede of SEDES) { try { const k = claveDeSede(config.aimharder.webhook
 const procesarEventosAimharder = crearProcesador({ repo, apis: clientesApi() });
 const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
   ? manejadorWebhook({ repo, claves: clavesWebhook, sedes: SEDES, despertar: () => procesarEventosAimharder() }) : null;
-const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook });
+const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook, avisos: avisosGhl });
 if (config.ghlWebhookEnabled && !ghlConfigurado) registrarAlerta(repo.db, { clave: 'ghl-sin-configurar', tipo: 'ghl', titulo: 'Falta conectar GoHighLevel (GHL_TOKEN y GHL_LOCATION_ID)', detalle: 'Sin ellos Sofía no recibe ni envía mensajes. El panel y Probar IA funcionan.', nivel: 'aviso' });
 else resolverAlerta(repo.db, 'ghl-sin-configurar');
 const servidor = app.listen(config.port, config.host, () => {
@@ -132,6 +135,9 @@ if (config.ghlWebhookEnabled) {
   // los chats terminen (cada respuesta tarda lo que tarda «escribir» sus burbujas): si esperase, un chat que toca
   // mientras Sofía escribe en otro no empezaría hasta que acabase ese. `tick` ya cuenta los que hay en marcha.
   cada('respuestas', 2000, () => { setter.tick().catch((e) => console.error('[respuestas]', e.message)); }, 1000);
+  // Avisos de GHL pendientes: reintentos (GHL aún no devuelve la conversación o el mensaje) y los que un reinicio
+  // dejó a medias. No espera a que terminen (`pendientes` los lanza), así que la vuelta es inmediata.
+  cada('avisos-ghl', 2000, () => { avisosGhl.pendientes(); }, 1000);
   cada('seguimientos', 60000, () => procesarSeguimientos(setter));
   // Etiquetas con regla de inactividad («si no responde en X h»)
   cada('etiquetas-inactividad', 5 * 60000, () => etiquetas.revisarInactividad());

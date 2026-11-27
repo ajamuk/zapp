@@ -4,7 +4,8 @@
  * Al arrancar, deja en un estado coherente lo que un reinicio pudo cortar a medias:
  *  - chats que Sofía estaba contestando → vuelven a la cola (contesta en cuanto arranque);
  *  - seguimientos que se estaban enviando → error (mejor perder uno que mandarlo dos veces; sale en las alertas);
- *  - reportes a medio analizar → error, con botón «Volver a analizar» en el panel.
+ *  - reportes a medio analizar → error, con botón «Volver a analizar» en el panel;
+ *  - avisos de GHL a medio procesar → vuelven a la cola de avisos (avisos-ghl.js) y se procesan enseguida.
  */
 export function recuperar(db, ahora = new Date()) {
   // Solo vuelven a la cola si de ese turno no había salido nada: con una burbuja ya enviada, repetir el turno
@@ -24,7 +25,9 @@ export function recuperar(db, ahora = new Date()) {
   const seguimientos = db.prepare("UPDATE scheduled SET estado = 'error', detalle = 'interrumpido por un reinicio del servicio' WHERE estado = 'enviando'").run().changes;
   const reportes = db.prepare("UPDATE reportes SET estado = 'error', error = 'El análisis se interrumpió por un reinicio del servicio. Pulsa «Volver a analizar».' WHERE estado IN ('analizando', 'recibido')").run().changes;
   const pasadas = db.prepare("UPDATE bateria_pasadas SET estado = 'error', error = 'interrumpida por un reinicio del servicio', terminado_at = datetime('now') WHERE estado = 'en_curso'").run().changes;
-  return { chats, seguimientos, reportes, ...(pasadas ? { pasadas } : {}) };
+  // Procesarlos otra vez no duplica sus mensajes (se registran por su id de GHL); perderlos sí perdía mensajes
+  const avisos = db.prepare("UPDATE ghl_avisos SET estado = 'pendiente', proximo_ms = ? WHERE estado = 'procesando'").run(ahora.getTime()).changes;
+  return { chats, seguimientos, reportes, ...(pasadas ? { pasadas } : {}), ...(avisos ? { avisos } : {}) };
 }
 
 /**

@@ -43,6 +43,8 @@ export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); 
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
 const VENTANA_SYNC = 3 * 60000; // chat sin sincronizar todavía: solo se miran los mensajes de GHL de los últimos 3 min
 const SOLAPE_SYNC = 2 * 60000;  // margen hacia atrás al repasar un chat ya sincronizado
+const PAGINA_GHL = 30; // mensajes por página al leer una conversación de GHL (Ghl.mensajes)
+const MAX_PAGINAS_HISTORIAL = 20; // aislamiento: páginas de GHL para leer entera la conversación de un chat nuevo o por adoptar
 /** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
 export function textoComparable(t) {
   return String(t || '').split('\n').filter((l) => !/^\s*(💬|☑️)|^\s*(sent from|received on|from other device)\b/i.test(l))
@@ -159,49 +161,6 @@ export class Setter {
     return { visto: false, entrantes: 0, salientes: 0, compartida: true, ignorado: `aislamiento: ${motivo}` };
   }
 
-  /** GHL aún no lista el mensaje del aviso: se vuelve a mirar la conversación un par de veces (si no, se perdería). */
-  repasarLuego(evt) {
-    if (!this.ghl.mensajes) return;
-    for (const ms of this.repasosAislamiento ?? [8000, 40000]) {
-      const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId, evt)).catch(() => {}); }, ms);
-      t.unref?.();
-    }
-  }
-
-  /**
-   * Contacto recién creado: el aviso del workflow llega a los pocos segundos y GHL aún no devuelve su conversación.
-   * Sin esto el primer mensaje del lead se perdía (no entraba en el panel ni contestaba nadie). Se vuelve a preguntar
-   * a GHL unas cuantas veces; en cuanto aparece, el aviso se procesa como si hubiera llegado completo.
-   */
-  buscarConversacionLuego(evt) {
-    if (!this.ghl.buscarConversacion || evt.evento !== 'inbound' || evt.reintentoConversacion) return false;
-    const pendientes = (this.conversacionesPendientes ??= new Set());
-    if (pendientes.has(evt.contactId)) return true; // ya hay un repaso en marcha para este contacto
-    pendientes.add(evt.contactId);
-    const esperas = [...(this.repasosConversacion ?? [5000, 15000, 45000, 120000])];
-    const intentar = () => {
-      const ms = esperas.shift();
-      if (ms === undefined) {
-        pendientes.delete(evt.contactId);
-        console.warn(`[webhook] ${evt.contactId}: GHL sigue sin devolver la conversación del contacto; aviso sin procesar`);
-        return;
-      }
-      const t = setTimeout(async () => {
-        try {
-          const ya = this.repo.db.prepare('SELECT id FROM conversations WHERE contact_id = ? ORDER BY rowid DESC LIMIT 1').get(evt.contactId)?.id;
-          const id = ya || (await this.safe(() => this.ghl.buscarConversacion(evt.contactId)))?.id;
-          if (!id) return intentar();
-          pendientes.delete(evt.contactId);
-          console.log(`[webhook] ${evt.contactId}: conversación ${id} encontrada al repasar; se procesa el aviso`);
-          await this.handleWebhook({ ...evt, conversationId: id, reintentoConversacion: true });
-        } catch (e) { pendientes.delete(evt.contactId); console.error('[webhook] repaso de conversación:', e); }
-      }, ms);
-      t.unref?.();
-    };
-    intentar();
-    return true;
-  }
-
   /**
    * Instagram: nunca historias, reacciones, emojis ni mensajes sin texto; y un chat nuevo solo se abre si el mensaje
    * pide información de forma clara. Lo que no pasa no crea chat ni toca el contacto (lo atiende el equipo en GHL).
@@ -229,9 +188,11 @@ export class Setter {
    */
   async barrerConversacionesNuevas({ minutos = 30, margenMs = 90000, limite = 30 } = {}) {
     if (!this.ghl.conversacionesRecientes || !this.ghl.mensajes) return { revisadas: 0, recuperadas: 0 };
-    const lista = await this.safe(() => this.ghl.conversacionesRecientes(limite));
-    if (!lista) return { revisadas: 0, recuperadas: 0 };
     const ahora = this.now().getTime();
+    // Por páginas hasta cubrir la ventana: en un lanzamiento hay más de `limite` chats con actividad en media hora y
+    // un lead nuevo sin aviso se quedaba fuera de la primera página
+    const lista = await this.safe(() => this.ghl.conversacionesRecientes({ limit: limite, desdeMs: ahora - minutos * 60000 }));
+    if (!lista) return { revisadas: 0, recuperadas: 0 };
     this.barridoVistas ??= new Map();
     let revisadas = 0; let recuperadas = 0;
     for (const c of lista) {
@@ -264,7 +225,8 @@ export class Setter {
       buscada = await this.safe(() => this.ghl.buscarConversacion(evt.contactId));
       if (buscada?.id && !evt.conversationId) evt.conversationId = buscada.id;
     }
-    if (!evt.conversationId) return { ignorado: 'faltan ids', reintento: this.buscarConversacionLuego(evt) };
+    // Contacto recién creado: GHL aún no devuelve su conversación. Se vuelve a preguntar más tarde (avisos-ghl.js)
+    if (!evt.conversationId) return { ignorado: 'faltan ids', reintento: evt.evento === 'inbound' && this.ghl.buscarConversacion ? 'conversacion' : false };
     // Los eventos de un mismo chat se procesan de uno en uno y en orden: si llegan dos mensajes casi a la vez,
     // el chat no se clasifica dos veces (dos avisos de «socio escribe») ni se cruzan la pausa y la respuesta.
     return this.enSerie(evt.conversationId, async () => {
@@ -282,14 +244,12 @@ export class Setter {
         if (this.ghl.mensajes) {
           const r = await this.sincronizar(evt.conversationId, evt);
           if (r?.compartida || r?.ajeno) return r;
-          if (r?.visto) {
-            // El texto coincidía con un mensaje que ya estaba: por si era otro igual que GHL aún no listaba
-            if (r.repasar && !r.entrantes) { const t = setTimeout(() => { this.enSerie(evt.conversationId, () => this.sincronizar(evt.conversationId)).catch(() => {}); }, this.repasoMs ?? 8000); t.unref?.(); }
-            return r;
-          }
+          // El texto coincidía con un mensaje que ya estaba: por si era otro igual que GHL aún no listaba, se repasa luego
+          if (r?.visto) return r.repasar && !r.entrantes ? { ...r, reintento: 'repaso' } : r;
         }
         // Con aislamiento nada entra «tal como vino»: sin el mensaje de GHL no hay prueba de a qué número se escribió
-        if (this.aislado()) { this.repasarLuego(evt); return { ignorado: 'aislamiento: GHL aún no lista el mensaje; se repasa en unos segundos' }; }
+        // (se vuelve a mirar la conversación un par de veces: avisos-ghl.js)
+        if (this.aislado()) return { ignorado: 'aislamiento: GHL aún no lista el mensaje; se repasa en unos segundos', reintento: this.ghl.mensajes ? 'aislamiento' : false };
         // GHL no contesta o aún no lista el mensaje: entra tal como vino (el disparador del workflow solo salta
         // con WhatsApp e Instagram). Cuando aparezca en GHL, `sincronizar` lo reconoce por el texto y no lo repite.
         if (evt.canal === 'desconocido') {
@@ -320,11 +280,46 @@ export class Setter {
         return { visto: false, entrantes: 0, salientes: 0, ajeno: true, ignorado: 'aislamiento: chat no verificado para el número propio' };
       }
     }
-    const lista = await this.safe(() => this.ghl.mensajes(convId));
-    if (!lista) return null;
+    const db = this.repo.db;
+    const previa = this.repo.getConv(convId);
+    const cursor = previa?.ghl_sync_at;
+    // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
+    // Chat que ya existe pero sin cursor (GHL no listó nada las veces anteriores): desde su primer mensaje aquí
+    const primero = cursor ? null : db.prepare('SELECT min(created_at) c FROM messages WHERE conversation_id = ?').get(convId)?.c;
+    // Aviso que se procesa más tarde de cuando llegó (un reintento, o recuperado tras un reinicio): la ventana de un
+    // chat sin cursor cuenta desde su llegada, no desde ahora
+    const llegada = Date.parse(evt?.recibido) || Infinity;
+    const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity, llegada) - ventana;
+    const suelo = previa?.ghl_sync_suelo;
+    const desde = [new Date(base).toISOString(), suelo].filter(Boolean).sort().pop();
     const aisl = this.aislamiento.modo === 'activo' ? this.aislamiento : null;
+    // GHL da los mensajes por páginas: se piden hasta llegar a `desde` (si no, con más de una página de mensajes entre
+    // dos repasos se perdían los más antiguos). Con aislamiento, un chat nuevo o por adoptar se lee entero (hasta el
+    // tope): basta un mensaje de otra línea en cualquier punto del historial para que la conversación sea compartida.
+    // Un chat de antes del cursor (sin `ghl_sync_at`) sigue con una sola página: ir hasta su primer mensaje metería
+    // semanas de historial como si acabara de llegar.
+    const historial = Boolean(aisl) && (!previa || porAdoptar);
+    // Conversación sin chat aquí cuyo historial ya se leyó entero (otra línea no había): basta con lo de después, y en
+    // cuanto aparece un mensaje de otra línea no hace falta leer más (los avisos de otras líneas no cuestan 20 páginas)
+    const leido = historial && !previa ? this.historialLeido?.get(convId) : null;
+    const tras = leido ? [new Date(Date.parse(leido) - SOLAPE_SYNC).toISOString(), desde].sort()[0] : null;
+    const paginas = historial ? { desde: tras, maxPaginas: MAX_PAGINAS_HISTORIAL, parar: (pag) => pag.some((m) => esDeOtraLinea(aisl, m)) }
+      : (cursor || !previa) ? { desde } : {};
+    const lista = await this.safe(() => this.ghl.mensajes(convId, paginas));
+    if (!lista) return null;
+    if (lista.incompleta && historial) {
+      // Sin el historial entero no hay prueba de que la conversación no la comparta otra línea: como si GHL no respondiera
+      console.warn(`[aislamiento] ${convId}: no se ha podido leer toda la conversación en GHL (${lista.incompleta}); no se atiende todavía`);
+      return null;
+    }
+    if (lista.incompleta) console.warn(`[sync] ${convId}: GHL no ha dado todos los mensajes desde el último repaso (${lista.incompleta}); se revisan los ${lista.length} más recientes`);
     // Se mira toda la lista (no solo lo reciente): basta un mensaje de otra línea para que la conversación sea compartida
     if (aisl && lista.some((m) => esDeOtraLinea(aisl, m))) return this.bloquearCompartida(convId);
+    if (historial && !previa && lista.length) {
+      this.historialLeido ??= new Map();
+      this.historialLeido.set(convId, lista.at(-1).fecha);
+      if (this.historialLeido.size > 2000) this.historialLeido.delete(this.historialLeido.keys().next().value);
+    }
     if (porAdoptar) {
       // Se adopta solo con prueba: en la conversación de GHL no hay nada de otra línea (comprobado arriba) y sí al
       // menos un WhatsApp entrante al número propio. Sin eso, el chat sigue sin atenderse.
@@ -334,20 +329,14 @@ export class Setter {
       this.repo.updateConv(convId, { aislado_num: aisl.clave });
       console.log(`[aislamiento] ${convId}: chat anterior adoptado (GHL confirma que es del número propio)`);
     }
-    const db = this.repo.db;
-    const cursor = this.repo.getConv(convId)?.ghl_sync_at;
-    // Se repasa un poco hacia atrás (GHL a veces lista tarde un mensaje); en un chat nuevo, solo lo reciente
-    // Chat que ya existe pero sin cursor (GHL no listó nada las veces anteriores): desde su primer mensaje aquí
-    const primero = cursor ? null : db.prepare('SELECT min(created_at) c FROM messages WHERE conversation_id = ?').get(convId)?.c;
-    const base = cursor ? new Date(cursor).getTime() - SOLAPE_SYNC : Math.min(this.now().getTime(), primero ? new Date(primero).getTime() : Infinity) - ventana;
-    const suelo = this.repo.getConv(convId)?.ghl_sync_suelo;
-    const desde = [new Date(base).toISOString(), suelo].filter(Boolean).sort().pop();
     const iso = (fecha, ms) => new Date(new Date(fecha).getTime() + ms).toISOString();
     const conocido = (id) => Boolean(db.prepare('SELECT 1 FROM messages WHERE external_id = ?').get(id));
     const buscado = textoComparable(evt?.texto);
     const out = { visto: false, entrantes: 0, salientes: 0 };
     let nuevoCursor = cursor || null; let pendiente = false;
-    for (const m of lista) {
+    // Chat de antes del cursor: se repasa, como siempre, solo la última página (aunque para adoptarlo se leyera entero)
+    const repaso = previa && !cursor ? lista.slice(-PAGINA_GHL) : lista;
+    for (const m of repaso) {
       if (!(m.fecha >= desde)) continue;
       const t = textoComparable(m.texto);
       if (m.direccion === 'inbound' && CANALES_NATIVOS.has(m.canal)) {
@@ -394,7 +383,8 @@ export class Setter {
       }
       if (!pendiente && (!nuevoCursor || m.fecha > nuevoCursor)) nuevoCursor = m.fecha;
     }
-    if (nuevoCursor && nuevoCursor !== cursor && this.repo.getConv(convId)) this.repo.updateConv(convId, { ghl_sync_at: nuevoCursor });
+    // Si falló una página intermedia, el cursor no avanza: el próximo repaso vuelve a pedir lo que faltó
+    if (nuevoCursor && nuevoCursor !== cursor && lista.incompleta !== 'error' && this.repo.getConv(convId)) this.repo.updateConv(convId, { ghl_sync_at: nuevoCursor });
     if (out.entrantes > 1 || out.salientes) console.log(`[sync] ${convId}: ${out.entrantes} entrantes y ${out.salientes} del equipo recuperados de GHL`);
     return out;
   }

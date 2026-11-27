@@ -72,8 +72,21 @@ function ghlFalso() {
       const u = new URL(req.url, 'http://x'); const b = cuerpo ? JSON.parse(cuerpo) : {};
       const ok = (j) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(j)); };
       const r = `${req.method} ${u.pathname}`;
-      if (r === 'GET /conversations/search') return ok({ conversations: [{ id: CONV, lastMessageType: 'TYPE_CUSTOM_SMS' }] });
-      if (r === `GET /conversations/${CONV}/messages`) return ok({ messages: { messages: [...e.mensajes].sort((a, c) => c.dateAdded.localeCompare(a.dateAdded)).slice(0, Number(u.searchParams.get('limit')) || 20).map(comoGhl) } });
+      // Como la API real: páginas de `limit` (20 por defecto); la siguiente, con `startAfterDate` (conversaciones) o
+      // `lastMessageId` (mensajes). Las respuestas traen `total` y `nextPage` / `lastMessageId`.
+      const limite = Number(u.searchParams.get('limit')) || 20;
+      if (r === 'GET /conversations/search') {
+        const ultimo = Math.max(0, ...e.mensajes.map((m) => Date.parse(m.dateAdded)));
+        const despues = Number(u.searchParams.get('startAfterDate')) || Infinity;
+        const todas = [{ id: CONV, contactId: CONTACTO, lastMessageType: 'TYPE_CUSTOM_SMS', lastMessageDate: ultimo }].filter((c) => c.lastMessageDate < despues);
+        return ok({ conversations: todas.slice(0, limite), total: todas.length });
+      }
+      if (r === `GET /conversations/${CONV}/messages`) {
+        const todos = [...e.mensajes].sort((a, c) => c.dateAdded.localeCompare(a.dateAdded));
+        const desde = u.searchParams.get('lastMessageId') ? todos.findIndex((m) => m.id === u.searchParams.get('lastMessageId')) + 1 : 0;
+        const pagina = todos.slice(desde, desde + limite);
+        return ok({ messages: { lastMessageId: pagina.at(-1)?.id ?? null, nextPage: desde + limite < todos.length, messages: pagina.map(comoGhl) } });
+      }
       if (r === 'POST /conversations/messages') {
         const id = `out${++e.n}`;
         e.enviados.push(b);

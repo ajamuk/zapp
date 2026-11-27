@@ -41,7 +41,6 @@ function montar({ aislamiento = AISL, lista = [], lead = true, falla = false } =
     if (falla) throw new Error('modelo caído');
     return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ lead }) }], usage: { input_tokens: 1, output_tokens: 1 } };
   };
-  setter.repasosAislamiento = [];
   return { repo, setter, sal, avanzar: (ms) => { reloj = new Date(reloj.getTime() + ms); } };
 }
 const chats = (repo) => repo.db.prepare('SELECT count(*) n FROM conversations').get().n;
