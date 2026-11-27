@@ -23,18 +23,18 @@ test('sede del formulario, servicio exacto y autorización específica de apertu
   assert.equal(prepararSolicitud({ ...registro('5', parla), createdAt: '2026-11-25T01:00:00Z' }, match), null);
 });
 
-function entorno({ dnd = false, incierto = false, abierto = false } = {}) {
+function entorno({ dnd = false, incierto = false, abierto = false, citas = [] } = {}) {
   const r = repo(openDb(':memory:'));
   crear(r.db, { nombre: 'mpo_sofia_solicitud_web_v1', idioma: 'es_ES', categoria: 'UTILITY', cuerpo: 'Hola, {{1}}. Solicitud sobre {{2}}.' });
   const salientes = [];
   const cartera = [registro('a', parla, { servicio: 'CrossFit Academy' }), registro('b', parla, { servicio: 'CrossFit Academy' })];
   const ghl = {
     formularios: async () => ({ submissions: cartera, meta: { nextPage: null } }),
-    getContact: async () => ({ contact: { id: 'contacto', locationId, phone: datos.phone, firstName: 'Prueba', dnd } }),
+    getContact: async (id) => ({ contact: { id, locationId, phone: datos.phone, firstName: 'Prueba', dnd } }),
     buscarContactoPorTelefono: async () => ({ id: 'contacto', locationId, phone: datos.phone, dnd }),
     buscarConversacion: async () => abierto ? { id: 'chat' } : null,
     mensajes: async () => [{ canal: 'whatsapp', fecha: createdAt }],
-    req: async () => ({}),
+    req: async (_method, path) => path.endsWith('/appointments') ? { events: citas } : ({}),
     enviarPlantillaWa: async (payload) => {
       salientes.push(payload);
       if (incierto) throw new Error('timeout');
@@ -86,8 +86,8 @@ test('recepción guarda una sola entrada durable y Meta valida subcuenta y formu
   assert.equal(revisar.recepcion(payload, clave), true);
   assert.equal(revisar.recepcion(payload, clave), true);
   assert.equal(revisar.recepcion({ ...payload, consent: false }, clave), false);
-  assert.equal(revisar.meta({ locationId: 'otra', contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), false);
-  assert.equal(revisar.meta({ locationId, contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), true);
+  assert.equal(revisar.entradaCrm({ locationId: 'otra', contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), false);
+  assert.equal(revisar.entradaCrm({ locationId, contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), true);
   assert.equal(r.db.prepare('SELECT count(*) AS n FROM solicitudes_externas').get().n, 2);
 });
 
@@ -115,4 +115,20 @@ test('un recordatorio válido y concurrente produce un solo envío, y uno incier
       assert.ok(resultados.some(([codigo]) => codigo === 200));
     }
   }
+});
+
+test('la cita de Nexor pasa la sede, la actividad y la hora sin disparar un WhatsApp adicional', async () => {
+  const contacto = 'c'.repeat(20);
+  const appointment = { id: 'r'.repeat(20), contactId: contacto, locationId, appointmentStatus: 'confirmed',
+    calendarId: '2D7yvfbpgGlBwPd4OfVJ', startTime: '2026-11-27T16:00:00Z' };
+  const { revisar, r, salientes } = entorno({ citas: [appointment] });
+  assert.equal(revisar.entradaCrm({ location: { id: locationId }, contact_id: contacto,
+    appointment, customData: { formulario_sofia: 'cita_ghl' } }), true);
+  await revisar();
+  const saved = r.db.prepare('SELECT sede, servicio, asunto, estado FROM solicitudes_web WHERE contacto = ?').get(contacto);
+  assert.equal(saved.sede, 'parla');
+  assert.equal(saved.servicio, 'CrossFit Academy');
+  assert.match(saved.asunto, /17:00/);
+  assert.equal(saved.estado, 'sin_permiso');
+  assert.equal(salientes.length, 1); // Solo el formulario web de la otra persona de prueba.
 });

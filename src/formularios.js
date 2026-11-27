@@ -35,6 +35,18 @@ const META = {
   academia_parla: 'parla',
   academia_las_rosas: 'las_rosas',
 };
+const CALENDARIOS = {
+  '2D7yvfbpgGlBwPd4OfVJ': ['parla', 'CrossFit Academy'],
+  '3FKFN7Eu7GqqwEv7rtUY': ['parla', 'HYROX'],
+  '3VZU8Ema2Wc6vjDkckp6': ['getafe', 'CrossFit'],
+  '3jOLSxqnzvSFC4ss7oAE': ['las_rosas', 'CrossFit'],
+  '4r3ElGADWcgLZwHAsc0b': ['las_rosas', 'HYROX'],
+  '5mGDs4bIXJ866kQdtksg': ['las_rosas', 'CrossFit Academy'],
+  '6uGfBNp38DAG0TZHgc01': ['parla', 'HYROX'],
+  NDF0tY9j8ulTvhg3IpfI: ['parla', 'CrossFit'],
+  OAxBuktI0NMEW50cxwrF: ['getafe', 'CrossFit Academy'],
+  p5K6wBTuUpvfP6e3xotV: ['getafe', 'HYROX'],
+};
 const SERVICIOS = new Set(['CrossFit Academy', 'CrossFit']);
 const WHATSAPP_APERTURA = 'Sí, podéis responder a mi solicitud por WhatsApp o teléfono y avisarme por ese canal cuando se abra la oferta de apertura de El Cañaveral.';
 const TAGS_BLOQUEO = new Set(['parar ia', 'ai off', 'baja de mensajes', 'cb:opt-out', 'ia-necesita-humano', 'humano']);
@@ -69,7 +81,7 @@ export function prepararSolicitud(fila, { ids, campoServicio, locationId, desde,
 
 export function contextoSolicitud(db, conv, ahora) {
   if (conv.channel !== 'whatsapp' || !conv.contact_id) return '';
-  const solicitud = db.prepare(`SELECT sede, servicio, asunto, estado, experiencia FROM solicitudes_web
+  const solicitud = db.prepare(`SELECT formulario, sede, servicio, asunto, estado, experiencia FROM solicitudes_web
     WHERE contacto = ? AND fecha >= ? AND estado IN ('enviando', 'aceptada', 'incierta', 'chat_abierto', 'sin_permiso', 'duplicada')
     ORDER BY fecha DESC LIMIT 1`).get(conv.contact_id, ahora.getTime() - 7 * HORAS_24);
   if (!solicitud) return '';
@@ -79,6 +91,9 @@ export function contextoSolicitud(db, conv, ahora) {
   const enviado = solicitud.estado === 'aceptada' ? 'El primer WhatsApp se escribió sobre esa solicitud.' : '';
   const sede = SEDE_NOMBRE[solicitud.sede] || 'sede por confirmar';
   const experiencia = solicitud.experiencia ? `${solicitud.experiencia}. ` : '';
+  if (solicitud.formulario === 'cita_ghl') {
+    return `- Cita de Nexor, ${sede}. ${solicitud.asunto}. ${servicio} Verifica si sigue vigente antes de asegurar la plaza.`;
+  }
   return `- Solicitud reciente, ${sede}. Asunto: ${solicitud.asunto}. ${servicio} ${experiencia}${enviado} Una solicitud de clase no confirma una reserva. Aprovecha los datos y sigue lo último que te diga.`;
 }
 
@@ -229,16 +244,41 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
     }
   }
 
-  function meta(payload) {
+  function entradaCrm(payload) {
     const datos = payload.customData || payload.custom_data || {};
     const origen = datos.formulario_sofia;
     const contacto = payload.contact_id || payload.contactId;
     const location = payload.location_id || payload.locationId || payload.location?.id;
-    if (!Object.hasOwn(META, origen) || location !== locationId || !/^[A-Za-z0-9]{20}$/.test(String(contacto || ''))) return false;
+    if (location !== locationId || !/^[A-Za-z0-9]{20}$/.test(String(contacto || ''))) return false;
     const fecha = clock();
+    if (origen === 'cita_ghl') {
+      const recibido = datos.cita_id || payload.appointment?.id;
+      const cita = /^[A-Za-z0-9_-]{10,64}$/.test(String(recibido || '')) ? recibido : null;
+      const clave = cita || Math.floor(fecha / (5 * 60_000));
+      encolar.run(`cita:${contacto}:${clave}`, fecha, JSON.stringify({ contacto, cita }));
+      return true;
+    }
+    if (!Object.hasOwn(META, origen)) return false;
     const id = `meta:${origen}:${contacto}:${new Date(fecha).toISOString().slice(0, 10)}`;
     encolar.run(id, fecha, JSON.stringify({ sede: META[origen], contacto, servicio: 'CrossFit Academy' }));
     return true;
+  }
+
+  async function citaNexor(d, fecha) {
+    const { events } = await ghl.req('GET', `/contacts/${d.contacto}/appointments`, undefined, { version: 'v3' });
+    if (!Array.isArray(events)) throw new Error('Nexor no devolvió las citas del contacto');
+    const posibles = events.filter((e) => e.locationId === locationId && e.contactId === d.contacto &&
+      ['booked', 'confirmed', 'new'].includes(String(e.appointmentStatus || e.status).toLowerCase()) &&
+      (d.cita ? e.id === d.cita : [e.dateAdded, e.dateUpdated].some((v) => Math.abs(Date.parse(v) - fecha) <= HORAS_24)));
+    const cita = posibles.length === 1 ? posibles[0] : null;
+    if (!cita && clock() - fecha < 2 * 60_000) return null;
+    const [sede, servicio] = cita && Object.hasOwn(CALENDARIOS, cita.calendarId) ? CALENDARIOS[cita.calendarId] : ['', null];
+    const inicio = cita && /(?:Z|[+-]\d\d:\d\d)$/.test(cita.startTime || '') ? Date.parse(cita.startTime) : NaN;
+    const cuando = Number.isFinite(inicio) ? ` para ${new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'full', timeStyle: 'short', timeZone: 'Europe/Madrid',
+    }).format(inicio)}` : '';
+    const asunto = cita ? `Nexor registró una cita${cuando}` : 'Se recibió un aviso de cita en Nexor';
+    return { sede, servicio, asunto };
   }
 
   async function revisarExterno(plantilla) {
@@ -248,6 +288,7 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
         if (get.get(fila.id)) { resolver.run(fila.id); continue; }
         const d = JSON.parse(fila.carga);
         const consiente = fila.id.startsWith('recepcion:');
+        const cita = fila.id.startsWith('cita:');
         if (consiente && !d.contacto) {
           const previo = await ghl.buscarContactoPorTelefono(d.telefono);
           d.contacto = previo?.id || (await ghl.upsertContacto({ telefono: d.telefono, nombre: d.nombre, fuente: 'Recepción · visita presencial' })).id;
@@ -255,9 +296,12 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
         }
         const telefono = d.telefono || normalizarTelefono((await ghl.getContact(d.contacto))?.contact?.phone);
         if (!telefono) { resolver.run(fila.id); continue; }
-        const asunto = consiente ? `entrenar en ${SEDE_NOMBRE[d.sede]} después de tu visita`
-          : `CrossFit Academy en ${SEDE_NOMBRE[d.sede]}`;
-        await procesar({ ...d, id: fila.id, formulario: consiente ? 'recepcion' : 'meta', fecha: fila.fecha, telefono, asunto,
+        const ficha = cita ? await citaNexor(d, fila.fecha) : {
+          asunto: consiente ? `entrenar en ${SEDE_NOMBRE[d.sede]} después de tu visita` : `CrossFit Academy en ${SEDE_NOMBRE[d.sede]}`,
+        };
+        if (!ficha) continue;
+        const formulario = consiente ? 'recepcion' : cita ? 'cita_ghl' : 'meta';
+        await procesar({ ...d, ...ficha, id: fila.id, formulario, fecha: fila.fecha, telefono,
           consiente: consiente && fila.fecha > clock() - 2 * HORAS_24, claveTelefono: createHash('sha256').update(telefono).digest('hex') }, plantilla);
         if (get.get(fila.id)) resolver.run(fila.id);
       } catch { console.error('[formularios] solicitud externa pendiente de revisión'); }
@@ -289,5 +333,5 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
       catch { console.error(`[formularios] fallo de proceso para la solicitud ${solicitud.id}`); }
     }
   }
-  return Object.assign(revisar, { recepcion, meta, recordatorio });
+  return Object.assign(revisar, { recepcion, entradaCrm, recordatorio });
 }
