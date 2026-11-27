@@ -15,7 +15,7 @@ import { procesarSeguimientos, programarPorEtiqueta, cancelarPorEtiqueta } from 
 import { crearApp } from './server.js';
 import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
-import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
+import { recuperar, bucle, buclesParados, apagadoOrdenado, enSegundoPlano } from './arranque.js';
 import { crearAvisos } from './avisos-ghl.js';
 import { rutaPruebas } from './probar.js';
 import { procesadorFormularios } from './formularios.js';
@@ -37,7 +37,12 @@ if (isLive() && clavesDebiles().length) {
 const ghlConfigurado = Boolean(config.ghl.token && config.ghl.locationId);
 const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
-if (recuperado.chats || recuperado.seguimientos || recuperado.reportes || recuperado.avisos) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
+if (recuperado.chats || recuperado.seguimientos || recuperado.reportes || recuperado.avisos || recuperado.solicitudes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
+/** Alerta de un primer WhatsApp de solicitud web que no se sabe si salió (envío fallido o cortado por un reinicio). */
+const alertaSolicitudIncierta = (id) => registrarAlerta(repo.db, { clave: `formulario-incierto-${id}`, tipo: 'servidor',
+  titulo: 'El primer WhatsApp de una solicitud web requiere comprobación',
+  detalle: `Solicitud ${id}. Verificar el mensaje en Nexor antes de reintentar.`, nivel: 'aviso' });
+for (const id of recuperado.solicitudes || []) alertaSolicitudIncierta(id);
 aplicarAjustes(repo); // horario y retrasos guardados desde el panel
 // Aislamiento en un número de WhatsApp propio: si está configurado, lo que hubiera en cola de otros chats no sale
 const aislamiento = estadoAislamiento();
@@ -163,12 +168,10 @@ if (config.ghlWebhookEnabled && ghlConfigurado) {
 if (config.formularios.desde) {
   try {
     const revisar = procesadorFormularios({
-      setter, ajustes: config.formularios, locationId: config.ghl.locationId,
-      avisar: (id) => registrarAlerta(repo.db, { clave: `formulario-incierto-${id}`, tipo: 'servidor',
-        titulo: 'El primer WhatsApp de una solicitud web requiere comprobación',
-        detalle: `Solicitud ${id}. Verificar el mensaje en Nexor antes de reintentar.`, nivel: 'aviso' }),
+      setter, ajustes: config.formularios, locationId: config.ghl.locationId, avisar: alertaSolicitudIncierta,
     });
-    cada('formularios-web', 30_000, revisar, 10_000);
+    // En segundo plano registrado: el apagado ordenado espera a que acabe un envío en curso antes de salir
+    cada('formularios-web', 30_000, () => enSegundoPlano(revisar()), 10_000);
   } catch (e) {
     registrarAlerta(repo.db, { clave: 'formularios-config', tipo: 'servidor',
       titulo: 'La recepción de formularios web está desactivada', detalle: e.message, nivel: 'error' });
