@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS solicitudes_web (
 );
 CREATE INDEX IF NOT EXISTS solicitudes_web_contacto ON solicitudes_web(contacto, fecha);
 CREATE INDEX IF NOT EXISTS solicitudes_web_telefono ON solicitudes_web(telefono_hash, fecha);
+CREATE TABLE IF NOT EXISTS solicitudes_externas (
+  id TEXT PRIMARY KEY,
+  fecha INTEGER NOT NULL,
+  carga TEXT
+);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -421,6 +426,7 @@ export function openDb(dbPath) {
 
 /** Columnas añadidas después de crear la base: se añaden si faltan. */
 const COLUMNAS_NUEVAS = {
+  solicitudes_web: { experiencia: 'TEXT' },
   // Cola de webhooks de AimHarder: el evento se guarda antes de contestar 200 y se procesa (con reintentos) después.
   // Los eventos anteriores a la cola ya estaban procesados: quedan como «hecho».
   aimharder_eventos: {
