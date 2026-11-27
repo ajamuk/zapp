@@ -93,3 +93,20 @@ test('El Cañaveral: mientras el pago no esté habilitado, no se le dice al lead
   assert.match(pagoCanaveral(), /TODAVÍA NO ESTÁ HABILITADO/);
   assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'M', fecha_inicio: '2027-02-01' }).pago_habilitado, false);
 });
+
+test('horarios: cada hora con los días exactos en que hay clase (sin «de lunes a viernes» de más)', async () => {
+  const { horasPorDias, textoDias } = await import('../src/knowledge.js');
+  const dias = {
+    lunes: ['07:00', '09:30', '10:30', '18:30'], martes: ['09:30', '18:30'], miercoles: ['07:00', '09:30', '18:30'],
+    jueves: ['09:30', '18:30'], viernes: ['07:00', '09:30', '10:30', '18:30'], sabado: ['10:00'],
+  };
+  assert.deepEqual(horasPorDias(dias), [
+    'de lunes a viernes: 09:30, 18:30',
+    'lunes, miércoles y viernes: 07:00',
+    'lunes y viernes: 10:30',
+    'sábado: 10:00',
+  ]);
+  assert.equal(textoDias(['martes', 'miercoles', 'jueves']), 'de martes a jueves');
+  assert.equal(textoDias(['viernes', 'lunes']), 'lunes y viernes');
+  assert.deepEqual(horasPorDias({}), []);
+});

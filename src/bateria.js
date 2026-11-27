@@ -21,6 +21,7 @@ import * as docs from './documentos.js';
 import { costeRun } from './precios.js';
 import { comprobar, horasValidas } from '../scripts/evaluar.js';
 import { normalizarSede, knowledge } from './knowledge.js';
+import { textoComoLlegar } from './como-llegar.js';
 
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
 const fila = (c) => c && ({ ...c, contexto: json(c.contexto, []), criterios: json(c.criterios, []), activo: Boolean(c.activo), socio: Boolean(c.socio) });
@@ -126,12 +127,12 @@ Cómo escribes: como un cliente normal por chat, en español de España, mensaje
 Cuando ya tengas lo que querías, cuando te digan que te escribirá una persona del equipo, o si la conversación ya no da más de sí, contesta solo con: [FIN]`;
 
 const SISTEMA_JUEZ = `Evalúas una conversación entre Sofía (la setter por chat de CrossFit MetroPolitano, una IA) y un lead. Para cada criterio, decide si SE CUMPLE (true) o NO (false) mirando solo lo que hizo Sofía en la conversación y en la ficha técnica (herramientas que usó, etiquetas, estado del chat).
-Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. Si la conversación trae mensajes de «IA ANTERIOR», son de antes de Sofía: evalúa solo lo que escribe Sofía después de la línea que lo separa. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Para saber si un dato o una pauta es correcta, mira las instrucciones de Sofía, la base de conocimiento y las tarifas que tienes abajo: lo que está ahí no es inventado, aunque Sofía no haya usado una herramienta (si el criterio pide expresamente usar una herramienta, eso sí se comprueba en la ficha técnica). Es inventado lo que no está ni ahí ni en lo que devolvieron sus herramientas, o lo que lo contradice. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
+Reglas: sé estricto pero justo. Un criterio se cumple si Sofía hizo lo que dice, aunque lo exprese con otras palabras. Si el criterio habla de algo que no llegó a ocurrir porque la conversación no dio lugar a ello y no fue culpa de Sofía, márcalo como cumplido y dilo en el motivo. Si la conversación trae mensajes de «IA ANTERIOR», son de antes de Sofía: evalúa solo lo que escribe Sofía después de la línea que lo separa. La «referencia» (si la hay) es orientativa: no hace falta que se parezca. Para saber si un dato o una pauta es correcta, mira las instrucciones de Sofía, la base de conocimiento, las tarifas y el transporte de cada sede (<como_llegar>) que tienes abajo: lo que está ahí no es inventado, aunque Sofía no haya usado una herramienta (si el criterio pide expresamente usar una herramienta, eso sí se comprueba en la ficha técnica). Es inventado lo que no está ni ahí ni en lo que devolvieron sus herramientas, o lo que lo contradice. Motivo: una frase corta en español, citando lo que dijo Sofía si ayuda.`;
 
 /** Sistema del juez: sus reglas y, en un bloque cacheado, la base de conocimiento y las tarifas con las que contesta Sofía. */
 export const sistemaJuez = (negocio, prompt = null) => [
   { type: 'text', text: SISTEMA_JUEZ },
-  { type: 'text', text: `${prompt ? `<instrucciones_de_sofia>\n${prompt}\n</instrucciones_de_sofia>\n\n` : ''}<base_de_conocimiento>\n${negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
+  { type: 'text', text: `${prompt ? `<instrucciones_de_sofia>\n${prompt}\n</instrucciones_de_sofia>\n\n` : ''}<base_de_conocimiento>\n${negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>${textoComoLlegar()}`, cache_control: { type: 'ephemeral' } },
 ];
 
 const ESQUEMA_JUEZ = {

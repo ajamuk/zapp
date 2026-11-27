@@ -92,6 +92,35 @@ export function cierresAnticipados(sede, modalidad, { hoy = hoyLocal().iso, cier
  * Horario habitual publicado filtrado por sede, modalidad y franja (manana | tarde). `hoy` (AAAA-MM-DD en la zona
  * del negocio) decide qué días especiales ya han pasado; el setter pasa el de su reloj.
  */
+const NOMBRE_DIA = { lunes: 'lunes', martes: 'martes', miercoles: 'miércoles', jueves: 'jueves', viernes: 'viernes', sabado: 'sábado', domingo: 'domingo' };
+
+/** Días en texto: «lunes, miércoles y viernes»; tres o más seguidos, «de lunes a viernes». */
+export function textoDias(lista) {
+  const orden = DIAS.filter((d) => lista.includes(d));
+  const i = DIAS.indexOf(orden[0]);
+  if (orden.length >= 3 && orden.every((d, k) => DIAS[i + k] === d)) return `de ${NOMBRE_DIA[orden[0]]} a ${NOMBRE_DIA[orden.at(-1)]}`;
+  const n = orden.map((d) => NOMBRE_DIA[d]);
+  return n.length > 1 ? `${n.slice(0, -1).join(', ')} y ${n.at(-1)}` : (n[0] || '');
+}
+
+/**
+ * Las horas agrupadas por los días exactos en que hay clase a esa hora, de los grupos con más días a los de menos
+ * (y, a igual número, por el primer día):
+ * [«de lunes a viernes: 09:30, 17:30…», «lunes, miércoles y viernes: 07:00, 12:30»]. Con la tabla día a día, el
+ * modelo a veces decía «de lunes a viernes a las 07:00» cuando esa hora solo está tres días.
+ */
+export function horasPorDias(dias) {
+  const grupos = new Map();
+  for (const h of [...new Set(Object.values(dias).flat())].sort()) {
+    const conEsaHora = DIAS.filter((d) => dias[d]?.includes(h));
+    const k = conEsaHora.join(',');
+    if (!grupos.has(k)) grupos.set(k, { dias: conEsaHora, horas: [] });
+    grupos.get(k).horas.push(h);
+  }
+  return [...grupos.values()].sort((a, b) => b.dias.length - a.dias.length || DIAS.indexOf(a.dias[0]) - DIAS.indexOf(b.dias[0]) || a.horas[0].localeCompare(b.horas[0]))
+    .map((g) => `${textoDias(g.dias)}: ${g.horas.join(', ')}`);
+}
+
 export function consultarHorarios({ sede, modalidad, franja }, { hoy = hoyLocal().iso } = {}) {
   const s = normalizarSede(sede);
   const m = normalizarModalidad(modalidad);
@@ -108,7 +137,7 @@ export function consultarHorarios({ sede, modalidad, franja }, { hoy = hoyLocal(
     const horas = (tabla[d] || []).filter((h) => enFranja(h, f));
     if (horas.length) dias[d] = horas;
   }
-  return { ok: true, sede: s, modalidad: m, franja: f, dias, ...(especiales.length ? { dias_con_horario_especial: especiales } : {}), aviso: 'Horario habitual publicado; no confirma plazas libres. Las plazas se ven en la app.' };
+  return { ok: true, sede: s, modalidad: m, franja: f, dias, por_dias: horasPorDias(dias), ...(especiales.length ? { dias_con_horario_especial: especiales } : {}), aviso: 'Horario habitual publicado; no confirma plazas libres. Las plazas se ven en la app. Para decirlo, usa por_dias: cada hora va con los días exactos en que hay clase.' };
 }
 
 export function tarifaRecomendada(familia, dias) {
