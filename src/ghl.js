@@ -98,7 +98,7 @@ export class Ghl {
    * solo lo que es seguro repetir: lecturas, y cualquier petición si GHL contesta 429 (no la ha procesado).
    * Los envíos de mensajes NO se reintentan ante un corte o un 5xx: podría salir duplicado.
    */
-  async req(method, path, body, { intentos = 3, esperaMs = 800 } = {}) {
+  async req(method, path, body, { intentos = 3, esperaMs = 800, version = '2021-07-28' } = {}) {
     let r; let ultimo;
     for (let i = 1; i <= intentos; i++) {
       try {
@@ -106,7 +106,7 @@ export class Ghl {
           method,
           headers: {
             Authorization: `Bearer ${this.token}`,
-            Version: '2021-07-28',
+            Version: version,
             'Content-Type': 'application/json',
             Accept: 'application/json',
           },
@@ -234,6 +234,11 @@ export class Ghl {
   }
 
   getContact(contactId) { return this.req('GET', `/contacts/${contactId}`); }
+  formularios({ startAt, endAt, page }) {
+    const q = new URLSearchParams({ locationId: config.ghl.locationId, startAt, endAt, page: String(page), limit: '100' });
+    return this.req('GET', `/forms/submissions?${q}`, undefined, { version: 'v3' });
+  }
+
   /**
    * Crea el contacto (o devuelve el que ya hay con ese teléfono: GHL deduplica por teléfono) para escribirle por
    * primera vez. Devuelve { id, nuevo }.

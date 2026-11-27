@@ -17,6 +17,7 @@ import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado } from './arranque.js';
 import { rutaPruebas } from './probar.js';
+import { procesadorFormularios } from './formularios.js';
 import { estadoAislamiento, chatPermitido, cuarentena, enmascarar } from './aislamiento.js';
 
 // Un fallo suelto nunca debe dejar el servicio a medias: las promesas sin capturar se registran y se sigue;
@@ -151,6 +152,21 @@ if (config.ghlWebhookEnabled && ghlConfigurado) {
   }, 60000);
   // Chats nuevos de los que no llegó el aviso de GHL: cada 3 minutos se repasan las conversaciones recientes
   cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
+}
+
+if (config.formularios.desde) {
+  try {
+    const revisar = procesadorFormularios({
+      setter, ajustes: config.formularios, locationId: config.ghl.locationId,
+      avisar: (id) => registrarAlerta(repo.db, { clave: `formulario-incierto-${id}`, tipo: 'servidor',
+        titulo: 'El primer WhatsApp de una solicitud web requiere comprobación',
+        detalle: `Solicitud ${id}. Verificar el mensaje en Nexor antes de reintentar.`, nivel: 'aviso' }),
+    });
+    cada('formularios-web', 30_000, revisar, 10_000);
+  } catch (e) {
+    registrarAlerta(repo.db, { clave: 'formularios-config', tipo: 'servidor',
+      titulo: 'La recepción de formularios web está desactivada', detalle: e.message, nivel: 'error' });
+  }
 }
 
 // Horarios de clases desde AimHarder: una vez al día (la primera a los 3 minutos de arrancar). Si cambian, Sofía

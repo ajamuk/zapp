@@ -28,6 +28,20 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS conversations_respond ON conversations(respond_at);
+CREATE TABLE IF NOT EXISTS solicitudes_web (
+  id TEXT PRIMARY KEY,
+  contacto TEXT NOT NULL,
+  formulario TEXT NOT NULL,
+  fecha INTEGER NOT NULL,
+  telefono_hash TEXT NOT NULL,
+  sede TEXT NOT NULL,
+  servicio TEXT,
+  asunto TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  mensaje TEXT
+);
+CREATE INDEX IF NOT EXISTS solicitudes_web_contacto ON solicitudes_web(contacto, fecha);
+CREATE INDEX IF NOT EXISTS solicitudes_web_telefono ON solicitudes_web(telefono_hash, fecha);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
