@@ -13,6 +13,7 @@ import * as docs from './documentos.js';
 import { casoDesdeReporte } from './bateria.js';
 import { Etiquetador } from './etiquetas.js';
 import { knowledge } from './knowledge.js';
+import { textoComoLlegar } from './como-llegar.js';
 
 /** Apunta en ai_runs lo que gasta el optimizador (para Consumo). */
 const registrar = (db, id, motivo) => (uso) => apuntarUso(db, { conversation_id: `reporte-${id}`, motivo, ...uso });
@@ -96,13 +97,13 @@ Cómo juzgar:
 - "arreglado": la NUEVA ya no comete el fallo reportado y hace, en lo esencial, lo que el equipo pedía. No exijas que sea idéntica ni que use sus mismas palabras (el «texto exacto», si lo hay, es un ejemplo). Juzga solo lo que se reportó: no la suspendas por detalles de estilo o por cosas que el reporte no menciona.
 - Sofía contesta en varias burbujas cortas (una por línea). La respuesta reportada puede ser solo una de las burbujas de su turno; la NUEVA es el turno entero.
 - Sofía también actúa con herramientas (derivar al equipo, enviar un archivo, reservar una prueba, preparar un alta…). Lo que hizo en el turno nuevo está en <acciones_nuevas>: si el reporte pedía una acción, mira ahí si la hizo. En la comprobación esas herramientas están simuladas.
-- "hay_problemas_nuevos": true solo si la NUEVA introduce un problema GRAVE que la reportada no tenía: un dato falso, una regla de sus instrucciones rota o un tono claramente impropio. Para saber si un dato es correcto mira las instrucciones, la base de conocimiento y las tarifas de abajo y lo que devolvieron sus herramientas: lo que está ahí no es inventado. Diferencias menores no cuentan. Si no hay ninguno, false y "problemas_nuevos" vacío.
+- "hay_problemas_nuevos": true solo si la NUEVA introduce un problema GRAVE que la reportada no tenía: un dato falso, una regla de sus instrucciones rota o un tono claramente impropio. Para saber si un dato es correcto mira las instrucciones, la base de conocimiento, las tarifas y el transporte de cada sede (<como_llegar>) de abajo y lo que devolvieron sus herramientas: lo que está ahí no es inventado. Diferencias menores no cuentan. Si no hay ninguno, false y "problemas_nuevos" vacío.
 Responde en español, con un motivo corto para alguien que no es técnico.`;
 
 /** Sistema del juez: sus reglas y, cacheadas, las instrucciones (ya corregidas) y las tarifas con las que contesta Sofía. */
 const sistemaJuez = (textos) => [
   { type: 'text', text: SISTEMA_JUEZ },
-  { type: 'text', text: `<instrucciones_de_sofia>\n${textos.prompt || '(no disponibles)'}\n</instrucciones_de_sofia>\n\n<base_de_conocimiento>\n${textos.negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>`, cache_control: { type: 'ephemeral' } },
+  { type: 'text', text: `<instrucciones_de_sofia>\n${textos.prompt || '(no disponibles)'}\n</instrucciones_de_sofia>\n\n<base_de_conocimiento>\n${textos.negocio || '(no disponible)'}\n</base_de_conocimiento>\n\n<tarifas>\n${JSON.stringify(knowledge.tarifas)}\n</tarifas>${textoComoLlegar()}`, cache_control: { type: 'ephemeral' } },
 ];
 
 const ESQUEMA_JUEZ = {

@@ -2275,7 +2275,7 @@ async function bateriaPasada(id) {
 }
 
 // ---------- Probar IA ----------
-const HERR = { consultar_horarios: '🕒 Consultó horarios', consultar_tarifas: '💶 Consultó tarifas', calcular_primer_recibo: '🧮 Calculó el primer recibo', preparar_alta: '📝 Preparó un alta', reservar_prueba_parla: '📅 Pidió clase de prueba', derivar_a_equipo: '🙋 Derivó al equipo' };
+const HERR = { consultar_horarios: '🕒 Consultó horarios', consultar_tarifas: '💶 Consultó tarifas', calcular_primer_recibo: '🧮 Calculó el primer recibo', como_llegar: '🗺️ Miró cómo llegar', preparar_alta: '📝 Preparó un alta', reservar_prueba_parla: '📅 Pidió clase de prueba', derivar_a_equipo: '🙋 Derivó al equipo' };
 const resumirJson = (o) => esc(Object.entries(o || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')).slice(0, 400);
 const fechaLocal = (iso) => { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 

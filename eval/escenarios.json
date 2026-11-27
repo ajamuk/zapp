@@ -212,6 +212,36 @@
   "canal": "instagram"
  },
  {
+  "id": "como-llegar-transporte",
+  "nombre": "Pregunta cómo llegar sin coche",
+  "tema": "sede",
+  "perfil": "Te llamas Lucía, 29 años, vives en Leganés, en el barrio de Zarzaquemada, y no tienes coche. Te interesa el centro de Getafe. Has hecho CrossFit durante un año. Lo primero que quieres saber es cómo llegarías en transporte público; si te lo explican bien, preguntas por los horarios de tarde. No das tu dirección exacta, solo el barrio.",
+  "apertura": "hola! cómo llego al de getafe sin coche?",
+  "criterios": [
+   "Usa la herramienta como_llegar (si no sabe desde dónde vendría, se lo pregunta antes)",
+   "Le da una forma concreta de llegar (línea y parada) en vez de soltarle todas las líneas",
+   "Las líneas y paradas que nombra están en <como_llegar>",
+   "Después de resolver la duda sigue con el embudo (su experiencia, el horario…)"
+  ],
+  "turnos": 4,
+  "canal": "whatsapp"
+ },
+ {
+  "id": "le-pilla-lejos",
+  "nombre": "Vive lejos de todos los centros",
+  "tema": "sede",
+  "perfil": "Te llamas Andrés, 41 años, vives en Toledo capital y no trabajas en Madrid. Has visto un anuncio de CrossFit MetroPolitano y te apetece empezar desde cero, pero no sabes dónde están los centros. Cuando te digan dónde están, preguntas si te pilla muy lejos desde Toledo.",
+  "apertura": "buenas, dónde estáis? yo soy de toledo",
+  "criterios": [
+   "Usa la herramienta como_llegar con el origen del lead (Toledo)",
+   "Le dice con naturalidad que ahora mismo le pilla lejos, sin venderle ni insistir en que se apunte",
+   "Le dice que esperan poder abrir algún centro cerca de su zona pronto, sin prometer fechas ni sitios",
+   "Respeta el estilo: frases cortas, máximo 3 burbujas y una sola pregunta por turno"
+  ],
+  "turnos": 3,
+  "canal": "whatsapp"
+ },
+ {
   "id": "canaveral",
   "nombre": "Pregunta por El Cañaveral",
   "tema": "canaveral",

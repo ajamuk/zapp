@@ -86,6 +86,7 @@ Cuarto centro, en Calle Tolerancia, 46 (28052 Madrid). Apertura prevista: **1 de
 | El Cañaveral | Calle Tolerancia, 46, 28052 Madrid | https://maps.app.goo.gl/GxATh659gSkUXxDD9 | Abre el 1 de febrero de 2027. Tiene oferta de apertura (ver «El Cañaveral: oferta de apertura»). |
 
 - En todas hay duchas y vestuarios. Se aparca bien en la zona.
+- Metro, tren, tranvía y autobús de cada centro, y cómo llegar desde donde vive el lead: herramienta `como_llegar` (datos en `config/como-llegar.json`).
 
 ## Horarios publicados
 
