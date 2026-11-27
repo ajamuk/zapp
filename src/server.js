@@ -165,7 +165,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     const datos = req.body?.customData || req.body?.custom_data || {};
     if (datos.formulario_sofia) {
       if (!formularios) return res.status(503).json({ error: 'entrada de formularios desactivada' });
-      if (!formularios.meta(req.body)) return res.status(400).json({ error: 'formulario o contacto no reconocido' });
+      if (!formularios.entradaCrm(req.body)) return res.status(400).json({ error: 'formulario o contacto no reconocido' });
       return res.status(202).json({ recibido: true });
     }
     const evt = parseWebhook(req.body);
