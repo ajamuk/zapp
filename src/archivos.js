@@ -43,7 +43,8 @@ export async function subir(db, d = {}, { base = carpetaMedios(), convertir = ff
     const tmp = guardar(buffer, { mime, base });
     media_ruta = path.join(path.dirname(tmp), `${crypto.randomUUID()}.ogg`);
     try { await convertir(['-y', '-i', path.join(base, tmp), '-vn', '-ac', '1', '-c:a', 'libopus', '-b:a', '32k', path.join(base, media_ruta)]); }
-    catch (e) { throw new Error(`No se ha podido preparar el audio (${e.message}).`); }
+    // El detalle de ffmpeg (lleva rutas del servidor) va al registro, no al panel
+    catch (e) { console.error('[archivos] conversión del audio:', e.message); throw new Error('No se ha podido preparar el audio: prueba a grabarlo otra vez.'); }
     finally { fs.rmSync(path.join(base, tmp), { force: true }); }
     mime = 'audio/ogg'; buffer = fs.readFileSync(path.join(base, media_ruta));
   } else {

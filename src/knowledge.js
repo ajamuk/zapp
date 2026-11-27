@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
+import { config, rutaConfig } from './config.js';
+import { hoyLocal } from './horario.js';
 
-const read = (f) => fs.readFileSync(path.join(config.root, 'config', f), 'utf8');
+const read = (f) => fs.readFileSync(rutaConfig(f), 'utf8');
 const readJson = (f) => JSON.parse(read(f));
 
 const festivos = readJson('festivos.json');
@@ -18,7 +19,9 @@ export function textoFestivos(f = festivos) {
     const dia = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
     return `- ${dia}: ${x.nombre}`;
   };
-  const nombres = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas' };
+  // Sedes con festivos propios en festivos.json (si no hay ninguna, todas las del negocio)
+  const conFestivos = config.negocio.sedes.filter((s) => f.locales?.[s.id] || f.pendientes?.[s.id]);
+  const nombres = Object.fromEntries((conFestivos.length ? conFestivos : config.negocio.sedes).map((s) => [s.id, s.nombre]));
   return ['## Festivos (el box cierra)', '',
     'Si preguntan por un día concreto, comprueba si está aquí. Si no está, ese día se abre con el horario habitual.', '',
     ...Object.entries(nombres).flatMap(([k, n]) => [`### ${n}`, ...festivosDeSede(k, f).map(fmt), ...(f.pendientes?.[k] ? [`- Pendiente: ${f.pendientes[k]} Si preguntan por esas fechas, dilo y que se confirma más adelante.`] : []), '']),
@@ -41,7 +44,6 @@ export const knowledge = {
   negocio: `${read('negocio.md')}\n\n${textoFestivos()}`,
   horarios: horariosIniciales(),
   tarifas: readJson('tarifas.json'),
-  festivos,
   followups: readJson('followups.json'),
   etiquetas: readJson('etiquetas.json'),
   cierres: readJson('cierres.json'),
@@ -52,11 +54,8 @@ const DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'do
 export function normalizarSede(s) {
   if (!s) return null;
   const t = String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (t.includes('parla')) return 'parla';
-  if (t.includes('getafe') || t.includes('bercial')) return 'getafe';
-  if (t.includes('rosas') || t.includes('rozas') || t.includes('san blas')) return 'las_rosas';
-  if (t.includes('canaveral') || t.includes('vicalvaro')) return 'el_canaveral';
-  return null;
+  // La primera sede de config/negocio.json con algún alias en el texto
+  return config.negocio.sedes.find((x) => x.id === t || x.alias.some((a) => t.includes(a)))?.id ?? null;
 }
 
 export function normalizarModalidad(m) {
@@ -80,7 +79,7 @@ const enFranja = (hora, franja) => {
  * Días en que la sede cierra antes (config/cierres.json): las clases habituales de ese día de la semana que
  * terminan antes del cierre (duran una hora). Si AimHarder ya publica un horario especial para la fecha, no se añade.
  */
-export function cierresAnticipados(sede, modalidad, { hoy = new Date().toISOString().slice(0, 10), cierres = knowledge.cierres } = {}) {
+export function cierresAnticipados(sede, modalidad, { hoy = hoyLocal().iso, cierres = knowledge.cierres } = {}) {
   const min = (h) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3, 5));
   return Object.entries(cierres[sede] || {}).filter(([fecha]) => fecha >= hoy && !knowledge.horarios._especiales?.[sede]?.[fecha]).sort().map(([fecha, c]) => {
     const dia = DIAS[(new Date(`${fecha}T12:00:00Z`).getUTCDay() + 6) % 7];
@@ -89,8 +88,11 @@ export function cierresAnticipados(sede, modalidad, { hoy = new Date().toISOStri
   });
 }
 
-/** Horario habitual publicado filtrado por sede, modalidad y franja (manana | tarde). */
-export function consultarHorarios({ sede, modalidad, franja }) {
+/**
+ * Horario habitual publicado filtrado por sede, modalidad y franja (manana | tarde). `hoy` (AAAA-MM-DD en la zona
+ * del negocio) decide qué días especiales ya han pasado; el setter pasa el de su reloj.
+ */
+export function consultarHorarios({ sede, modalidad, franja }, { hoy = hoyLocal().iso } = {}) {
   const s = normalizarSede(sede);
   const m = normalizarModalidad(modalidad);
   if (s === 'el_canaveral') return { ok: false, error: 'El Cañaveral abre el 1 de febrero de 2027 y sus horarios aún no están publicados (los de CrossFit + HYROX, pendientes de confirmar). Pregunta su disponibilidad (mañana o tarde) y anótala; no inventes horas.' };
@@ -99,7 +101,6 @@ export function consultarHorarios({ sede, modalidad, franja }) {
   const f = franja ? (String(franja).toLowerCase().startsWith('m') ? 'manana' : 'tarde') : null;
   const tabla = knowledge.horarios[s]?.[m] || {};
   // Días sueltos con horario especial (Nochebuena, Nochevieja…): ese día el habitual no vale.
-  const hoy = new Date().toISOString().slice(0, 10);
   const especialesAh = Object.entries(knowledge.horarios._especiales?.[s] || {}).filter(([f]) => f >= hoy).map(([fecha, clases]) => ({ fecha, horas: clases[m] || [], nota: clases[m] ? 'ese día solo estas horas' : `ese día hay horario especial y no hay ${m.replace('_', ' ')} publicado` }));
   const especiales = [...especialesAh, ...cierresAnticipados(s, m, { hoy })].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const dias = {};

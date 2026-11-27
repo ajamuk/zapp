@@ -322,7 +322,7 @@ test('copias del conector de WhatsApp: no cuentan dos veces ni pausan a Sofía',
   const { setter, repo, avanzar } = montar({ respuestas: [[{ name: 'responder', input: { mensajes: ['Hola! En qué sede te viene mejor?'] } }]] });
   const copia = (o) => ({ ...o, canal: 'type_custom_sms' });
   // Entrante: el nativo cuenta, la copia (antes o después) no
-  assert.match((await setter.handleWebhook(copia(entrante('hola\n\n💬Received on 34604840858', 'x1')))).ignorado, /copia/);
+  assert.match((await setter.handleWebhook(copia(entrante('hola\n\n💬Received on 34600000099', 'x1')))).ignorado, /copia/);
   assert.equal(repo.getConv('c1'), undefined);
   await setter.handleWebhook(entrante('hola', 'w1'));
   await setter.handleWebhook(copia(entrante('hola', 'x2')));
@@ -332,7 +332,7 @@ test('copias del conector de WhatsApp: no cuentan dos veces ni pausan a Sofía',
   avanzar(10 * 60000); await setter.tick();
   assert.equal(leads().get('ia').n, 1);
   const saliente = (texto, id, canal = 'whatsapp') => ({ evento: 'outbound', conversationId: 'c1', contactId: 'k1', canal, texto, messageId: id, userId: 'u1' });
-  assert.match((await setter.handleWebhook(saliente('Hola! En qué sede te viene mejor?\n💬Sent from 34604840858', 'x3', 'type_custom_sms'))).ignorado, /copia/);
+  assert.match((await setter.handleWebhook(saliente('Hola! En qué sede te viene mejor?\n💬Sent from 34600000099', 'x3', 'type_custom_sms'))).ignorado, /copia/);
   assert.equal(repo.getConv('c1').ai_paused, 0);
   // El equipo escribe desde GHL: llegan la copia y el nativo; se guarda una vez y Sofía se aparta
   assert.equal((await setter.handleWebhook(saliente('te llamo ahora', 'x4', 'type_custom_sms'))).pausada, true);
@@ -428,4 +428,167 @@ test('si Sofía no indica la sede pero ha consultado las tarifas de una, el chat
   await setter.tick();
   assert.equal(repo.getConv('c1').sede, 'las_rosas');
   assert.ok(llamadas.tags.includes('las rosas') || llamadas.tags.some((t) => /rosas/.test(t)));
+});
+
+// ---------- Robustez del turno (revisión de noviembre de 2026) ----------
+
+const datosAlta = { nombre_completo: 'Ana Prueba', email: 'ana@example.com', fecha_nacimiento: '1990-05-01', sede: 'parla', tarifa: 'academy_2', fecha_inicio: '2026-11-23' };
+
+test('si el turno falla después de hacer el alta, el aviso del alta sale igualmente y el turno no se repite', async () => {
+  const { setter, repo, llamadas, avanzar } = montar({
+    alta: { estado: 'preparada', pendiente: 22.67, detalle: 'ok' },
+    respuestas: [[{ name: 'preparar_alta', input: datosAlta }]], // la segunda llamada al modelo falla (no hay respuesta)
+  });
+  await setter.handleWebhook(entrante('sí, adelante'));
+  avanzar(60000);
+  await setter.tick();
+  assert.equal(repo.getConv('c1').alta_estado, 'preparada');
+  assert.ok(llamadas.enviados.some((t) => /alta hecha en Parla/.test(t)), 'el lead recibe el aviso del alta');
+  assert.ok(llamadas.avisos.some((t) => /dejó hecha el alta pero falló antes de contestar.*sí le ha llegado/.test(t)));
+  assert.ok(!llamadas.avisos.some((t) => /La IA falló/.test(t)), 'un solo aviso al equipo');
+  assert.deepEqual([repo.getConv('c1').respond_at, repo.getConv('c1').reintentos], [null, 0]);
+});
+
+test('el alta y la reserva de prueba no se hacen dos veces a la vez en el mismo chat', async () => {
+  const { setter, repo } = montar();
+  await setter.handleWebhook(entrante('hola'));
+  let soltar; const puerta = new Promise((r) => { soltar = r; });
+  let altas = 0;
+  setter.aimharder.prepararAlta = async () => { altas++; await puerta; return { estado: 'preparada', detalle: 'ok' }; };
+  const conv = repo.getConv('c1');
+  const efectos = () => ({ tags: new Set(), herramientas: [] });
+  const primera = setter.alta(conv, datosAlta, efectos());
+  const segunda = await setter.alta(conv, datosAlta, efectos());
+  assert.equal(segunda.estado, 'en_curso');
+  soltar();
+  assert.equal((await primera).estado, 'preparada');
+  assert.equal(altas, 1);
+  assert.equal((await setter.alta(conv, datosAlta, efectos())).estado, 'ya_preparada');
+  // Reserva de prueba: igual
+  let reservas = 0; let abrir; const puerta2 = new Promise((r) => { abrir = r; });
+  setter.aimharder.reservarPrueba = async () => { reservas++; await puerta2; return { estado: 'simulada' }; };
+  const input = { modalidad: 'crossfit', fecha_hora: '2026-11-19 19:30', nombre_completo: 'Ana López', email: 'ana@example.com' };
+  const r1 = setter.reservarPrueba(conv, input, efectos());
+  assert.equal((await setter.reservarPrueba(conv, input, efectos())).estado, 'en_curso');
+  abrir();
+  assert.equal((await r1).ok, true);
+  assert.equal(reservas, 1);
+});
+
+test('turno anulado por el tope: no se ejecutan más pasos ni herramientas', async () => {
+  const { runTurn } = await import('../src/llm.js');
+  const control = { cancelado: false };
+  const hechas = [];
+  const complete = async () => ({ content: [
+    { type: 'tool_use', id: 'a', name: 'consultar_tarifas', input: {} },
+    { type: 'tool_use', id: 'b', name: 'preparar_alta', input: {} },
+  ] });
+  const ejecutarHerramienta = async (n) => { hechas.push(n); control.cancelado = true; return { ok: true }; };
+  await assert.rejects(runTurn({ system: [], messages: [{ role: 'user', content: 'x' }], complete, ejecutarHerramienta, control }), (e) => e.cancelado === true);
+  assert.deepEqual(hechas, ['consultar_tarifas'], 'el alta ya no se pide');
+  let llamadas = 0;
+  await assert.rejects(runTurn({ system: [], messages: [{ role: 'user', content: 'x' }], complete: async () => { llamadas++; return {}; }, ejecutarHerramienta, control: { cancelado: true } }), /anulado/);
+  assert.equal(llamadas, 0);
+});
+
+test('la revisión fija también vale cuando responder va con otra herramienta (que recibe su resultado)', async () => {
+  const { runTurn } = await import('../src/llm.js');
+  const hechas = []; const vistos = [];
+  const guion = [
+    { content: [{ type: 'tool_use', id: 'f', name: 'enviar_recurso', input: { nombre: 'horario' } }, { type: 'tool_use', id: 'r', name: 'responder', input: { mensajes: ['a', 'b', 'c', 'd'], fase: 'f3 presentación' } }] },
+    { content: [{ type: 'tool_use', id: 'r2', name: 'responder', input: { mensajes: ['te paso el horario'], fase: 'f3 presentación' } }] },
+  ];
+  const r = await runTurn({ system: [], messages: [{ role: 'user', content: 'horario?' }], complete: async (req) => { vistos.push(req.messages.at(-1)); return guion.shift(); }, ejecutarHerramienta: async (n) => { hechas.push(n); return { ok: true }; } });
+  assert.deepEqual(r.respuesta.mensajes, ['te paso el horario']);
+  assert.deepEqual(hechas, ['enviar_recurso']);
+  const res = vistos[1].content;
+  assert.ok(res.some((b) => b.tool_use_id === 'r' && b.is_error && /máximo es 3/.test(b.content)));
+  assert.ok(res.some((b) => b.tool_use_id === 'f' && !b.is_error));
+});
+
+test('responder junto al alta nunca sale sin ver su resultado, aunque ya se le haya pedido esperar dos veces', async () => {
+  const { runTurn } = await import('../src/llm.js');
+  const conAlta = (id) => ({ content: [{ type: 'tool_use', id: `a${id}`, name: 'preparar_alta', input: {} }, { type: 'tool_use', id: `r${id}`, name: 'responder', input: { mensajes: ['ya está tu alta'], fase: 'f5 cierre' } }] });
+  const guion = [conAlta(1), conAlta(2), conAlta(3), { content: [{ type: 'tool_use', id: 'fin', name: 'responder', input: { mensajes: ['listo, alta hecha'], fase: 'f5 cierre' } }] }];
+  const hechas = [];
+  const r = await runTurn({ system: [], messages: [{ role: 'user', content: 'datos' }], complete: async () => guion.shift(), ejecutarHerramienta: async (n) => { hechas.push(n); return { ok: true, estado: hechas.length > 1 ? 'ya_preparada' : 'preparada' }; } });
+  assert.deepEqual(r.respuesta.mensajes, ['listo, alta hecha']);
+  assert.equal(hechas.length, 3);
+});
+
+test('si el modelo se niega, no se reintenta y el equipo lo sabe al momento', async () => {
+  const { setter, repo, llamadas, avanzar } = montar();
+  let veces = 0;
+  setter.complete = async () => { veces++; return { content: [], stop_reason: 'refusal', stop_details: { category: 'cyber' } }; };
+  await setter.handleWebhook(entrante('hola'));
+  avanzar(60000);
+  await setter.tick();
+  assert.equal(veces, 1);
+  assert.deepEqual([repo.getConv('c1').respond_at, repo.getConv('c1').reintentos], [null, 0]);
+  assert.equal(llamadas.avisos.filter((t) => /no ha contestado.*negado.*cyber/.test(t)).length, 1);
+});
+
+test('caché del historial: un punto en el último bloque, sin tocar el original ni acumular marcas', async () => {
+  const { conCache } = await import('../src/llm.js');
+  const original = [{ role: 'user', content: 'hola' }, { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'tool_use', id: 't', name: 'x', input: {} }] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: '{}' }] }];
+  const copia = structuredClone(original);
+  const m = conCache(original);
+  assert.deepEqual(original, copia, 'el original queda igual');
+  assert.deepEqual(m.at(-1).content.at(-1).cache_control, { type: 'ephemeral' });
+  assert.equal(JSON.stringify(m).match(/cache_control/g).length, 1);
+  assert.deepEqual(conCache([{ role: 'user', content: 'hola' }])[0].content, [{ type: 'text', text: 'hola', cache_control: { type: 'ephemeral' } }]);
+  const soloRazonamiento = [{ role: 'user', content: [{ type: 'thinking', thinking: '' }] }];
+  assert.equal(conCache(soloRazonamiento), soloRazonamiento, 'un bloque que no admite caché se deja sin marca');
+});
+
+test('un chat que ya se está atendiendo (o ya atendido) no se atiende dos veces', async () => {
+  const { leerAjustes } = await import('../src/ajustes.js');
+  const { setter, repo, llamadas, avanzar } = montar({ respuestas: [[{ name: 'responder', input: { mensajes: ['hola!'], fase: 'f1 apertura' } }]] });
+  await setter.handleWebhook(entrante('hola'));
+  avanzar(60000);
+  const elegido = repo.getConv('c1'); // lo que tenía una vuelta de tick que se quedó esperando
+  await Promise.all([setter.atender(elegido, leerAjustes(repo)), setter.atender(elegido, leerAjustes(repo))]);
+  await setter.atender(elegido, leerAjustes(repo));
+  assert.equal(llamadas.requests.length, 1);
+  assert.deepEqual(llamadas.enviados, ['hola!']);
+});
+
+test('la ventana de 24 h cuenta desde que el lead escribió, nunca hacia atrás ni en el futuro', async () => {
+  const { setter, repo } = montar();
+  const hace = (min) => new Date(T0.getTime() - min * 60000).toISOString();
+  await setter.handleWebhook(entrante('hola', 'w1', { fecha: hace(120) })); // aviso procesado 2 h tarde
+  assert.equal(repo.getConv('c1').last_inbound_at, hace(120));
+  await setter.handleWebhook(entrante('antiguo', 'w2', { creado: hace(300) })); // recuperado después, pero anterior
+  assert.equal(repo.getConv('c1').last_inbound_at, hace(120));
+  await setter.handleWebhook(entrante('ya', 'w3', { fecha: new Date(T0.getTime() + 3600e3).toISOString() })); // reloj de GHL adelantado
+  assert.equal(repo.getConv('c1').last_inbound_at, T0.toISOString());
+});
+
+test('largo plazo: una fecha a menos de 3 días se lleva a los 3 días; a las 11:00 del negocio también en verano', async () => {
+  const { setter, repo, avanzar } = montar();
+  await setter.handleWebhook(entrante('hola'));
+  const pend = () => repo.db.prepare("SELECT regla_id, due_at FROM scheduled WHERE conversation_id = 'c1' AND estado = 'pendiente' AND tipo = 'largo-plazo' ORDER BY due_at").all();
+  const r = setter.programarLargoPlazo(repo.getConv('c1'), { fecha: '2026-11-18', motivo: 'escríbeme mañana' }); // martes 17
+  assert.equal(r.fecha, '2026-11-20');
+  assert.equal(pend()[0].due_at, '2026-11-20T10:00:00.000Z'); // 11:00 en invierno
+  // Cadena que cruza el cambio de hora (20 de marzo → 30 días después, ya en horario de verano): sigue a las 11:00
+  setter.programarLargoPlazo(repo.getConv('c1'), { fecha: '2027-03-20', motivo: 'en primavera' });
+  assert.deepEqual(pend().map((x) => x.due_at), ['2027-03-20T10:00:00.000Z', '2027-04-19T09:00:00.000Z']);
+  avanzar(Date.parse('2027-06-01T09:00:00Z') - T0.getTime());
+  assert.equal(setter.programarLargoPlazo(repo.getConv('c1'), { fecha: '2027-07-01' }).fecha, '2027-07-01');
+  assert.equal(pend()[0].due_at, '2027-07-01T09:00:00.000Z'); // 11:00 en verano (antes, 12:00)
+  assert.equal(setter.programarLargoPlazo(repo.getConv('c1'), { fecha: '2027-02-31' }).fecha, '2027-06-22', 'fecha que no existe: la de la regla (21 días)');
+});
+
+test('las plazas de El Cañaveral solo se cuentan en sus consultas', async () => {
+  const { setter, repo } = montar();
+  await setter.handleWebhook(entrante('hola'));
+  let cuentas = 0;
+  setter.plazasCanaveral = () => { cuentas++; return 0; };
+  const efectos = { tags: new Set(), herramientas: [] };
+  await setter.herramienta(repo.getConv('c1'), 'consultar_tarifas', { sede: 'parla', familia: 'academy' }, efectos);
+  await setter.herramienta(repo.getConv('c1'), 'calcular_primer_recibo', { sede: 'getafe', tarifa: 'M', fecha_inicio: '2026-11-23' }, efectos);
+  assert.equal(cuentas, 0);
+  await setter.herramienta(repo.getConv('c1'), 'consultar_tarifas', { sede: 'el_canaveral', familia: 'academy' }, efectos);
+  assert.equal(cuentas, 1);
 });

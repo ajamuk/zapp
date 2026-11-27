@@ -2,7 +2,7 @@
 // mensaje fijo («ahora mismo no estamos atendiendo…»). Sofía le contesta de verdad en la siguiente apertura.
 // Se configura en Ajustes del panel: activarlo, el texto y en qué canales sale.
 import { config } from './config.js';
-import { siguienteApertura, diaLocal, hoyLocal } from './horario.js';
+import { siguienteApertura, diaLocal, hoyLocal, diaSiguiente } from './horario.js';
 
 export const MENSAJE_FUERA_HORARIO = '¡Hola! Ahora mismo no estamos atendiendo los mensajes. En cuanto lo leamos te contestamos y te ayudamos con todo lo que necesites 😊';
 export const TIPO_AVISO = 'fuera_horario';
@@ -16,7 +16,7 @@ export function textoApertura(ahora = new Date(), apertura = siguienteApertura(a
   const hora = new Intl.DateTimeFormat('es-ES', { hour: 'numeric', minute: '2-digit', hourCycle: 'h23', timeZone: tz }).format(apertura);
   const hoy = hoyLocal(ahora, tz).iso;
   const dia = hoyLocal(apertura, tz).iso;
-  const manana = hoyLocal(new Date(ahora.getTime() + 24 * 3600e3), tz).iso;
+  const manana = diaSiguiente(hoy); // por calendario: el día del cambio de hora no dura 24 h
   const cuando = dia === hoy ? 'hoy' : dia === manana ? 'mañana' : DIA_TXT[diaLocal(apertura, tz)];
   return `${cuando} a las ${hora}`;
 }

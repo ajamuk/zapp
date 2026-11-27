@@ -118,8 +118,23 @@ export function guardar(buffer, { mime = '', url = '', base = carpetaMedios() } 
   return rel;
 }
 
+/**
+ * Entorno mínimo para los programas externos (transcriptor, ffmpeg): lo que necesitan para funcionar, sin las claves
+ * del servicio (GHL, Anthropic, AimHarder…).
+ */
+const PASAN = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'TZ', 'USER', 'VIRTUAL_ENV'];
+const PREFIJOS = ['TRANSCRIPTOR_', 'HF_', 'XDG_', 'OMP_', 'CT2_'];
+export function entornoMinimo(origen = process.env) {
+  return Object.fromEntries(Object.entries(origen).filter(([k]) => PASAN.includes(k) || PREFIJOS.some((p) => k.startsWith(p))));
+}
+
 const ejecutar = (cmd, args, { timeout = 180000, env } = {}) => new Promise((ok, mal) => {
-  execFile(cmd, args, { timeout, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, ...env } }, (e, stdout, stderr) => (e ? mal(new Error(String(stderr || e.message).slice(-300))) : ok(String(stdout).trim())));
+  execFile(cmd, args, { timeout, maxBuffer: 2 * 1024 * 1024, env: { ...entornoMinimo(), ...env } }, (e, stdout, stderr) => {
+    if (!e) return ok(String(stdout).trim());
+    const err = new Error(String(stderr || e.message).slice(-300));
+    if (e.killed) err.tiempoAgotado = true; // lo cortó el tiempo límite
+    mal(err);
+  });
 });
 
 // Una transcripción cada vez: Whisper usa mucha CPU y memoria.
@@ -137,7 +152,11 @@ export function transcribir(ruta, { ejecutarImpl = ejecutar } = {}) {
     if (m.python && fs.existsSync(m.python)) {
       try {
         return await ejecutarImpl(m.python, ['-I', script, ruta, 'es'], { env: { HF_HUB_OFFLINE: '1', TRANSCRIPTOR_MODELOS: m.modelos || '' } });
-      } catch (e) { console.error('[medios] faster-whisper:', e.message); }
+      } catch (e) {
+        console.error('[medios] faster-whisper:', e.message);
+        // Si se agotó el tiempo, el de reserva (más lento) tardaría aún más: el audio queda sin transcribir
+        if (e.tiempoAgotado) throw new Error('la transcripción ha tardado demasiado');
+      }
     }
     if (m.reserva && fs.existsSync(m.reserva)) return ejecutarImpl(m.reserva, [ruta], { timeout: 300000 });
     throw new Error('no hay transcriptor configurado');

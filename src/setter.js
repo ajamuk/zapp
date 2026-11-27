@@ -1,11 +1,10 @@
 import { config } from './config.js';
-import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede, normalizarModalidad } from './knowledge.js';
-import { pagoCanaveral } from './knowledge.js';
+import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede, normalizarModalidad, pagoCanaveral, textoFestivos } from './knowledge.js';
 import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
 import { leerAjustes } from './ajustes.js';
-import { dentroDeHorario, siguienteApertura, hoyLocal, retardoHumano, chatCaliente, esperar } from './horario.js';
+import { dentroDeHorario, siguienteApertura, hoyLocal, instanteLocal, retardoHumano, chatCaliente, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
 import * as reglasSeg from './reglas.js';
@@ -14,7 +13,6 @@ import { entraEnNivel } from './intensidad.js';
 import { ultimaPrueba, guardarPrueba, actualizarPrueba, describir as describirPrueba, fechaLegible, pruebaTrialOps, resultadoTrialOps, describirTrialOps } from './clase-prueba.js';
 import * as preguntas from './preguntas.js';
 import { textosActivos, versionesActivas } from './documentos.js';
-import { textoFestivos } from './knowledge.js';
 import * as recursos from './recursos.js';
 import * as archivos from './archivos.js';
 import * as plantillasWa from './plantillas.js';
@@ -33,8 +31,6 @@ export function contienePalabra(texto, lista = []) {
 }
 const ESPERAS_REINTENTO = [2 * 60000, 5 * 60000]; // si falla la IA o GHL: reintento a los 2 y a los 5 minutos
 const SIN_RESPUESTA =/^\s*\[(story_mention|ig_post|ig_reel|reaction)\]\s*$/i;
-// Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
-// externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
 const ultimos9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
 /** ¿Es el mensaje de reinicio? Tiene que ser el mensaje entero (sin distinguir mayúsculas ni espacios de más). */
 export const esReinicio = (texto, palabra) => Boolean(palabra) && String(texto || '').trim().toLowerCase() === String(palabra).trim().toLowerCase();
@@ -42,6 +38,8 @@ export const esReinicio = (texto, palabra) => Boolean(palabra) && String(texto |
 const MAX_ESCUCHA_S = 600;
 export const esTelefonoPrueba = (tel, lista = []) => { const d = ultimos9(tel); return d.length === 9 && lista.some((x) => ultimos9(x) === d); };
 
+// Canales que GHL recibe de forma nativa. Lo demás (p. ej. «SMS personalizado») son copias que mete un conector
+// externo: en la cuenta hay un «WA1 Connector» que repite cada WhatsApp, y además trae los grupos.
 const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
 const VENTANA_SYNC = 3 * 60000; // chat sin sincronizar todavía: solo se miran los mensajes de GHL de los últimos 3 min
 const SOLAPE_SYNC = 2 * 60000;  // margen hacia atrás al repasar un chat ya sincronizado
@@ -50,14 +48,16 @@ export function textoComparable(t) {
   return String(t || '').split('\n').filter((l) => !/^\s*(💬|☑️)|^\s*(sent from|received on|from other device)\b/i.test(l))
     .join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
 }
-// Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
 // Resúmenes con los que la IA llama a derivar_a_equipo «para no hacer nada» (no son derivaciones)
 const RESUMEN_DE_RELLENO = /\b(no aplica|no procede|no hace falta|no es necesario|no necesita|nada que derivar|sin derivar|no derivar|no hay que derivar)\b/i;
 const VENTANA_SEG_MS = 24 * 3600e3;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
 const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
 const MOTIVOS_DERIVAR = ['salud', 'gestion_socio', 'cobro', 'llamada', 'visita', 'no_documentado', 'otro'];
-const SEDE_NOMBRE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas', el_canaveral: 'El Cañaveral' };
+const SEDE_NOMBRE = Object.fromEntries(config.negocio.sedes.map((s) => [s.id, s.nombre])); // config/negocio.json
+// Zona horaria del negocio tal como se le dice a Sofía («hora de Madrid» con Europe/Madrid)
+const ZONA_TXT = `hora de ${String(config.tz).split('/').pop().replace(/_/g, ' ')}`;
 
 /**
  * Cerebro del setter. Todas las dependencias se inyectan para poder probarlo sin red.
@@ -539,7 +539,12 @@ export class Setter {
       }
     }
     const ahora = this.now();
-    this.repo.updateConv(conv.id, { last_inbound_at: evt.creado || ahora.toISOString() });
+    // Ventana de 24 h de WhatsApp: cuenta desde que el lead escribió (fecha del mensaje en GHL), no desde que se
+    // procesó (puede ser bastante después); nunca hacia atrás (un mensaje antiguo recuperado tarde) ni en el futuro.
+    const escrito = [evt.creado, evt.fecha].map((f) => (f ? Date.parse(f) : NaN)).find((t) => Number.isFinite(t));
+    const llegadaLead = new Date(Math.min(ahora.getTime(), escrito ?? ahora.getTime())).toISOString();
+    const ultimaLlegada = Date.parse(this.repo.getConv(conv.id)?.last_inbound_at || '');
+    if (!(ultimaLlegada >= Date.parse(llegadaLead))) this.repo.updateConv(conv.id, { last_inbound_at: llegadaLead });
     this.repo.cancelScheduled(conv.id, 'el lead escribió', { soloCortos: true }); // los de largo plazo los revisa Sofía antes de enviar
 
     // Etiquetas de control puestas a mano en GHL
@@ -679,6 +684,11 @@ export class Setter {
   }
 
   async atender(c, ajustes) {
+    this.enCurso ??= new Set();
+    // `tick` no espera a sus chats y puede quedarse esperando a adoptar otro: una segunda vuelta puede haber elegido
+    // este mismo chat. Si ya se está atendiendo, o ya se atendió y no le queda respuesta pendiente, no se repite.
+    const fresco = this.repo.getConv(c.id);
+    if (this.enCurso.has(c.id) || !fresco?.respond_at || Date.parse(fresco.respond_at) > this.now().getTime()) return;
     // Sofía apagada (o el canal) desde el panel: contesta el equipo en GHL
     if (!ajustes.ia_activa || !ajustes.canales[c.channel]) { this.repo.updateConv(c.id, { respond_at: null }); return; }
     this.enCurso.add(c.id);
@@ -710,6 +720,9 @@ export class Setter {
       this.repo.updateConv(c.id, { respondiendo_desde: null, reintentos: 0 });
     } catch (e) {
       console.error(`Error respondiendo ${c.id} (intento ${reintentos + 1}):`, e.message);
+      // El modelo se ha negado (también su respaldo): no se reintenta y el equipo lo sabe ya (en el último intento ya
+      // avisa `responder`)
+      if (e.rechazo && !ultimo) await this.safe(() => this.avisar?.(`Sofía no ha contestado en el chat de ${c.nombre || c.telefono || c.id}: ${e.message}. Contéstale desde GHL.`, { sede: c.sede }));
       const actual = this.repo.getConv(c.id);
       const patch = { respondiendo_desde: null };
       // Se reintenta solo si no ha salido ya nada de este turno y el lead no ha vuelto a escribir (eso ya lo reprograma)
@@ -741,7 +754,7 @@ export class Setter {
     const hoy = hoyLocal(this.now());
     return [
       '# Contexto de esta conversación',
-      `- Hoy es ${hoy.dia} ${hoy.iso} (hora de Madrid).`,
+      `- Hoy es ${hoy.dia} ${hoy.iso} (${ZONA_TXT}).`,
       `- Canal: ${conv.channel}.`,
       `- Nombre del perfil: ${conv.nombre || 'desconocido'}.`,
       `- Sede conocida: ${conv.sede ? SEDE_NOMBRE[conv.sede] : 'aún no'}.`,
@@ -764,7 +777,7 @@ export class Setter {
     const ultimo = this.repo.db.prepare("SELECT adjunto FROM messages WHERE conversation_id = ? AND autor = 'lead' ORDER BY id DESC LIMIT 1").get(conv.id);
     const d = this.voz.decidirVoz({
       ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId: this.voz.vozElegida(ajustes), esPrueba: this.esDePrueba(conv),
-      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes: ['hola'], ...this.voz.uso(this.repo.db, conv.id, this.now()),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes: ['hola'], usoDe: () => this.voz.uso(this.repo.db, conv.id, this.now()),
     });
     if (!d.voz) return '';
     return '- El lead te ha mandado una nota de voz y tu respuesta le va a llegar también como nota de voz, leída tal cual la escribas. Escríbela para ser oída: muy breve (dos o tres frases cortas, unas 200 letras como mucho, 15 segundos), una sola idea y, si hace falta, una pregunta al final. Nada de listas ni de varios precios u horarios seguidos: da solo el dato que te pide. Si necesitas pasar un enlace o muchos datos, escríbelos con normalidad (entonces irá por escrito).';
@@ -842,14 +855,27 @@ export class Setter {
     const empezo = Date.now();
     try {
       ({ respuesta } = await runTurn({
-        system, messages, complete: this.complete,
+        system, messages, complete: this.complete, control,
         ejecutarHerramienta: (n, i) => this.herramienta(conv, n, i, efectos),
         onHerramienta: (h) => efectos.herramientas.push(h),
         onUsage: (uso, ms) => this.repo.logRun({ conversation_id: convId, motivo, ms, ...this.versiones(), ...uso }),
       }));
     } catch (e) {
       this.repo.logRun({ conversation_id: convId, motivo, modelo: config.ai.model, error: e.message });
-      if (avisarFallo) await this.safe(() => this.avisar?.(`La IA falló en una conversación y no ha contestado: ${e.message}`, { sede: conv.sede }));
+      // ¿Puede salir algo todavía? (mismas condiciones que una respuesta normal: ni pausado ni reiniciado ni ajeno)
+      const puedeSalir = () => {
+        const a = this.repo.getConv(convId);
+        return Boolean(a && this.permitido(a) && (!(a.ai_paused || a.derivado) || efectos.derivado) && (this.reinicios?.get(convId) || 0) === reinicioAlEmpezar);
+      };
+      // Anulado por el tope mientras pensaba o hacía una gestión: mismo trato que si hubiera terminado tarde
+      if (e.cancelado || control?.cancelado) return this.anularTurno(conv, efectos, { avisoAlta: puedeSalir() });
+      // El alta ya se hizo en este turno y lo que falló vino después: su aviso al lead sale igualmente (el reintento
+      // ya no lo mandaría, el alta consta como hecha) y el turno no se repite
+      if (efectos.avisoAlta && puedeSalir()) {
+        const salio = await this.enviarAvisoAlta(conv, efectos.avisoAlta);
+        e.noReintentar = true;
+        await this.safe(() => this.avisar?.(`Sofía dejó hecha el alta pero falló antes de contestar (${e.message})${salio ? '; el aviso del alta sí le ha llegado' : ''}. Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
+      } else if (avisarFallo) await this.safe(() => this.avisar?.(`La IA falló en una conversación y no ha contestado: ${e.message}`, { sede: conv.sede }));
       throw e;
     }
 
@@ -865,15 +891,8 @@ export class Setter {
     if (!ahoraConv || ((ahoraConv.ai_paused || ahoraConv.derivado) && !efectos.derivado)) return null;
     if (!this.permitido(ahoraConv)) return null; // al repasar, la conversación resultó compartida con otra línea
     const hechoFuera = efectos.derivado || efectos.herramientas.some((h) => NO_REPETIBLES.includes(h.nombre));
-    // El turno se anuló por tardar demasiado (ya hay un reintento en cola): esta respuesta no sale. Si en el turno
-    // se hizo algo que no se repite (alta, prueba, derivación), se quita el reintento y se avisa al equipo.
-    if (control?.cancelado) {
-      if (hechoFuera) {
-        this.repo.updateConv(convId, { respond_at: null, reintentos: 0 });
-        await this.safe(() => this.avisar?.(`Sofía tardó demasiado en un turno en el que ya había hecho una gestión (${efectos.herramientas.map((h) => h.nombre).join(', ')}) y no ha enviado su respuesta. Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
-      }
-      return null;
-    }
+    // El turno se anuló por tardar demasiado (ya hay un reintento en cola): esta respuesta no sale
+    if (control?.cancelado) return this.anularTurno(conv, efectos, { avisoAlta: true });
     // El lead ha vuelto a escribir mientras Sofía pensaba y ya tiene otro turno en cola: esta respuesta contestaría
     // a medias y luego saldría otra. Se descarta y contesta una sola vez con todo delante. No se descarta si en
     // este turno se hizo una gestión que no se repite.
@@ -912,6 +931,20 @@ export class Setter {
     const turno = { at: this.now().toISOString(), motivo, herramientas: efectos.herramientas, etiquetas: efectos.etiquetas, tags_ghl: [...efectos.tags], derivado: efectos.derivado, ...(largoPlazo ? { retomar: largoPlazo } : {}) };
     this.repo.updateConv(convId, { ultimo_turno: JSON.stringify(turno) });
     return { ...respuesta, mensajes, turno };
+  }
+
+  /**
+   * El turno se anuló por tardar demasiado (atender ya dejó un reintento en cola): su respuesta no sale. Si en él se
+   * hizo algo que no se repite (alta, prueba, derivación), se quita el reintento y se avisa al equipo; si fue el alta
+   * y aún puede salir algo al chat, su aviso al lead sale igualmente (el reintento no lo mandaría). Devuelve null.
+   */
+  async anularTurno(conv, efectos, { avisoAlta = false } = {}) {
+    const hechas = efectos.herramientas.map((h) => h.nombre);
+    if (!efectos.derivado && !hechas.some((n) => NO_REPETIBLES.includes(n))) return null;
+    this.repo.updateConv(conv.id, { respond_at: null, reintentos: 0 });
+    const salio = avisoAlta && efectos.avisoAlta ? await this.enviarAvisoAlta(conv, efectos.avisoAlta) : false;
+    await this.safe(() => this.avisar?.(`Sofía tardó demasiado en un turno en el que ya había hecho una gestión (${hechas.join(', ')}) y no ha enviado su respuesta${salio ? ' (el aviso del alta sí le ha llegado)' : ''}. Revisar el chat de ${conv.nombre || conv.telefono || conv.id}.`, { sede: conv.sede }));
+    return null;
   }
 
   async aplicarRespuesta(conv, r, efectos) {
@@ -961,7 +994,7 @@ export class Setter {
     if (!c || (c.valoracion == null && !c.resumen)) return null;
     const cuerpo = `⭐ Valoración de Sofía: ${c.valoracion != null ? `${c.valoracion}/10` : 'sin nota'}${c.valoracion_motivo ? ` · ${c.valoracion_motivo}` : ''}\n\n📝 Resumen de la conversación: ${c.resumen || '—'}`;
     if (cuerpo === c.nota_ghl_texto) return c.nota_ghl_id;
-    const cuando = this.now().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const cuando = this.now().toLocaleString('es-ES', { timeZone: config.tz, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const body = `${cuerpo}\n\n(Nota de Sofía: se actualiza sola con cada respuesta. Última: ${cuando})`;
     let id = c.nota_ghl_id;
     if (id) {
@@ -1090,7 +1123,7 @@ export class Setter {
     const vozId = this.voz.vozElegida(ajustes);
     const d = this.voz.decidirVoz({
       ajustes, canal: conv.channel, clave: this.voz.hayClave(), vozId, esPrueba: this.esDePrueba(conv),
-      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes, ...this.voz.uso(this.repo.db, conv.id, this.now()),
+      ultimoLeadAudio: ultimo?.adjunto === 'audio', mensajes, usoDe: () => this.voz.uso(this.repo.db, conv.id, this.now()),
     });
     if (!d.voz) return null;
     try { return await this.voz.sintetizar(d.texto, { vozId, velocidad: ajustes.velocidad, base: this.medios?.base }); }
@@ -1155,13 +1188,15 @@ export class Setter {
     }
   }
 
-  /** Aviso del alta al lead, y comprobación de que el mensaje ha salido al chat. */
+  /** Aviso del alta al lead, y comprobación de que el mensaje ha salido al chat. Devuelve si salió. */
   async enviarAvisoAlta(conv, mensajes) {
     try {
       const ids = await this.enviar(conv, mensajes);
       if (this.enviaDeVerdad(conv) && (!ids || ids.length < mensajes.length || ids.some((x) => !x))) throw new Error('GHL no devolvió el id de algún mensaje');
+      return true;
     } catch (e) {
       await this.avisar?.(`El alta está hecha pero el aviso al lead no se ha podido comprobar en el chat: ${e.message}. Revisar la conversación.`, { sede: conv.sede });
+      return false;
     }
   }
 
@@ -1189,18 +1224,23 @@ export class Setter {
 
   /**
    * El lead lo deja para más adelante: se cancelan los cortos y se programan los de largo plazo (fecha que indica
-   * Sofía, entre 3 días y 1 año; si no hay fecha, la de la regla). Salen a las 11:00 de Madrid.
-   * Devuelve { fecha, motivo, segundo } o null si el canal no lo permite.
+   * Sofía; si no hay fecha, ya ha pasado o pasa de un año, la de la regla; si es antes de 3 días, a los 3 días).
+   * Salen a las 11:00 en la zona del negocio, también en verano. Devuelve { fecha, motivo, segundo } o null si el
+   * canal no lo permite.
    */
   programarLargoPlazo(conv, { fecha = '', motivo = '' } = {}) {
     const reglas = reglasSeg.listar(this.catalogo).filter((r) => r.tipo === 'largo-plazo');
     const primera = reglas.find((r) => !r.despuesDe);
     const ahora = this.now();
-    const dia = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 10, 0)); // 11:00 en invierno, 12:00 en verano
-    let objetivo = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? new Date(`${fecha}T10:00:00Z`) : null;
-    const min = ahora.getTime() + 3 * 864e5, max = ahora.getTime() + 365 * 864e5;
-    if (!objetivo || Number.isNaN(objetivo.getTime()) || objetivo < min || objetivo > max) objetivo = dia(new Date(ahora.getTime() + (primera?.dias || 21) * 864e5));
-    const info = { fecha: objetivo.toISOString().slice(0, 10), motivo: String(motivo || '').slice(0, 300), at: ahora.toISOString() };
+    // Fechas del calendario del negocio (no de UTC): «dentro de N días» y las 11:00 de ese día
+    const dentroDe = (dias) => hoyLocal(new Date(ahora.getTime() + dias * 864e5)).iso;
+    const a11 = (iso) => instanteLocal(iso, '11:00');
+    const hoy = hoyLocal(ahora).iso;
+    let dia = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) && a11(fecha) ? String(fecha) : null;
+    if (!dia || dia < hoy || dia > dentroDe(365)) dia = dentroDe(primera?.dias || 21);
+    else if (dia < dentroDe(3)) dia = dentroDe(3); // «el lunes» dicho el sábado: lo antes que se le vuelve a escribir
+    const objetivo = a11(dia);
+    const info = { fecha: dia, motivo: String(motivo || '').slice(0, 300), at: ahora.toISOString() };
     this.repo.updateConv(conv.id, { retomar: JSON.stringify(info) });
     if (!primera || !primera.canales.includes(conv.channel)) return { ...info, programado: false, nota: 'Instagram no deja escribir pasados unos días: no se programa' };
     this.repo.cancelScheduled(conv.id, 'lo deja para más adelante', { tipos: ['silencio', 'largo-plazo'] });
@@ -1212,6 +1252,7 @@ export class Setter {
     if (sale(primera)) this.repo.schedule(conv.id, primera.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     for (let r = reglas.find((x) => x.despuesDe === anterior.id); r; anterior = r, r = reglas.find((x) => x.despuesDe === anterior.id)) {
       base = new Date(base.getTime() + r.minutos * 60000);
+      if (r.minutos % 1440 === 0) base = a11(hoyLocal(base).iso) || base; // días enteros: a las 11:00 aunque cambie la hora
       if (sale(r)) this.repo.schedule(conv.id, r.id, base.toISOString(), { fecha: info.fecha, motivo: info.motivo }, 'largo-plazo');
     }
     return { ...info, programado: true };
@@ -1226,7 +1267,7 @@ export class Setter {
     if (!conv) return '';
     const system = this.sistema(conv, extraContexto, docs);
     const messages = await this.mensajesModelo(this.repo.history(convId));
-    const consulta = { consultar_horarios: consultarHorarios, consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
+    const consulta = { consultar_horarios: (i) => consultarHorarios(i, { hoy: hoyLocal(this.now()).iso }), consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
     const { respuesta } = await runTurn({
       system, messages, complete: this.complete, ...(modelo ? { modelo } : {}),
       ejecutarHerramienta: async (n, i) => (consulta[n] ? consulta[n](i) : { ok: false, error: 'Ahora solo estás redactando un mensaje: no uses esta herramienta.' }),
@@ -1240,17 +1281,17 @@ export class Setter {
   async herramienta(conv, nombre, input, efectos) {
     switch (nombre) {
       case 'consultar_horarios': {
-        const res = consultarHorarios(input);
+        const res = consultarHorarios(input, { hoy: hoyLocal(this.now()).iso });
         if (res?.ok && Object.keys(res.dias || {}).length) (efectos.info ||= []).push({ tipo: 'horarios', sede: res.sede, familia: res.modalidad === 'academy' ? 'academy' : 'crossfit_hyrox' });
         return res;
       }
       case 'consultar_tarifas': {
-        const res = consultarTarifas({ ...input, plazas_ocupadas: this.plazasCanaveral() });
+        const res = consultarTarifas({ ...input, plazas_ocupadas: this.plazasSiCanaveral(input.sede) });
         const sede = normalizarSede(input.sede);
         if (res?.ok && sede) (efectos.info ||= []).push({ tipo: 'tarifas', sede, familia: normalizarModalidad(input.familia) === 'academy' ? 'academy' : 'crossfit_hyrox' });
         return res;
       }
-      case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasCanaveral() });
+      case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasSiCanaveral(input.sede) });
       case 'preparar_alta': return this.alta(conv, input, efectos);
       case 'reservar_prueba_parla': return this.reservarPrueba(conv, input, efectos);
       case 'pregunta_sin_respuesta': {
@@ -1291,7 +1332,23 @@ export class Setter {
    * AimHarder como invitado; si no, o si AimHarder no la acepta, se avisa al equipo para que la reserve (como antes).
    * Siempre se comprueba antes que esa clase existe ese día en el calendario de AimHarder.
    */
-  async reservarPrueba(conv, input, efectos) {
+  reservarPrueba(conv, input, efectos) {
+    return this.deUnaEnUna('pruebasEnCurso', conv.id, () => this.reservarPruebaYa(conv, input, efectos),
+      { ok: true, estado: 'en_curso', nota: 'Su clase de prueba se está reservando ahora mismo: no la repitas. Dile que se la dejas apuntada y que se la confirmas por aquí.' });
+  }
+
+  /**
+   * Una gestión lenta (AimHarder) de un chat a la vez: si llega otra mientras tanto (un turno anulado por el tope y
+   * su reintento, dos turnos a la vez), no se repite y recibe `enCurso`. La marca se pone antes de esperar nada.
+   */
+  async deUnaEnUna(clave, convId, fn, enCurso) {
+    const marcas = (this[clave] ??= new Set());
+    if (marcas.has(convId)) return enCurso;
+    marcas.add(convId);
+    try { return await fn(); } finally { marcas.delete(convId); }
+  }
+
+  async reservarPruebaYa(conv, input, efectos) {
     const modalidad = normalizarModalidad(input.modalidad);
     const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(String(input.fecha_hora || '').trim());
     if (!['academy', 'crossfit', 'hyrox'].includes(modalidad)) return { ok: false, error: 'La prueba es de Academy, CrossFit o HYROX.' };
@@ -1353,7 +1410,7 @@ export class Setter {
     }
     if (!resultado) {
       const t = String(conv.id).startsWith('prueba-') ? null : pruebaTrialOps(conv.contact_id);
-      const mismaClase = t && (!p || String(new Date(t.start_time).toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' })) === p.fecha_hora.slice(0, 10));
+      const mismaClase = t && (!p || String(new Date(t.start_time).toLocaleDateString('sv-SE', { timeZone: config.tz })) === p.fecha_hora.slice(0, 10));
       const rt = mismaClase ? resultadoTrialOps(t) : null;
       const ra = p?.estado === 'reservada' && p.booking_id ? await this.safe(() => this.aimharder?.resultadoPrueba?.(p)) : null;
       // Lo verificado por metro-trial-ops manda sobre «sin ausencia» de AimHarder (que solo dice que nadie marcó la falta)
@@ -1377,7 +1434,13 @@ export class Setter {
     if (conv.ai_paused || conv.derivado) return 'chat pausado o derivado: contéstale tú';
     if (this.enCurso?.has(conv.id)) return 'Sofía estaba contestando en ese chat: no se ha enviado';
     if (!String(conv.id).startsWith('prueba-') && fueraDeVentana(conv, this.now())) return 'han pasado más de 24 h desde su último mensaje: no se puede escribir sin plantilla';
-    const r = await this.responder(conv.id, { extraContexto: preguntas.contextoRespuesta(p), motivo: 'pregunta-respondida', avisarFallo: false });
+    // Mientras escribe, el chat cuenta como «en curso» (igual que en atender): el bucle de respuestas y los
+    // seguimientos no abren otro turno a la vez en él. No va dentro de enSerie: responder ya usa esa cola para
+    // repasar GHL y se esperaría a sí mismo.
+    (this.enCurso ??= new Set()).add(conv.id);
+    let r;
+    try { r = await this.responder(conv.id, { extraContexto: preguntas.contextoRespuesta(p), motivo: 'pregunta-respondida', avisarFallo: false }); }
+    finally { this.enCurso.delete(conv.id); }
     if (!r) return 'no se ha enviado (chat pausado)';
     if (!r.mensajes.length) return 'Sofía vio que ya estaba contestada';
     return this.enviaDeVerdad(conv) ? 'enviada al lead' : 'borrador (modo prueba)';
@@ -1516,6 +1579,9 @@ export class Setter {
     return plazasCanaveral(this.repo, { sinConv }).total;
   }
 
+  /** Lo mismo, solo si la consulta es de El Cañaveral (las demás sedes no lo usan y contarlas lee el registro entero). */
+  plazasSiCanaveral(sede) { return normalizarSede(sede) === 'el_canaveral' ? this.plazasCanaveral() : 0; }
+
   /**
    * Alta en El Cañaveral (abre el 1 feb 2027): empieza el día de la apertura, con el descuento del tramo en las cuotas
    * de febrero a abril y la primera mensualidad emitida el día del alta. Su AimHarder aún no está mapeado para el
@@ -1555,7 +1621,12 @@ export class Setter {
     };
   }
 
-  async alta(conv, datos, efectos) {
+  alta(conv, datos, efectos) {
+    return this.deUnaEnUna('altasEnCurso', conv.id, () => this.altaYa(conv, datos, efectos),
+      { ok: true, estado: 'en_curso', nota: 'El alta de este lead se está tramitando ahora mismo: no la repitas ni vuelvas a pedir los datos. Dile que en cuanto esté le llega la invitación de AimHarder al correo.' });
+  }
+
+  async altaYa(conv, datos, efectos) {
     // Un alta ya hecha no se repite (duplicaría la tarifa y el recibo en AimHarder)
     if (this.repo.getConv(conv.id)?.alta_estado === 'preparada') return { ok: true, estado: 'ya_preparada', nota: 'El alta de este lead ya está hecha: no la repitas ni vuelvas a dar los datos.' };
     if (!String(datos.telefono || '').trim() && !conv.telefono && conv.channel !== 'whatsapp') return { ok: false, error: 'Para el alta hace falta su teléfono (no escribe por WhatsApp): pídeselo antes de tramitarla.' };

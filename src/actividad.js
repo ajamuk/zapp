@@ -1,5 +1,6 @@
 // Registro de actividad: quién cambió qué desde el panel (como el de Zapp). Se apunta cualquier cambio (no las
-// consultas). Quién: el usuario de MetroTools (cabecera X-CFMPO-User que pone nginx) o «clave de administración».
+// consultas). Quién: el usuario de MetroTools (cabecera X-CFMPO-User que pone nginx, solo por /metrotools) o
+// «clave de administración».
 const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
 
 const REGLAS = [
@@ -61,7 +62,8 @@ export function middleware(db) {
       let texto = null;
       try { texto = describir(req.method, req.path, req.body); } catch (e) { console.error('[actividad]', e.message); }
       if (!texto) return;
-      const quien = req.get('x-cfmpo-user') || (req.get('x-metrotools-client') ? 'MetroTools' : 'clave de administración');
+      // El usuario de MetroTools solo lo fija el router de /metrotools (cabecera de nginx); por /admin, la clave
+      const quien = res.locals?.quien || 'clave de administración';
       try { db.prepare('INSERT INTO actividad (quien, accion, ruta) VALUES (?, ?, ?)').run(String(quien).slice(0, 80), texto.slice(0, 500), `${req.method} ${req.path}`); } catch (e) { console.error('[actividad]', e.message); }
     });
     next();

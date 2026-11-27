@@ -83,6 +83,17 @@ if reiniciar && sano; then
     ln -sfn "$ANTERIOR" "$APP/previous.nuevo" && mv -Tf "$APP/previous.nuevo" "$APP/previous"
   fi
   echo "✔ Desplegado $COMMIT y el servicio responde bien."
+  # Releases antiguas: cada una ocupa unos 75 MB y se acumulaban sin límite. Se conservan las más recientes
+  # (ZAPP_RELEASES_CONSERVAR, 5 por defecto), además de `current` y `previous`, que nunca se borran.
+  CONSERVAR="${ZAPP_RELEASES_CONSERVAR:-5}"
+  PREVIA="$(readlink -f "$APP/previous" 2>/dev/null || true)"
+  if [[ $CONSERVAR =~ ^[0-9]+$ ]] && [ "$CONSERVAR" -ge 2 ]; then
+    find "$APP/releases" -mindepth 1 -maxdepth 1 -type d -name '20*' -printf '%f\n' | sort -r | tail -n +"$((CONSERVAR + 1))" \
+      | while IFS= read -r vieja; do
+          [ "$APP/releases/$vieja" = "$NUEVA" ] || [ "$APP/releases/$vieja" = "$PREVIA" ] && continue
+          rm -rf -- "${APP:?}/releases/$vieja"
+        done
+  fi
 else
   echo "✘ El servicio no responde bien con la release nueva."
   if [ -n "$ANTERIOR" ] && [ -d "$ANTERIOR" ]; then

@@ -2,7 +2,7 @@
 // Uso: npm run sync-aimharder   (necesita los tokens AIMHARDER_TOKEN_* en .env)
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from '../src/config.js';
+import { config, rutaConfig } from '../src/config.js';
 import { clientesApi } from '../src/aimharder/index.js';
 import { leerHorarios, diferencias } from '../src/horarios-sync.js';
 
@@ -10,9 +10,9 @@ import { leerHorarios, diferencias } from '../src/horarios-sync.js';
 const TARIFA = [[/academy 2/i, 'academy_2'], [/academy 3/i, 'academy_3'], [/^tarifa s\b/i, 'S'], [/^tarifa m\b/i, 'M'], [/^tarifa l\b/i, 'L'], [/^tarifa xl\b/i, 'XL'], [/^bono 10 clases$/i, 'bono10']];
 
 const apis = clientesApi();
-const horariosPath = path.join(config.root, 'config', 'horarios.json');
+const horariosPath = path.join(config.configDir, 'horarios.json');
 const anterior = JSON.parse(fs.readFileSync(horariosPath, 'utf8'));
-const tarifas = JSON.parse(fs.readFileSync(path.join(config.root, 'config', 'tarifas.json'), 'utf8'));
+const tarifas = JSON.parse(fs.readFileSync(rutaConfig('tarifas.json'), 'utf8'));
 const { horarios: nuevo, fallos } = await leerHorarios(apis, { anterior });
 const cambios = diferencias(anterior, nuevo);
 const avisos = [];

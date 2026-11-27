@@ -119,4 +119,93 @@ test('El script del panel no tiene errores de sintaxis y conserva lo que se revi
     assert.ok(js.includes(pieza), `falta ${pieza}`);
   // Sin manejadores en línea: la política de contenido de /panel solo deja ejecutar el script de la página
   assert.doesNotMatch(html.replace(js, ''), /\son(click|change|submit|input)=/);
+  // Un único script en línea: es el que lleva la huella de la política de contenido
+  assert.equal([...html.matchAll(/<script>/g)].length, 1);
+});
+
+// Revisión del panel (2): micrófono, archivos, descargas y refrescos
+const scriptPanel = () => /<script>([\s\S]*?)<\/script>/.exec(readFileSync(new URL('../panel/index.html', import.meta.url), 'utf8'))[1];
+const trozo = (js, re) => { const m = re.exec(js); assert.ok(m, `no se encuentra ${re}`); return m[0]; };
+
+test('Panel: el chat se repinta cuando llega después el audio, la imagen o la transcripción de un mensaje', () => {
+  const firmaHilo = new Function(`${trozo(scriptPanel(), /const firmaHilo = [\s\S]*?\]\)\]\);\n/)} return firmaHilo;`)();
+  const d = (m) => ({ mensajes: [{ id: 1, autor: 'lead', texto: 'hola', enviado: 1 }, { id: 2, autor: 'lead', texto: '', enviado: 1, ...m }], conv: {}, etiquetas: [], seguimientos: [] });
+  const antes = firmaHilo(d({}));
+  assert.equal(firmaHilo(d({})), antes);
+  for (const cambio of [{ adjunto: 'audio' }, { transcripcion: 'quiero probar' }, { media_error: 'no se pudo descargar' }, { texto: '[audio]' }])
+    assert.notEqual(firmaHilo(d(cambio)), antes, JSON.stringify(cambio));
+});
+
+test('Panel: las subidas no se comparan por su contenido (cada una es una petición) y lo demás sí', () => {
+  const pedidas = [];
+  const api = new Function('precargadas', 'enCamino', 'pedir', `${trozo(scriptPanel(), /let subidas = 0;\nfunction api\([\s\S]*?\n}\n/)} return api;`)(
+    new Map(), new Map(), (ruta, o) => { pedidas.push([ruta, o.body.length]); return new Promise(() => {}); });
+  const grande = JSON.stringify({ datos: 'x'.repeat(100000) });
+  api('/panel/conversaciones/c1/adjunto', { method: 'POST', body: grande });
+  api('/panel/conversaciones/c1/adjunto', { method: 'POST', body: grande });
+  api('/panel/conversaciones/c1/pausar', { method: 'POST', body: '{}' });
+  api('/panel/conversaciones/c1/pausar', { method: 'POST', body: '{}' }); // doble clic: se une a la primera
+  assert.deepEqual(pedidas.map(([r]) => r), ['/panel/conversaciones/c1/adjunto', '/panel/conversaciones/c1/adjunto', '/panel/conversaciones/c1/pausar']);
+});
+
+test('Panel: cada archivo se descarga una vez y su URL se libera cuando ya no está en la página', async () => {
+  let enPagina = []; const revocadas = []; let creadas = 0; let pedidas = 0;
+  const { urlMedio, liberarMedios } = new Function('peticion', 'document', 'URL',
+    `${trozo(scriptPanel(), /const urlsMedios = new Map\(\);[\s\S]*?\n(?=function cargarMedios)/)} return { urlMedio, liberarMedios };`)(
+    async () => { pedidas++; return { ok: true, blob: async () => 'datos' }; },
+    { querySelectorAll: () => enPagina.map((media) => ({ dataset: { media } })) },
+    { createObjectURL: () => `blob:${++creadas}`, revokeObjectURL: (u) => revocadas.push(u) });
+  const a = await urlMedio('/panel/conversaciones/c1/media/1');
+  assert.equal(await urlMedio('/panel/conversaciones/c1/media/1'), a); // el refresco del chat la reutiliza
+  assert.equal(pedidas, 1);
+  enPagina = ['/panel/conversaciones/c1/media/1'];
+  liberarMedios(); await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(revocadas, []);
+  enPagina = []; // se ha cambiado de chat
+  liberarMedios(); await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(revocadas, [a]);
+  await urlMedio('/panel/conversaciones/c1/media/1');
+  assert.equal(pedidas, 2); // ya liberada, se vuelve a pedir
+});
+
+test('Panel: una nota de voz descartada apaga el micrófono y no se adjunta; al pararla, sí', async () => {
+  class Grabadora {
+    static isTypeSupported(t) { return t.startsWith('audio/webm'); }
+    constructor(_flujo, o) { this.mimeType = o?.mimeType || ''; this.state = 'inactive'; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['voz']) }); this.onstop?.(); }
+  }
+  const grabarNota = new Function('navigator', 'MediaRecorder', `${trozo(scriptPanel(), /async function grabarNota\([\s\S]*?\n}\n/)} return grabarNota;`);
+  const microfono = () => { const pista = { parada: false, stop() { this.parada = true; } }; return { pista, navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [pista] }) } } }; };
+  for (const accion of ['descartar', 'parar']) {
+    const m = microfono(); const adjuntadas = [];
+    const g = await grabarNota(m.navigator, Grabadora)((blob, nombre) => adjuntadas.push(nombre));
+    assert.equal(m.pista.parada, false);
+    g[accion]();
+    assert.equal(m.pista.parada, true, `${accion}: el micrófono sigue encendido`);
+    assert.deepEqual(adjuntadas, accion === 'parar' ? ['nota-de-voz.webm'] : []);
+  }
+  // Sin MediaRecorder que valga, se apaga el micrófono y se avisa
+  const m = microfono();
+  class Rota { static isTypeSupported() { return false; } constructor() { throw new Error('no'); } }
+  await assert.rejects(grabarNota(m.navigator, Rota)(() => {}), /no permite grabar audio/);
+  assert.equal(m.pista.parada, true);
+});
+
+test('Panel: lo que se revisó en micrófono, descargas, alertas y refrescos sigue en su sitio', () => {
+  const js = scriptPanel();
+  for (const pieza of ['function peticion', 'function descartarGrabacion', 'function descartarGrabacionPrueba', 'function repetirVisible', 'function aplicarNombresSede',
+    "closest?.('[data-media-desc]')", 'aplicarNombresSede(estado.info.nombresSede)', 'resueltasAbiertas', 'estado.refPasada', 'URL.revokeObjectURL'])
+    assert.ok(js.includes(pieza), `falta ${pieza}`);
+  // Las páginas que se refrescan solas (reportes y batería) esperan a que la pestaña esté a la vista
+  assert.doesNotMatch(js, /setTimeout\(\(\) => \{ if \(location\.hash === .*?, [46]000\);/);
+  // Las descargas y los archivos usan la misma petición que el resto (sesión caducada o clave mal → login)
+  assert.equal(js.match(/fetch\(\(integrado/g).length, 1);
+});
+
+test('Simulador: los «$» de los textos no se toman como patrones al montar la página', () => {
+  const src = readFileSync(new URL('../scripts/build-simulador.js', import.meta.url), 'utf8');
+  assert.match(src, /\.replace\('\/\*__DATOS__\*\/null', \(\) => json\)/);
+  const json = JSON.stringify({ prompt: "precio: 30 $& o $' o $$" });
+  assert.equal('a /*__DATOS__*/null b'.replace('/*__DATOS__*/null', () => json), `a ${json} b`);
 });

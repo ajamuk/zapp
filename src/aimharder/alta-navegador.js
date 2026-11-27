@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from '../config.js';
+import { config, rutaConfig } from '../config.js';
 
 /**
  * Alta de socio en el panel de AimHarder con un navegador sin pantalla (Playwright).
@@ -12,7 +12,7 @@ import { config } from '../config.js';
  * Con dryRun (por defecto) se rellena todo y se comprueba, pero NO se pulsa Guardar.
  */
 export function cargarConfig() {
-  return JSON.parse(fs.readFileSync(path.join(config.root, 'config', 'aimharder-alta.json'), 'utf8'));
+  return JSON.parse(fs.readFileSync(rutaConfig('aimharder-alta.json'), 'utf8'));
 }
 
 /** Edad en años cumplidos a una fecha dada (AAAA-MM-DD). */
@@ -79,9 +79,9 @@ async function login(page) {
   await Promise.all([page.waitForURL((u) => !/login/.test(String(u)), { timeout: 20000 }), page.keyboard.press('Enter')]);
 }
 
-/** Fecha de hoy en Madrid como dd/mm/aaaa (la fecha de emisión del primer recibo). */
-export function hoyDdMmYyyy(ahora = new Date()) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric' })
+/** Fecha de hoy en la hora del negocio (BUSINESS_TZ) como dd/mm/aaaa (la fecha de emisión del primer recibo). */
+export function hoyDdMmYyyy(ahora = new Date(), tz = config.tz) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('es-ES', { timeZone: tz, day: '2-digit', month: '2-digit', year: 'numeric' })
     .formatToParts(ahora).map((x) => [x.type, x.value]));
   return `${p.day}/${p.month}/${p.year}`;
 }
@@ -130,6 +130,7 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
   try {
     await login(page);
     await context.storageState({ path: sesion });
+    try { fs.chmodSync(sesion, 0o600); } catch { /* sin permiso para cambiarlo: no frena el alta */ } // cookies de administración: solo las lee el servicio
     await page.goto(f.url, { waitUntil: 'networkidle' });
     // Id del box de la sede: va escrito en las llamadas del propio panel
     const box = await page.evaluate(() => (String(window.invitarCliente).match(/box:\s*(\d+)/) || [])[1]);
@@ -257,7 +258,8 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
     };
   } catch (e) {
     const shot = path.join(path.dirname(config.dbPath), `alta-error-${Date.now()}.png`);
-    await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+    // Lleva datos del lead: solo la lee el servicio (y la poda la borra a los PODA_CAPTURAS_DIAS)
+    await page.screenshot({ path: shot, fullPage: true }).then(() => fs.chmodSync(shot, 0o600)).catch(() => {});
     return { estado: 'fallida', detalle: `${e.message} (captura: ${shot})` };
   } finally {
     await browser.close().catch(() => {});

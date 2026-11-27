@@ -214,8 +214,9 @@ test('registro de actividad: quién cambió qué', async () => {
   const repo = crearRepo(openDb(':memory:'));
   const srv = crearApp({ setter: {}, repo }).listen(0); await new Promise((x) => srv.once('listening', x));
   try {
-    const h = { authorization: 'Bearer k', 'content-type': 'application/json', 'x-cfmpo-user': 'carlos' };
-    const base = `http://127.0.0.1:${srv.address().port}/admin`;
+    // El usuario de MetroTools solo cuenta por /metrotools (allí la cabecera la pone nginx)
+    const h = { authorization: 'Bearer k', 'content-type': 'application/json', 'x-cfmpo-user': 'carlos', 'x-cfmpo-admin': '1', 'x-metrotools-client': 'zapp' };
+    const base = `http://127.0.0.1:${srv.address().port}/metrotools/api`;
     await fetch(base + '/panel/etiquetas', { method: 'POST', headers: h, body: JSON.stringify({ nombre: 'VIP' }) });
     await fetch(base + '/panel/etiquetas', { method: 'POST', headers: h, body: JSON.stringify({ nombre: '' }) }); // error: no se apunta
     const a = await (await fetch(base + '/panel/actividad', { headers: h })).json();

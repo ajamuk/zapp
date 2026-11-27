@@ -29,9 +29,10 @@ import { resumenInstrucciones } from './resumen.js';
 import { facturaAnthropic } from './conciliacion.js';
 import { carpetaMedios } from './medios.js';
 import { openDb, repo as crearRepo } from './db.js';
-import { routerProbar, GhlCaptura, enviarMedio } from './probar.js';
+import { routerProbar, GhlCaptura, enviarMedio, jsonSubidas, esRutaDeSubida } from './probar.js';
 import * as etq from './etiquetas.js';
 import { estadoAislamiento, enmascarar } from './aislamiento.js';
+import { enSegundoPlano } from './arranque.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const htmlPanel = readFileSync(panelPath, 'utf8');
@@ -71,6 +72,12 @@ function enviarPagina(req, res, html) {
 /** Lista que llega en una petición: si no es una lista, vacía (un cuerpo mal formado no debe dar un error interno). */
 const lista = (v) => (Array.isArray(v) ? v : []);
 
+/** Caché de los archivos públicos de /r/ (GHL y Meta los descargan; el código no cambia de contenido). */
+const CACHE_PUBLICA = 'public, max-age=3600';
+/** Perfil del negocio para el panel: nombre, asistente y nombre legible de cada sede. */
+const perfilNegocio = () => ({ nombre: config.negocio.nombre, asistente: config.negocio.asistente });
+const nombresSede = () => Object.fromEntries(config.negocio.sedes.map((s) => [s.id, s.nombre]));
+
 const igual = (a, b) => {
   const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || ''));
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
@@ -102,15 +109,19 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     };
     next();
   });
-  // Un fallo de programación o de la base no se le enseña al navegador: se registra y sale un mensaje corto
+  // Un fallo de programación, de la base o del sistema de archivos (ENOENT, ENOSPC…: llevan rutas del servidor) no
+  // se le enseña al navegador: se registra y sale un mensaje corto. El motivo de GHL sí se enseña (ya va recortado):
+  // al equipo le sirve saber por qué no ha salido un mensaje.
   const errorUsuario = (res, e) => {
-    const interno = e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError || String(e?.code || '').startsWith('SQLITE');
+    const interno = e instanceof TypeError || e instanceof ReferenceError || e instanceof RangeError
+      || /^(SQLITE|E[A-Z])/.test(String(e?.code || ''));
     if (interno) console.error('[ruta] error interno:', e?.stack || e);
     return interno ? res.status(500).json({ error: 'Ha habido un error interno. Inténtalo otra vez.' }) : res.status(400).json({ error: e.message });
   };
-  // JSON pequeño en general; las subidas de audio/imagen de Probar IA van en base64 y necesitan más
-  const jsonNormal = express.json({ limit: '1mb' }); const jsonGrande = express.json({ limit: '36mb' });
-  app.use((req, res, next) => (req.path.endsWith('/adjunto') ? jsonGrande : jsonNormal)(req, res, next));
+  // JSON pequeño en general. Las tres subidas en base64 (Recursos, adjunto de un chat y Probar IA) llevan su propio
+  // lector de 36 MB en la ruta, después de comprobar la clave: sin clave no se lee ni un byte de ese cuerpo.
+  const jsonNormal = express.json({ limit: '1mb' });
+  app.use((req, res, next) => (esRutaDeSubida(req.path) ? next() : jsonNormal(req, res, next)));
   const pruebas = crearRepo(openDb(':memory:'), { espejo: { db: repo.db, campos: {} } }); // su gasto cuenta en Consumo
   const enCurso = new Set();
 
@@ -122,22 +133,25 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     try {
       repo.db.prepare('SELECT 1').get();
       const s = salud?.() || { ok: true };
-      res.status(s.ok ? 200 : 503).json({ ok: s.ok, modo: config.mode, ...(s.ok ? {} : { bucles_parados: s.bucles_parados }) });
-    } catch { res.status(503).json({ ok: false, modo: config.mode }); }
+      const atrasadas = Number.isInteger(s.respuestas_atrasadas) ? { respuestas_atrasadas: s.respuestas_atrasadas } : {};
+      // Con un 503, el motivo en claro: tareas paradas o respuestas que llevan más de 5 minutos sin salir
+      const motivo = () => [s.bucles_parados?.length ? `tareas paradas: ${s.bucles_parados.join(', ')}` : '',
+        s.respuestas_atrasadas > 0 ? `${s.respuestas_atrasadas} respuestas llevan más de 5 minutos sin salir` : ''].filter(Boolean).join('; ') || 'sin detalle';
+      res.status(s.ok ? 200 : 503).json({ ok: s.ok, modo: config.mode, ...atrasadas, ...(s.ok ? {} : { bucles_parados: s.bucles_parados || [], motivo: motivo() }) });
+    } catch { res.status(503).json({ ok: false, modo: config.mode, motivo: 'la base de datos no responde' }); }
   });
 
   // Recursos públicos para que GHL los descargue al enviarlos (código aleatorio; solo los activos)
   app.get('/r/:token', (req, res) => {
     // Archivos que envía el equipo desde el panel (/r/eq_<código>.<ext>)
     const eq = archivos.porCodigo(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
-    if (eq) { res.set('Cache-Control', 'public, max-age=3600'); return enviarMedio(res, { media_ruta: eq.media_ruta, media_mime: eq.mime }, medios?.base || carpetaMedios()); }
+    if (eq) return enviarMedio(res, { media_ruta: eq.media_ruta, media_mime: eq.mime }, medios?.base || carpetaMedios(), { cache: CACHE_PUBLICA });
     const r = recursosMod.porToken(repo.db, String(req.params.token).replace(/\.[a-z0-9]+$/i, ''));
     // Notas de voz de Sofía (/r/voz_<código>.ogg): Meta las descarga de aquí al enviarlas
     const voz = r ? null : vozMod.rutaDeCodigo(String(req.params.token).replace(/\.ogg$/i, ''));
-    if (voz) { const base = medios?.base || carpetaMedios(); if (!existsSync(path.join(base, voz))) return res.status(404).end(); res.type(vozMod.MIME_VOZ); return res.sendFile(path.resolve(base, voz), { headers: { 'Cache-Control': 'public, max-age=3600' } }); }
+    if (voz) { const base = medios?.base || carpetaMedios(); if (!existsSync(path.join(base, voz))) return res.status(404).end(); res.type(vozMod.MIME_VOZ); return res.sendFile(path.resolve(base, voz), { headers: { 'Cache-Control': CACHE_PUBLICA } }); }
     if (!r) return res.status(404).end();
-    res.set('Cache-Control', 'public, max-age=3600');
-    return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios());
+    return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios(), { cache: CACHE_PUBLICA });
   });
 
   // Webhook de GHL (mensajes entrantes y salientes). Responde rápido; el trabajo se hace después.
@@ -170,20 +184,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     res.set('Cache-Control', 'private, no-store');
     next();
   });
-  // Respuestas JSON comprimidas: Nginx no comprime lo que llega del proxy, y la lista de chats, la batería o los
-  // seguimientos pasan de 40 KB. Por debajo de 1 KB no compensa. Los archivos y descargas no pasan por aquí.
-  admin.use((req, res, next) => {
-    if (!/\bgzip\b/i.test(req.get('accept-encoding') || '')) return next();
-    const json = res.json.bind(res);
-    res.vary('Accept-Encoding');
-    res.json = (cuerpo) => {
-      const texto = JSON.stringify(cuerpo);
-      if (texto === undefined || texto.length < 1024 || res.headersSent) return json(cuerpo);
-      res.set('Content-Encoding', 'gzip').type('json');
-      return res.end(zlib.gzipSync(texto, { level: 6 }));
-    };
-    next();
-  });
+  // La compresión de las respuestas JSON del panel la hace el middleware general (en segundo plano, sin parar el
+  // servicio mientras comprime). Los archivos y descargas no pasan por ahí.
   admin.use(actividad.middleware(repo.db));
 
   // Chat de pruebas: habla con Sofía sin tocar GHL ni a ningún lead. Body: { sesion, texto, canal?, nombre? }
@@ -246,6 +248,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     ajustes: leerAjustes(repo), contadores: panel.contadores(db), alertas: alertas.abiertas(db).length,
     // Para los avisos de la cabecera y del menú, que el panel refresca solo
     preguntas_pendientes: preguntas.contadores(db).pendiente || 0, eur_por_usd: Number(process.env.EUR_POR_USD) || 0.92,
+    // Perfil del negocio y zona horaria, para los textos y las horas del panel
+    negocio: perfilNegocio(), nombresSede: nombresSede(), tz: config.tz,
   }));
   admin.get('/panel/resumen', (req, res) => res.json(panel.resumen(db, req.query.dias)));
   admin.get('/panel/embudo', async (req, res) => {
@@ -327,7 +331,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
 
   // ---------- Recursos ----------
   admin.get('/panel/recursos', (_req, res) => res.json(recursosMod.listar(db).map((r) => ({ ...r, url: recursosMod.urlPublica(r) }))));
-  admin.post('/panel/recursos/adjunto', (req, res) => { try { res.status(201).json(recursosMod.crear(db, req.body || {}, { base: medios?.base })); } catch (e) { errorUsuario(res, e); } });
+  admin.post('/panel/recursos/adjunto', jsonSubidas, (req, res) => { try { res.status(201).json(recursosMod.crear(db, req.body || {}, { base: medios?.base })); } catch (e) { errorUsuario(res, e); } });
   admin.put('/panel/recursos/:id', (req, res) => {
     try { const r = recursosMod.actualizar(db, Number(req.params.id), req.body || {}); return r ? res.json(r) : res.status(404).json({ error: 'No existe.' }); } catch (e) { errorUsuario(res, e); }
   });
@@ -424,13 +428,14 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     } catch (e) { return errorUsuario(res, e); }
     const contestar = b.contestar !== false && setter?.contestarPregunta && (config.ai.apiKey || complete);
     if (contestar) {
-      (async () => {
+      // En segundo plano, pero el apagado ordenado espera a que termine (no se corta un envío a medias)
+      enSegundoPlano((async () => {
         for (const p of hechas.filter((x) => x.conversation_id)) {
           preguntas.marcarEnviada(db, p.id, 'enviando…');
           const r = await setter.contestarPregunta(p).catch((e) => `error: ${e.message}`);
           preguntas.marcarEnviada(db, p.id, r);
         }
-      })().catch((e) => console.error('Contestar pregunta:', e.message));
+      })().catch((e) => console.error('Contestar pregunta:', e.message)));
     }
     res.json({ ok: true, respondidas: hechas.length, contestando: Boolean(contestar) });
   });
@@ -520,7 +525,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     }
   });
   // Archivo para enviar a un lead (imagen, vídeo, audio o PDF en base64). Devuelve su id para «enviar» o «programar».
-  admin.post('/panel/conversaciones/:id/adjunto', async (req, res) => {
+  admin.post('/panel/conversaciones/:id/adjunto', jsonSubidas, async (req, res) => {
     if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
     try { res.status(201).json(archivos.resumen(await archivos.subir(db, req.body || {}, { base: medios?.base }))); } catch (e) { errorUsuario(res, e); }
   });
@@ -607,7 +612,7 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   admin.delete('/panel/vistas/:id', (req, res) => res.json({ ok: panel.borrarVista(db, Number(req.params.id)) }));
   admin.get('/panel/opciones', (_req, res) => res.json({
     etiquetas: etq.listar(db).map(({ id, nombre, color }) => ({ id, nombre, color })),
-    sedes: ['parla', 'getafe', 'las_rosas', 'el_canaveral'], canales: ['whatsapp', 'instagram'],
+    sedes: config.negocio.sedes.map((s) => s.id), nombresSede: nombresSede(), negocio: perfilNegocio(), canales: ['whatsapp', 'instagram'],
     fases: ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'],
     estados: Object.keys(panel.ESTADOS),
   }));
@@ -631,6 +636,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   metrotools.get('/', (req, res) => enviarPagina(req, res.set('Content-Security-Policy', CSP_METRO), metroPanel));
   metrotools.use('/api', (req, res, next) => {
     if (req.get('x-metrotools-client') !== 'zapp') return res.status(403).json({ error: 'Petición fuera del panel de MetroTools.' });
+    // Quién hace el cambio (registro de actividad): solo aquí, donde la cabecera la pone nginx con la sesión
+    res.locals.quien = req.get('x-cfmpo-user') || 'MetroTools';
     next();
   }, admin);
   app.use('/metrotools', metrotools);

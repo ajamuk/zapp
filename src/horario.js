@@ -43,6 +43,27 @@ export function hoyLocal(date = new Date(), tz = config.tz) {
   return { iso: `${g('year')}-${g('month')}-${g('day')}`, dia: g('weekday') };
 }
 
+/** «AAAA-MM-DD» del día siguiente (por calendario, no sumando 24 h: los días del cambio de hora duran 23 o 25). */
+export const diaSiguiente = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10); };
+
+/** Desfase (ms) de la zona respecto a UTC en ese instante. */
+function desfase(t, tz) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(t / 1000) * 1000;
+}
+
+/** Instante de «AAAA-MM-DD» a la hora «HH:MM» en la zona del negocio, o null si la fecha no existe. */
+export function instanteLocal(fecha, hora = '00:00', tz = config.tz) {
+  const f = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fecha || '')); const h = /^(\d{1,2}):(\d{2})$/.exec(String(hora || ''));
+  if (!f || !h) return null;
+  const objetivo = Date.UTC(+f[1], +f[2] - 1, +f[3], +h[1], +h[2]);
+  if (new Date(objetivo).getUTCDate() !== +f[3]) return null; // 2026-02-31 y similares
+  let t = objetivo;
+  for (let i = 0; i < 2; i++) t = objetivo - desfase(t, tz); // dos pasadas por si el cambio de hora cae en medio
+  return new Date(t);
+}
+
 export const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**

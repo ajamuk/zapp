@@ -7,20 +7,23 @@ export class AimHarderApi {
    * O bien leerToken(): token compartido con otras apps. Se relee antes de cada petición y NUNCA se renueva
    * aquí (lo renueva un cron central; renovarlo desde dos sitios deja sin acceso a los demás).
    */
-  constructor({ access, refresh, onRefresh, leerToken, fetchImpl = fetch }) {
-    Object.assign(this, { access, refresh, onRefresh, leerToken, fetch: fetchImpl });
+  /** leerGuardado(): { access, refresh } guardados en el fichero de tokens (otro proceso puede haberlos renovado). */
+  constructor({ access, refresh, onRefresh, leerToken, leerGuardado, fetchImpl = fetch }) {
+    Object.assign(this, { access, refresh, onRefresh, leerToken, leerGuardado, fetch: fetchImpl });
   }
 
   async req(method, path, body, reintento = true) {
     if (this.leerToken) this.access = this.leerToken();
+    const usado = this.access;
     const r = await this.fetch(BASE + path, {
       method,
-      headers: { Authorization: `Bearer ${this.access}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${usado}`, 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(30000), // que una sincronización nunca se quede colgada
     });
     if (r.status === 410 && reintento && this.refresh && !this.leerToken) { // token caducado
-      await this.refrescar();
+      // Si otra petición ya lo ha renovado mientras tanto, basta con repetir con el nuevo
+      if (this.access === usado) await this.renovar();
       return this.req(method, path, body, false);
     }
     const text = await r.text();
@@ -32,10 +35,25 @@ export class AimHarderApi {
       if (espera > 0) e.retryAfter = espera;
       throw e;
     }
+    // Un 2xx que no es JSON (página de mantenimiento, proxy…) no es una respuesta válida: no se da por hecho
+    if (typeof data === 'string' && text.trim()) {
+      const e = new Error(`AimHarder ${method} ${path} → ${r.status} sin JSON: ${text.slice(0, 200)}`);
+      e.status = r.status;
+      throw e;
+    }
     return data;
   }
 
+  /** Una sola renovación a la vez: las peticiones que caducan juntas esperan a la misma (el refresh token es de un uso). */
+  renovar() {
+    this.renovando ??= this.refrescar().finally(() => { this.renovando = null; });
+    return this.renovando;
+  }
+
   async refrescar() {
+    // Otro proceso puede haber renovado ya la pareja y guardado la suya: se usa esa en vez de renovar otra vez
+    const g = this.leerGuardado?.();
+    if (g?.access && g.access !== this.access) { this.access = g.access; this.refresh = g.refresh || this.refresh; return; }
     const r = await this.fetch(`${BASE}/auth/tokens/refresh`, { headers: { Authorization: `Bearer ${this.refresh}`, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(30000) });
     if (!r.ok) throw new Error(`AimHarder refresh → ${r.status}`);
     const { data } = await r.json();

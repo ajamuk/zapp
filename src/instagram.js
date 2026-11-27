@@ -30,12 +30,19 @@ Responde lead=false si es cualquier otra cosa: saludos o agradecimientos sueltos
 const ESQUEMA = { type: 'object', properties: { lead: { type: 'boolean' } }, required: ['lead'], additionalProperties: false };
 
 /**
+ * Sin razonamiento para un sí/no: en Haiku 5.5 el razonamiento va activado por defecto y cuenta dentro de
+ * max_tokens (con 200 se cortaba y decidía el respaldo). Haiku admite apagarlo; otros modelos actuales no
+ * (400), así que con ellos se baja el esfuerzo.
+ */
+export const sinRazonar = (modelo) => (/haiku/.test(String(modelo)) ? { thinking: { type: 'disabled' } } : { effort: 'low' });
+
+/**
  * ¿Es una petición clara de información? Se pregunta a un modelo pequeño; si falla, decide el respaldo sin modelo.
- * Devuelve { ok, motivo, via }.
+ * Corre en la cola del chat (antes de abrirlo): tiempo límite corto y un solo reintento. Devuelve { ok, motivo, via }.
  */
 export async function pideInformacion(texto, { complete = null, onUsage = null, modelo = config.ai.modeloFiltroInstagram } = {}) {
   try {
-    const r = await pedirJSON({ system: SISTEMA, contenido: `Mensaje recibido por Instagram:\n"""${String(texto).slice(0, 1500)}"""`, schema: ESQUEMA, modelo, complete, maxTokens: 200, onUsage });
+    const r = await pedirJSON({ system: SISTEMA, contenido: `Mensaje recibido por Instagram:\n"""${String(texto).slice(0, 1500)}"""`, schema: ESQUEMA, modelo, complete, maxTokens: 1024, timeout: 15000, maxRetries: 1, ...sinRazonar(modelo), onUsage });
     return r?.lead === true ? { ok: true, via: 'modelo' } : { ok: false, via: 'modelo', motivo: 'Instagram: no pide información clara' };
   } catch (e) {
     const ok = pideInformacionSinModelo(texto);

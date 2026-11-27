@@ -1,10 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 import { openDb, repo as crearRepo } from '../src/db.js';
 import { Setter } from '../src/setter.js';
 import { config } from '../src/config.js';
 import { procesarSeguimientos } from '../src/followups.js';
-import { reservarEnAimHarder, buscarSesion, ultimaPrueba, resultadoTrialOps, describirTrialOps, partirNombre } from '../src/clase-prueba.js';
+import { reservarEnAimHarder, buscarSesion, ultimaPrueba, resultadoTrialOps, describirTrialOps, partirNombre, pruebaTrialOps } from '../src/clase-prueba.js';
 import * as preguntas from '../src/preguntas.js';
 
 const T0 = new Date('2026-11-17T11:00:00Z'); // martes 12:00 en Madrid
@@ -70,6 +74,31 @@ test('reserva en AimHarder: comprueba la clase, no escribe si no toca y manda lo
   assert.deepEqual(api.llamadas[0], { schedule_id: 1, booking_date: '2026-11-19', name: 'Ana', first_surname: 'López', email: 'ana@x.es', phone: '+34600111222', booking_notes: 'Clase de prueba reservada por Sofía (WhatsApp/Instagram)' });
   const mal = await reservarEnAimHarder(apiFalsa({ async reservarInvitado() { throw new Error('clase completa'); } }), base, { escribir: true });
   assert.deepEqual([mal.estado, mal.detalle], ['fallida', 'clase completa']);
+  // AimHarder contesta sin número de reserva (o con uno que no es un número): no consta como reservada
+  for (const r of [{ ok: true }, { id: 'abc' }, null]) {
+    const sinId = await reservarEnAimHarder(apiFalsa({ async reservarInvitado() { return r; } }), base, { escribir: true });
+    assert.equal(sinId.estado, 'fallida', JSON.stringify(r));
+    assert.match(sinId.detalle, /sin número de reserva/);
+  }
+});
+
+test('metro-trial-ops: se reutiliza la conexión y se vuelve a abrir si sustituyen el archivo', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'trial-ops-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const ruta = path.join(dir, 'trial_ops.sqlite3');
+  const crear = (clase) => {
+    const db = new Database(ruta);
+    db.exec('CREATE TABLE trials (contact_id TEXT, center TEXT, class_type TEXT, start_time TEXT, lifecycle TEXT, outcome TEXT, appointment_status TEXT)');
+    db.prepare('INSERT INTO trials VALUES (?, ?, ?, ?, ?, ?, ?)').run('k1', 'Parla', clase, '2026-11-19T18:30:00Z', 'booked', null, 'confirmed');
+    db.close();
+  };
+  crear('CrossFit');
+  assert.equal(pruebaTrialOps('k1', ruta).class_type, 'CrossFit');
+  assert.equal(pruebaTrialOps('k1', ruta).class_type, 'CrossFit');
+  assert.equal(pruebaTrialOps('otro', ruta), null);
+  fs.rmSync(ruta); crear('Hyrox'); // archivo nuevo (otro inodo)
+  assert.equal(pruebaTrialOps('k1', ruta).class_type, 'Hyrox');
+  fs.rmSync(ruta);
+  assert.equal(pruebaTrialOps('k1', ruta), null, 'sin archivo, sin dato');
 });
 
 test('Sofía reserva la prueba en AimHarder (live + AIMHARDER_RESERVA_PRUEBA) y al cambiarla anula la anterior', async (t) => {
@@ -224,6 +253,30 @@ test('contestar una pregunta: no se escribe fuera de las 24 h ni en un chat paus
   assert.match(await setter.contestarPregunta(p), /más de 24 h/);
   repo.updateConv('c1', { ai_paused: 1 });
   assert.match(await setter.contestarPregunta(p), /pausado/);
+});
+
+test('mientras Sofía cuenta la respuesta del equipo, el bucle no abre otro turno en ese chat', async () => {
+  const { db, setter, repo, sal } = montar();
+  let llamadas = 0; let soltar; const puerta = new Promise((r) => { soltar = r; });
+  setter.complete = async () => { llamadas++; await puerta; return { content: [{ type: 'tool_use', id: 'r', name: 'responder', input: { fase: 'f2 diagnóstico', mensajes: ['sí, hay duchas'] } }] }; };
+  const { id } = preguntas.apuntar(db, { conversation_id: 'c1', pregunta: '¿Hay duchas?' });
+  const p = preguntas.responder(db, id, { respuesta: 'Sí' });
+  repo.updateConv('c1', { respond_at: T0.toISOString() }); // además le tocaba una respuesta normal
+  const envio = setter.contestarPregunta(p);
+  await setter.tick();
+  assert.equal(llamadas, 1, 'un solo turno a la vez');
+  soltar();
+  assert.equal(await envio, 'enviada al lead');
+  assert.deepEqual(sal.enviados, ['sí, hay duchas']);
+  assert.equal(setter.enCurso.has('c1'), false);
+});
+
+test('la prueba antigua del calendario se fecha en la zona del negocio', (t) => {
+  const antes = config.tz; t.after(() => { config.tz = antes; });
+  const prueba = { center: 'Parla', class_type: 'CrossFit', start_time: '2026-10-19T23:30:00Z', outcome: 'attended' };
+  assert.match(describirTrialOps(prueba, T0), /del 20 de octubre de 2026/); // 01:30 en Madrid
+  config.tz = 'America/New_York';
+  assert.match(describirTrialOps(prueba, T0), /del 19 de octubre de 2026/);
 });
 
 // ---------- Valoración y resumen en la ficha ----------

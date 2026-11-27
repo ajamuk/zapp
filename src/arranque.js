@@ -55,6 +55,17 @@ export function buclesParados(registro, ahora = Date.now(), desdeArranque = Infi
   }).map(([n]) => n);
 }
 
+// Trabajos en segundo plano que el apagado espera (p. ej. contestar a leads las preguntas respondidas en el panel)
+const trabajos = new Set();
+/** Apunta un trabajo en segundo plano hasta que termine (bien o mal). Devuelve la misma promesa. */
+export function enSegundoPlano(p) {
+  trabajos.add(p);
+  p.then(() => trabajos.delete(p), () => trabajos.delete(p));
+  return p;
+}
+/** ¿Queda algo a medias? Respuestas, avisos de GHL, audios transcribiéndose o trabajos en segundo plano. */
+export const hayTrabajo = (setter) => Boolean(setter?.enCurso?.size || setter?.colas?.size || setter?.mediosEnCurso?.size || trabajos.size);
+
 /**
  * Apagado ordenado (SIGTERM de systemd al reiniciar o desplegar): deja de aceptar trabajo, espera hasta 60 s a
  * que terminen las respuestas en curso, vuelca la base a disco y sale. Lo que no termine se recupera al arrancar.
@@ -67,9 +78,8 @@ export function apagadoOrdenado({ bucles, servidor, setter, dbs, esperaMs = 6000
     bucles.forEach((b) => b.parar());
     servidor?.close?.();
     const fin = Date.now() + esperaMs;
-    // Respuestas a medio enviar, avisos de GHL a medio procesar y audios transcribiéndose
-    const ocupado = () => setter?.enCurso?.size || setter?.colas?.size || setter?.mediosEnCurso?.size;
-    while (ocupado() && Date.now() < fin) await new Promise((ok) => setTimeout(ok, 250));
+    // Respuestas a medio enviar, avisos de GHL a medio procesar, audios transcribiéndose y trabajos en segundo plano
+    while (hayTrabajo(setter) && Date.now() < fin) await new Promise((ok) => setTimeout(ok, 250));
     for (const db of dbs) { try { db.pragma('wal_checkpoint(TRUNCATE)'); db.close(); } catch (e) { console.error('Cierre de la base:', e.message); } }
     process.exit(0);
   };

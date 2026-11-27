@@ -201,6 +201,7 @@ export class Etiquetador {
     }
     this.db.prepare('INSERT OR IGNORE INTO conv_etiquetas (conversation_id, etiqueta_id, origen, created_at, ghl_sync) VALUES (?, ?, ?, ?, ?)')
       .run(convId, etq.id, origen, this.now().toISOString(), origen === 'ghl' ? 1 : 0);
+    this.db.prepare('DELETE FROM etiquetas_quitadas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etq.id);
     if (retroactivo) await this.subirAGhl(conv, etq);
     else {
       await this.acciones(conv, etq, origen, porInactividad);
@@ -215,10 +216,23 @@ export class Etiquetador {
     const r = this.db.prepare('DELETE FROM conv_etiquetas WHERE conversation_id = ? AND etiqueta_id = ?').run(convId, etiquetaId);
     if (r.changes) await this.safe(async () => this.alQuitar?.(convId, etiquetaId));
     if (r.changes) this.alDesmarcar(conv, etq);
-    if (r.changes && etq && conv?.contact_id && this.permitido(conv) && !(await this.otroChatDelContactoLaLleva(conv, etq.id))) {
-      await this.safe(() => this.ghl?.removeTags(conv.contact_id, [clave(etq.nombre)]));
+    if (r.changes && etq && conv?.contact_id && this.permitido(conv) && this.ghl?.removeTags) {
+      // Hasta que GHL confirme que el tag ya no está, la revisión no la vuelve a poner (ni repite sus acciones)
+      this.db.prepare('INSERT OR REPLACE INTO etiquetas_quitadas (conversation_id, etiqueta_id, quitada_at) VALUES (?, ?, ?)').run(convId, etq.id, this.now().toISOString());
+      await this.quitarDeGhl(conv, etq);
     }
     return { quitada: r.changes > 0 };
+  }
+
+  /** Quita el tag del contacto en GHL, salvo que otro chat suyo lleve la etiqueta. true si GHL lo ha aceptado. */
+  async quitarDeGhl(conv, etq) {
+    if (await this.otroChatDelContactoLaLleva(conv, etq.id)) return false;
+    try {
+      await this.ghl.removeTags(conv.contact_id, [clave(etq.nombre)]);
+      // Quitado del contacto: ya no queda nada pendiente en ninguno de sus chats
+      this.db.prepare('DELETE FROM etiquetas_quitadas WHERE etiqueta_id = ? AND conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)').run(etq.id, conv.contact_id);
+      return true;
+    } catch (e) { console.error('[etiquetas] quitar en GHL:', e.message); return false; }
   }
 
   /**
@@ -289,9 +303,13 @@ export class Etiquetador {
       const actuales = new Map(filas.map((r) => [r.etiqueta_id, r.ghl_sync]));
       // Recién puestas (2 min): la lista de GHL puede venir de antes de que llegase nuestro tag; no se quitan todavía
       const recientes = new Set(filas.filter((r) => this.now().getTime() - Date.parse(r.created_at) < 120000).map((r) => r.etiqueta_id));
+      const quitadas = new Set(this.db.prepare('SELECT etiqueta_id FROM etiquetas_quitadas WHERE conversation_id = ?').all(conv.id).map((r) => r.etiqueta_id));
       for (const etq of catalogo) {
         const enElChat = actuales.has(etq.id);
         const estaEnGhl = enGhl.has(clave(etq.nombre));
+        // Quitada en el panel y el tag sigue en GHL: se reintenta quitarlo, sin volver a ponerla en el chat
+        if (estaEnGhl && !enElChat && quitadas.has(etq.id)) { if (await this.quitarDeGhl(conv, etq)) { out.quitadas++; enGhl.delete(clave(etq.nombre)); } continue; }
+        if (!estaEnGhl && quitadas.has(etq.id)) this.db.prepare('DELETE FROM etiquetas_quitadas WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
         if (estaEnGhl && !enElChat) { if ((await this.poner(conv.id, etq.id, 'ghl')).puesta) out.puestas++; }
         else if (estaEnGhl && enElChat && !actuales.get(etq.id)) this.db.prepare('UPDATE conv_etiquetas SET ghl_sync = 1 WHERE conversation_id = ? AND etiqueta_id = ?').run(conv.id, etq.id);
         else if (!estaEnGhl && enElChat && actuales.get(etq.id) && recientes.has(etq.id)) { /* esperar a la siguiente sincronización */ }
@@ -306,7 +324,8 @@ export class Etiquetador {
   async sincronizarDesdeGhl({ dias = 30, pausaMs = 150 } = {}) {
     if (!this.ghl?.getContact) return { contactos: 0 };
     const contactos = [...new Set(this.db.prepare(`SELECT c.* FROM conversations c WHERE c.id NOT LIKE 'prueba-%' AND c.contact_id IS NOT NULL
-      AND (datetime(c.updated_at) >= datetime('now', ?) OR EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.ghl_sync = 0))`).all(`-${dias} days`).filter((c) => this.permitido(c)).map((r) => r.contact_id))];
+      AND (datetime(c.updated_at) >= datetime('now', ?) OR EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.ghl_sync = 0)
+        OR EXISTS (SELECT 1 FROM etiquetas_quitadas q WHERE q.conversation_id = c.id))`).all(`-${dias} days`).filter((c) => this.permitido(c)).map((r) => r.contact_id))];
     const total = { contactos: 0, puestas: 0, quitadas: 0, subidas: 0, errores: 0 };
     for (const id of contactos) {
       try {
@@ -357,10 +376,13 @@ export class Etiquetador {
       const limite = new Date(this.now().getTime() - horas * 3600e3).toISOString();
       // Solo chats recientes (hasta 7 días después de cumplir el plazo): una regla nueva no etiqueta el histórico entero
       const antiguo = new Date(this.now().getTime() - horas * 3600e3 - 7 * 864e5).toISOString();
-      const chats = this.db.prepare(`SELECT c.id FROM conversations c
+      // Solo se miran los chats con algún mensaje nuestro dentro del plazo (índice por autor y fecha), no todos
+      const chats = this.db.prepare(`SELECT c.id FROM (SELECT DISTINCT conversation_id id FROM messages
+          WHERE autor IN ('ia', 'humano') AND created_at <= ? AND created_at >= ? AND enviado = 1) v
+        JOIN conversations c ON c.id = v.id
         JOIN messages m ON m.id = (SELECT max(id) FROM messages WHERE conversation_id = c.id AND enviado = 1)
         WHERE m.autor IN ('ia', 'humano') AND m.created_at <= ? AND m.created_at >= ? AND c.id NOT LIKE 'prueba-%'
-          AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id = ?)`).all(limite, antiguo, e.id);
+          AND NOT EXISTS (SELECT 1 FROM conv_etiquetas ce WHERE ce.conversation_id = c.id AND ce.etiqueta_id = ?)`).all(limite, antiguo, limite, antiguo, e.id);
       for (const c of chats) if ((await this.poner(c.id, e.id, 'regla', { porInactividad: true })).puesta) n++;
     }
     return n;

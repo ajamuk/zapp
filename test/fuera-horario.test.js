@@ -123,3 +123,11 @@ test('textos del aviso', () => {
   assert.equal(avisadoEnEsteCierre('2026-11-17T23:30:00Z', new Date('2026-11-18T05:00:00Z')), true);
   assert.equal(avisadoEnEsteCierre('2026-11-17T23:30:00Z', new Date('2026-11-18T23:30:00Z')), false);
 });
+
+test('«mañana» en los días del cambio de hora (23 y 25 h) se cuenta por calendario', () => {
+  // Sábado 27 de marzo de 2027, 23:30 en Madrid: el domingo dura 23 h, y +24 h ya caía en lunes
+  assert.equal(textoApertura(new Date('2027-03-27T22:30:00Z'), new Date('2027-03-28T06:00:00Z')), 'mañana a las 8:00');
+  // Sábado 24 de octubre de 2026, 00:30 en Madrid: el domingo dura 25 h
+  assert.equal(textoApertura(new Date('2026-10-23T22:30:00Z'), new Date('2026-10-24T06:00:00Z')), 'hoy a las 8:00');
+  assert.equal(textoApertura(new Date('2026-10-24T21:30:00Z'), new Date('2026-10-25T07:00:00Z')), 'mañana a las 8:00');
+});

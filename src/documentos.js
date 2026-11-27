@@ -3,18 +3,16 @@
 // se prueban en Probar IA y se pasan a producción desde el panel (o al aplicar un reporte). Los festivos se añaden
 // a la base de conocimiento al usarla, no se guardan aquí.
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rutaConfig } from './config.js';
 
 export const DOCS = { prompt: { archivo: 'prompt-sofia.md', nombre: 'Prompt de Sofía' }, negocio: { archivo: 'negocio.md', nombre: 'Base de conocimiento' } };
-const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export function sembrarDocumentos(db) {
   for (const [doc, d] of Object.entries(DOCS)) {
     if (db.prepare('SELECT 1 FROM documentos WHERE doc = ?').get(doc)) continue;
     let texto;
-    try { texto = fs.readFileSync(path.join(raiz, 'config', d.archivo), 'utf8'); } catch { continue; }
-    db.prepare("INSERT INTO documentos (doc, version, texto, nota, autor, estado) VALUES (?, 1, ?, 'Versión inicial (archivo del repo)', 'inicial', 'produccion')").run(doc, texto);
+    try { texto = fs.readFileSync(rutaConfig(d.archivo), 'utf8'); } catch { continue; }
+    db.prepare("INSERT INTO documentos (doc, version, texto, nota, autor, estado) VALUES (?, 1, ?, 'Versión inicial (archivo de configuración)', 'inicial', 'produccion')").run(doc, texto);
   }
 }
 

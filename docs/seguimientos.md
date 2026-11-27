@@ -58,7 +58,7 @@ de GHL no admite variables de plantilla, así que el envío se hace con un **wor
    texto de Sofía va en medio, en una sola frase.)
 2. **Workflow** «Sofía · enviar plantilla» (publicado):
    - Disparador: *Contact Tag* → *Tag added* → `sofia-enviar-plantilla`.
-   - Acción *WhatsApp*: **From phone number = +34 604 84 08 58** (el número de Sofía; es el único de la subcuenta),
+   - Acción *WhatsApp*: **From phone number = el número propio de Sofía** (`SOFIA_WA_NUMERO`; es el único de la subcuenta),
      plantilla `sofia_seguimiento_v1`, sin ramas.
    - Acción *Remove contact tag* → `sofia-enviar-plantilla`.
    - *Allow re-entry* activado, para que salga en cada seguimiento.

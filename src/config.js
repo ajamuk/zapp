@@ -15,11 +15,58 @@ if (fs.existsSync(envFile)) {
 
 const env = (k, d = '') => process.env[k] ?? d;
 const num = (k, d) => (process.env[k] !== undefined && process.env[k] !== '' ? Number(process.env[k]) : d);
+const configDir = path.resolve(root, env('CONFIG_DIR') || './config');
+
+/**
+ * Comprueba el perfil del negocio (config/negocio.json) y completa lo opcional. Un perfil mal escrito para el
+ * arranque con un error claro: seguir con las sedes de otro negocio sería peor.
+ */
+export function validarNegocio(n) {
+  const mal = (m) => { throw new Error(`negocio.json: ${m}`); };
+  if (!n || typeof n !== 'object') mal('no es un objeto');
+  const texto = (v) => typeof v === 'string' && v.trim();
+  if (!texto(n.nombre)) mal('falta «nombre»');
+  if (!Array.isArray(n.sedes) || !n.sedes.length) mal('«sedes» tiene que ser una lista con al menos una sede');
+  const ids = new Set();
+  const sedes = n.sedes.map((s, i) => {
+    if (!/^[a-z][a-z0-9_]{0,30}$/.test(s?.id || '')) mal(`la sede ${i + 1} necesita un «id» en minúsculas (letras, números y _)`);
+    if (ids.has(s.id)) mal(`la sede «${s.id}» está repetida`);
+    ids.add(s.id);
+    const alias = (Array.isArray(s.alias) && s.alias.length ? s.alias : [s.id.replace(/_/g, ' ')]).map((a) => String(a).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()).filter(Boolean);
+    return { id: s.id, nombre: texto(s.nombre) ? s.nombre.trim() : s.id, alias, aimharder: s.aimharder === true, equipo: s.equipo || null };
+  });
+  for (const s of sedes) if (s.equipo && !ids.has(s.equipo)) mal(`«equipo» de ${s.id} apunta a una sede que no existe (${s.equipo})`);
+  return { nombre: n.nombre.trim(), asistente: texto(n.asistente) ? n.asistente.trim() : 'Sofía', sedes };
+}
+
+/** Perfil del negocio: el de CONFIG_DIR o, si no hay, el del repositorio. */
+function leerNegocio() {
+  for (const f of [path.join(configDir, 'negocio.json'), path.join(root, 'config', 'negocio.json')]) {
+    let texto;
+    try { texto = fs.readFileSync(f, 'utf8'); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
+    try { return validarNegocio(JSON.parse(texto)); } catch (e) { throw new Error(`${f}: ${e.message}`); }
+  }
+  throw new Error(`No hay negocio.json en ${configDir}`);
+}
+const negocio = leerNegocio();
+const idsSedes = negocio.sedes.map((s) => s.id);
+const sedesAimharder = negocio.sedes.filter((s) => s.aimharder).map((s) => s.id);
+/** { sede: valor } con la variable de entorno de cada sede (PREFIJO_<ID EN MAYÚSCULAS>). */
+const porSede = (ids, fn) => Object.fromEntries(ids.map((id) => [id, fn(id.toUpperCase(), id)]));
+const equipoDe = (id) => negocio.sedes.find((s) => s.id === id)?.equipo;
 
 export const config = {
   root,
   mode: env('MODE', 'shadow'),
   port: num('PORT', 3200),
+  // Dirección en la que escucha. 127.0.0.1: solo nginx del propio servidor. En un contenedor, 0.0.0.0 (el puerto
+  // se publica solo en 127.0.0.1 del anfitrión: deploy/vps-propio/nuevo-cliente.sh)
+  host: env('HOST') || '127.0.0.1',
+  // Configuración del negocio (instrucciones, tarifas, horarios, etiquetas…). Por defecto la del repositorio; con
+  // varios negocios en un VPS, cada uno la suya (docs/vps-propio.md). Lo que no esté ahí se lee de la del repositorio.
+  configDir,
+  // Nombre, asistente y sedes (config/negocio.json)
+  negocio,
   dbPath: path.resolve(root, env('DB_PATH', './data/setter.db')),
   // Zona horaria del negocio (no la del servidor: si el servicio corre en UTC, el horario de Sofía no se mueve)
   tz: env('BUSINESS_TZ', 'Europe/Madrid'),
@@ -61,12 +108,8 @@ export const config = {
     token: env('GHL_TOKEN'),
     locationId: env('GHL_LOCATION_ID'),
     baseUrl: env('GHL_BASE_URL', 'https://services.leadconnectorhq.com'),
-    users: {
-      parla: env('GHL_USER_PARLA'),
-      getafe: env('GHL_USER_GETAFE'),
-      las_rosas: env('GHL_USER_LAS_ROSAS'),
-      el_canaveral: env('GHL_USER_LAS_ROSAS'),
-    },
+    // Usuario de GHL responsable de cada sede (GHL_USER_<ID>); sin él, el de la sede de su «equipo»
+    users: porSede(idsSedes, (ID, id) => env(`GHL_USER_${ID}`) || (equipoDe(id) ? env(`GHL_USER_${equipoDe(id).toUpperCase()}`) : '')),
     calendarPruebaParla: env('GHL_CALENDAR_PRUEBA_PARLA'),
     // Envío por plantilla de WhatsApp a través de un workflow de GHL (ver docs/seguimientos.md)
     tagPlantilla: env('GHL_TAG_PLANTILLA', 'sofia-enviar-plantilla'),
@@ -85,9 +128,8 @@ export const config = {
     instagram: env('SOFIA_IG_PAGE_ID'),
   },
   aimharder: {
-    tokens: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
-      access: env(`AIMHARDER_TOKEN_${s.toUpperCase()}`), refresh: env(`AIMHARDER_REFRESH_${s.toUpperCase()}`),
-    }])),
+    sedes: sedesAimharder,
+    tokens: porSede(sedesAimharder, (ID) => ({ access: env(`AIMHARDER_TOKEN_${ID}`), refresh: env(`AIMHARDER_REFRESH_${ID}`) })),
     tokenStore: env('AIMHARDER_TOKEN_STORE'),
     // Exsocio cuya última tarifa pagada terminó hace menos de estos meses: Sofía no le contesta (lo lleva el equipo)
     exsocioRecienteMeses: Number(env('EXSOCIO_RECIENTE_MESES', '3')),
@@ -99,14 +141,12 @@ export const config = {
     reservaPrueba: env('AIMHARDER_RESERVA_PRUEBA', 'false') === 'true',
     // Webhooks de AimHarder (docs/aimharder-webhooks.md): un token común en la URL y una clave privada RSA por sede
     webhookToken: env('AIMHARDER_WEBHOOK_TOKEN'),
-    webhookClaves: Object.fromEntries(['parla', 'getafe', 'las_rosas'].map((s) => [s, {
-      pem: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}`), fichero: env(`AIMHARDER_WEBHOOK_KEY_${s.toUpperCase()}_FILE`),
-    }])),
+    webhookClaves: porSede(sedesAimharder, (ID) => ({ pem: env(`AIMHARDER_WEBHOOK_KEY_${ID}`), fichero: env(`AIMHARDER_WEBHOOK_KEY_${ID}_FILE`) })),
   },
   // metro-trial-ops (pruebas de los calendarios de GHL, con asistencia y alta verificadas): su base, solo lectura
   trialOps: { db: env('TRIAL_OPS_DB', '/var/lib/metro-trial-ops/trial_ops.sqlite3') },
   // Dirección pública del servicio (para que GHL descargue los recursos que envía Sofía)
-  publicUrl: env('PUBLIC_URL', 'https://setter.82.223.108.143.nip.io'),
+  publicUrl: env('PUBLIC_URL') || 'https://setter.82.223.108.143.nip.io',
   // API de Conversiones de Meta (eventos al ponerse ciertas etiquetas)
   meta: { pixelId: env('META_PIXEL_ID', ''), token: env('META_CAPI_TOKEN', ''), testCode: env('META_TEST_EVENT_CODE', ''), version: env('META_API_VERSION', 'v21.0') },
   media: {
@@ -138,16 +178,18 @@ export const config = {
   },
   telegram: {
     token: env('TELEGRAM_BOT_TOKEN'),
-    chats: {
-      parla: env('TELEGRAM_CHAT_PARLA'),
-      getafe: env('TELEGRAM_CHAT_GETAFE'),
-      las_rosas: env('TELEGRAM_CHAT_LAS_ROSAS'),
-      general: env('TELEGRAM_CHAT_GENERAL'),
-    },
+    // Chat de cada sede (TELEGRAM_CHAT_<ID>); lo que no tiene chat propio va al general
+    chats: { ...porSede(idsSedes, (ID) => env(`TELEGRAM_CHAT_${ID}`)), general: env('TELEGRAM_CHAT_GENERAL') },
   },
 };
 
 export const isLive = () => config.mode === 'live';
+
+/** Ruta de un archivo de configuración: el de CONFIG_DIR si está; si no, el de ejemplo del repositorio. */
+export function rutaConfig(archivo, c = config) {
+  const propio = path.join(c.configDir, archivo);
+  return c.configDir === path.join(c.root, 'config') || fs.existsSync(propio) ? propio : path.join(c.root, 'config', archivo);
+}
 
 /**
  * Claves del servicio que faltan o son fáciles de adivinar (menos de 24 caracteres). Devuelve los avisos en texto;
