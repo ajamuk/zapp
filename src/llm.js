@@ -6,7 +6,7 @@ import { usosDe } from './precios.js';
 export const TOOLS = [
   {
     name: 'consultar_horarios',
-    description: 'Horario habitual publicado de una sede y modalidad, opcionalmente filtrado por franja. Úsala siempre antes de dar horarios.',
+    description: 'Horario habitual publicado de una sede y modalidad, opcionalmente filtrado por franja. Úsala siempre antes de dar horarios. En `por_dias` van las horas agrupadas con los días exactos en que hay clase a esa hora: dilas así, sin juntar días que no las tienen.',
     input_schema: {
       type: 'object',
       properties: {
