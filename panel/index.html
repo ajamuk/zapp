@@ -577,31 +577,40 @@ function precargarRutas(rutas, silencioso = false) {
     setTimeout(() => { if (precargadas.get(ruta) === p) precargadas.delete(ruta); }, 4000);
   }
 }
+// Las subidas (archivos en base64, de varios MB) no se comparan por su cuerpo: cada una lleva su propia clave
+let subidas = 0;
 function api(ruta, opciones = {}) {
   const metodo = opciones.method || 'GET';
   if (metodo === 'GET') { const p = precargadas.get(ruta); if (p) { precargadas.delete(ruta); return p; } return pedir(ruta, opciones); }
-  const clave = `${metodo} ${ruta} ${opciones.body || ''}`;
+  const clave = /\/adjunto$/.test(ruta) ? `${metodo} ${ruta} #${++subidas}` : `${metodo} ${ruta} ${opciones.body || ''}`;
   if (enCamino.has(clave)) return enCamino.get(clave);
   const p = pedir(ruta, opciones).finally(() => enCamino.delete(clave));
   enCamino.set(clave, p);
   return p;
 }
 
-async function pedir(ruta, { silencioso = false, ...opciones } = {}) {
+/**
+ * Petición al servidor con la cabecera de acceso (datos, archivos y descargas). Si la sesión de MetroTools ha caducado
+ * lleva a su inicio de sesión, y si la clave ya no vale vuelve a pedirla.
+ */
+async function peticion(ruta, opciones = {}) {
   const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
   let r;
-  if (!silencioso) ocupado(1);
-  try {
-    r = await fetch((integrado ? './api' : '/admin') + ruta, {
-      ...opciones, cache: 'no-store', headers: { ...cabecera, 'content-type': 'application/json' },
-    });
-  } catch { throw new Error('Sin conexión con el servidor. Comprueba tu conexión e inténtalo otra vez.'); }
-  finally { if (!silencioso) ocupado(-1); }
+  try { r = await fetch((integrado ? './api' : '/admin') + ruta, { ...opciones, headers: { ...cabecera, ...(opciones.headers || {}) } }); }
+  catch { throw new Error('Sin conexión con el servidor. Comprueba tu conexión e inténtalo otra vez.'); }
   if (integrado && r.redirected && new URL(r.url).pathname === '/access-admin/login') {
     location.assign('/access-admin/login?next=' + encodeURIComponent(location.href));
     throw new Error('La sesión de MetroTools ha caducado.');
   }
   if (!integrado && r.status === 401) { salir(); throw new Error('Clave incorrecta.'); }
+  return r;
+}
+
+async function pedir(ruta, { silencioso = false, ...opciones } = {}) {
+  let r;
+  if (!silencioso) ocupado(1);
+  try { r = await peticion(ruta, { ...opciones, cache: 'no-store', headers: { 'content-type': 'application/json' } }); }
+  finally { if (!silencioso) ocupado(-1); }
   const j = r.headers.get('content-type')?.includes('application/json') ? await r.json() : {};
   if (!r.ok) throw new Error(j.error || (r.status === 413 ? 'El archivo es demasiado grande para enviarlo.' : r.status === 502 || r.status === 504 ? 'El servidor ha tardado demasiado en responder. Inténtalo otra vez.' : `No se ha podido completar la petición (error ${r.status}).`));
   return j;
@@ -654,6 +663,8 @@ async function iniciar() {
   $('#raiz').innerHTML = '<main id="main" tabindex="-1"><div class="vacio" role="status">Cargando ZAPP…</div></main>';
   try {
     estado.info = await api('/panel/estado');
+    aplicarNombresSede(estado.info.nombresSede); // antes de pintar la primera sección
+    if (!estado.opciones) cargarOpciones().catch(() => {}); // nombres de las sedes para todas las secciones
   } catch (e) {
     if ($('#main')) $('#main').innerHTML = `<p class="aviso" role="alert">${esc(e.message)}</p><button id="reintentar">Volver a intentar</button>`;
     $('#reintentar')?.addEventListener('click', iniciar);
@@ -731,6 +742,10 @@ window.addEventListener('scroll', () => { const b = $('#arriba'); if (b) b.hidde
 window.addEventListener('hashchange', () => {
   const id = location.hash.slice(1).split('/')[0];
   if (!estado.info || (id && !SECCIONES.some(([seccion]) => seccion === id))) return;
+  // Una nota de voz a medias solo sigue si se queda en su chat (o en Probar IA, que comprueba su prueba al pintarla)
+  const chatDestino = id === 'chats' ? leerHash().chat : estado.conv;
+  if (estado.grabacion && ((id || 'chats') !== 'chats' || chatDestino !== estado.grabacion.conv)) descartarGrabacion();
+  if (id !== 'probar') descartarGrabacionPrueba();
   // Dentro de Chats, la dirección dice qué chat está abierto: el botón «atrás» del móvil vuelve a la lista
   if (id === 'chats') {
     const { chat } = leerHash();
@@ -755,6 +770,7 @@ async function pintar() {
       $('#reintentar').onclick = pintar;
     }
   }
+  liberarMedios(); // los archivos de la sección anterior ya no están en la página
 }
 
 const tarjeta = (n, l, color = '') => `<div class="tarjeta"><div class="n" style="${color ? 'color:var(--' + color + ')' : ''}">${n ?? 0}</div><div class="l">${l}</div></div>`;
@@ -871,10 +887,22 @@ async function pintarAlertas(datos) {
   const a = datos || await api('/panel/alertas').catch(() => null);
   if (!a || !$('#alertas')) return;
   estado.info.alertas = a.abiertas.length; pintarCabecera();
-  $('#alertas').innerHTML = `${a.abiertas.length ? `<section class="alertas"><h3>⚠️ Problemas que revisar</h3>${a.abiertas.map((x) => `<div class="alerta ${x.nivel}"><div><b>${esc(x.titulo)}</b><div class="ayuda">${esc(x.detalle || '')}</div><div class="ayuda">Desde ${hora(x.primera)}${x.veces > 1 ? ` · comprobado ${x.veces} veces` : ''}</div></div><button class="mini" data-ares="${x.id}">Ya está resuelto</button></div>`).join('')}</section>` : ''}
-    <div class="estado-sis">${a.abiertas.length ? '' : '<span class="chip verde">✓ Todo funciona</span>'} <button class="mini" id="acomp">Comprobar ahora</button>${a.recientes.length ? ` <details><summary class="ayuda">Resueltas estos días (${a.recientes.length})</summary>${a.recientes.map((x) => `<div class="ayuda">${hora(x.resuelta_at)} · ${esc(x.titulo)} · ${esc(x.resolucion || '')}</div>`).join('')}</details>` : ''}</div>`;
+  // El refresco automático no cierra «Resueltas estos días» si estaba abierto
+  const resueltasAbiertas = Boolean($('#alertas .estado-sis details')?.open);
+  $('#alertas').innerHTML = `${a.abiertas.length ? `<section class="alertas"><h3>⚠️ Problemas que revisar</h3>${a.abiertas.map((x) => `<div class="alerta ${esc(x.nivel)}"><div><b>${esc(x.titulo)}</b><div class="ayuda">${esc(x.detalle || '')}</div><div class="ayuda">Desde ${hora(x.primera)}${x.veces > 1 ? ` · comprobado ${x.veces} veces` : ''}</div></div><button class="mini" data-ares="${x.id}">Ya está resuelto</button></div>`).join('')}</section>` : ''}
+    <div class="estado-sis">${a.abiertas.length ? '' : '<span class="chip verde">✓ Todo funciona</span>'} <button class="mini" id="acomp">Comprobar ahora</button>${a.recientes.length ? ` <details ${resueltasAbiertas ? 'open' : ''}><summary class="ayuda">Resueltas estos días (${a.recientes.length})</summary>${a.recientes.map((x) => `<div class="ayuda">${hora(x.resuelta_at)} · ${esc(x.titulo)} · ${esc(x.resolucion || '')}</div>`).join('')}</details>` : ''}</div>`;
   $('#alertas').querySelectorAll('[data-ares]').forEach((b) => b.onclick = async () => { await api(`/panel/alertas/${b.dataset.ares}/resolver`, { method: 'POST' }); pintarAlertas(); });
-  $('#acomp').onclick = async () => { $('#acomp').disabled = true; $('#acomp').textContent = 'Comprobando…'; const r = await api('/panel/alertas/comprobar', { method: 'POST' }).catch(() => null); pintarAlertas(r ? { abiertas: r.abiertas, recientes: a.recientes } : null); };
+  $('#acomp').onclick = async () => {
+    $('#acomp').disabled = true; $('#acomp').textContent = 'Comprobando…';
+    let r;
+    try { r = await api('/panel/alertas/comprobar', { method: 'POST' }); }
+    catch (e) {
+      avisar(`No se ha podido comprobar ahora. ${e.message}`);
+      const b = $('#acomp'); if (b) { b.disabled = false; b.textContent = 'Comprobar ahora'; }
+      return;
+    }
+    pintarAlertas({ abiertas: r.abiertas, recientes: a.recientes });
+  };
 }
 
 const chipsConv = (c) => [
@@ -895,22 +923,55 @@ const medioHtml = (m, ruta) => {
   const src = `${ruta}/media/${m.id}`;
   if (m.adjunto === 'imagen') return `<img class="medio-img" alt="${m.autor === 'lead' ? 'Imagen enviada por el lead' : 'Imagen enviada al lead'}" data-media="${esc(src)}">`;
   if (m.adjunto === 'audio') return `<audio controls preload="none" data-media="${esc(src)}"></audio>${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : m.autor === 'ia' ? '<div class="ayuda">Nota de voz de Sofía (debajo, lo que dice)</div>' : m.autor === 'humano' ? '<div class="ayuda">Audio del equipo</div>' : `<div class="ayuda">${m.media_error ? 'No se pudo transcribir' : 'Sin transcripción'}</div>`}`;
-  return `<a href="#" data-media-desc="${esc(src)}">Descargar ${esc(m.adjunto)}</a>`;
+  return `<a href="#" data-media-desc="${esc(src)}" data-nombre="${esc(`${m.adjunto}-${m.id}`)}">Descargar ${esc(m.adjunto)}</a>`;
 };
 const textoSinMarcador = (m) => (m.adjunto && /^\[(audio|imagen|video|documento|adjunto)\]$/.test(m.texto || '') ? '' : m.texto);
-async function cargarMedios(cont) {
+// Vídeos y documentos de un chat: se descargan con la cabecera de acceso (el enlace no lleva a ninguna sección)
+document.addEventListener('click', (e) => {
+  const a = e.target.closest?.('[data-media-desc]'); if (!a) return;
+  e.preventDefault();
+  descargar(a.dataset.mediaDesc, a.dataset.nombre || 'archivo');
+});
+
+// Audios, imágenes y vídeos: se piden con la cabecera de acceso y quedan como URL del navegador. Cada archivo se
+// descarga una vez (al refrescarse el chat se reutiliza su URL) y la URL se libera cuando ya no queda en la página
+// ningún elemento que lo use. Las imágenes se cargan al momento; los audios al acercarse a la vista y los vídeos al
+// tocarlos (pueden pesar 25 MB).
+const urlsMedios = new Map(); // ruta del archivo → promesa de su URL del navegador
+const vigilados = new Set();
+const vigia = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entradas) => {
+  for (const x of entradas) if (x.isIntersecting) { vigia.unobserve(x.target); vigilados.delete(x.target); x.target.cargarMedio?.(); }
+});
+function urlMedio(src) {
+  if (!urlsMedios.has(src)) {
+    const p = peticion(src).then(async (r) => { if (!r.ok) throw new Error('No se ha podido cargar el archivo'); return URL.createObjectURL(await r.blob()); });
+    p.catch(() => { if (urlsMedios.get(src) === p) urlsMedios.delete(src); }); // un fallo se puede reintentar
+    urlsMedios.set(src, p);
+  }
+  return urlsMedios.get(src);
+}
+function liberarMedios() {
+  const enUso = new Set([...document.querySelectorAll('[data-media]')].map((el) => el.dataset.media));
+  for (const [src, p] of urlsMedios) if (!enUso.has(src)) { urlsMedios.delete(src); p.then((url) => URL.revokeObjectURL(url), () => {}); }
+  for (const el of vigilados) if (!el.isConnected) { vigia?.unobserve(el); vigilados.delete(el); }
+}
+function cargarMedios(cont) {
+  liberarMedios(); // los del contenido que se acaba de sustituir
   for (const el of cont.querySelectorAll('[data-media]')) {
-    const cargar = async () => {
+    if (el.dataset.cargado) continue;
+    const cargar = el.cargarMedio = async () => {
       if (el.dataset.cargado) return; el.dataset.cargado = '1';
       try {
-        const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
-        const r = await fetch((integrado ? './api' : '/admin') + el.dataset.media, { headers: cabecera });
-        if (!r.ok) throw new Error();
-        el.src = URL.createObjectURL(await r.blob());
+        el.src = await urlMedio(el.dataset.media);
         if (el.tagName === 'IMG') el.onclick = () => window.open(el.src, '_blank');
+        if (el.dataset.reproducir) el.play?.().catch(() => {}); // lo pulsaron antes de tenerlo
       } catch { el.replaceWith(Object.assign(document.createElement('span'), { className: 'ayuda', textContent: 'No se ha podido cargar el archivo' })); }
     };
-    cargar();
+    if (el.tagName === 'IMG') { cargar(); continue; }
+    // Audio y vídeo: al tocarlos, enfocarlos o darle a reproducir (y, los audios, también al verse)
+    for (const ev of ['pointerdown', 'focus', 'keydown']) el.addEventListener(ev, cargar, { once: true });
+    el.addEventListener('play', () => { if (!el.dataset.cargado || !el.currentSrc) { el.dataset.reproducir = '1'; cargar(); } }, { once: true });
+    if (el.tagName === 'AUDIO') { if (vigia) { vigia.observe(el); vigilados.add(el); } else cargar(); }
   }
 }
 
@@ -930,9 +991,19 @@ async function prepararTextos(items, pedir, pintar) {
 const ESTADO_TXT = { ia_activa: 'IA activa', pausadas: 'Pausadas', derivadas: 'Derivadas', seguimiento: 'Con follow-up', prueba: 'Clase prueba', alta: 'Alta', socios: 'Socios', leads: 'Leads (no socios)', no_leads: 'No son leads' };
 const FASES = ['f1 apertura', 'f2 diagnóstico', 'f3 presentación', 'f4 objeciones', 'f5 cierre', 'cerrada'];
 const vacios = (c) => !Object.keys(c || {}).filter((k) => k !== 'modo').length;
-const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + ({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía', ghl: 'desde GHL' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
+const pill = (e, extra = '') => `<span class="etq" style="--c:${esc(e.color)}" title="${esc(e.nombre)}${e.origen ? ' · puesta ' + esc({ manual: 'a mano', regla: 'por regla', ia: 'por Sofía', ghl: 'desde GHL' }[e.origen] || e.origen) : ''}">${e.origen === 'ia' ? '✨ ' : ''}${esc(e.nombre)}${extra}</span>`;
 
-async function cargarOpciones() { estado.opciones = await api('/panel/opciones'); return estado.opciones; }
+/** Nombres de las sedes de este negocio (config/negocio.json en el servidor): sustituyen a los de serie. */
+function aplicarNombresSede(nombres) {
+  if (nombres && Object.keys(nombres).length) { for (const k of Object.keys(SEDES)) if (!(k in nombres)) delete SEDES[k]; Object.assign(SEDES, nombres); }
+}
+
+async function cargarOpciones() {
+  estado.opciones = await api('/panel/opciones');
+  // Nombres de las sedes de este negocio (config/negocio.json en el servidor)
+  aplicarNombresSede(estado.opciones.nombresSede);
+  return estado.opciones;
+}
 
 function resumenCriterios(c, opciones) {
   const etqN = (id) => opciones.etiquetas.find((e) => e.id === id);
@@ -1169,10 +1240,12 @@ async function refrescarVistas() {
 /** Cierra el chat abierto y vuelve a la lista (donde estabas, en móvil). */
 function cerrarHilo() {
   const habia = Boolean(estado.conv);
+  descartarGrabacion();
   estado.conv = null; estado.progAbierto = false;
   if (location.hash.startsWith('#chats/')) history.replaceState(null, '', '#chats');
   $('#ch')?.classList.remove('con-hilo');
   if ($('#hilo')) $('#hilo').innerHTML = '<div class="vacio">Elige un chat</div>';
+  liberarMedios();
   document.querySelectorAll('.item.activo').forEach((el) => el.classList.remove('activo'));
   if (habia && estado.scrollLista != null && matchMedia('(max-width: 1040px)').matches) window.scrollTo(0, estado.scrollLista);
   estado.scrollLista = null;
@@ -1197,7 +1270,9 @@ async function lista() {
 }
 
 // Huella de lo que se ve en un chat: si no cambia, el refresco automático no repinta nada
-const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo]);
+// (también el audio, la imagen o la transcripción que llegan después que el mensaje: se descargan y transcriben aparte)
+const firmaHilo = (d) => JSON.stringify([d.mensajes.length, d.mensajes.at(-1)?.id, d.mensajes.filter((m) => m.enviado).length, d.conv.ai_paused, d.conv.derivado, d.conv.fase, d.conv.alta_estado, d.etiquetas.map((e) => e.id), d.seguimientos.map((s) => [s.id, s.estado]), d.escribir?.motivo,
+  d.mensajes.slice(-50).map((m) => [m.id, m.adjunto, m.transcripcion, m.media_error, m.texto])]);
 
 // Archivos para el lead (imagen, vídeo, audio, PDF): se suben al elegirlos y se envían o programan con su id
 // Emoticonos para el cuadro de escribir: se insertan donde está el cursor (también vale el selector del sistema: Win + . / Ctrl + Cmd + Espacio)
@@ -1236,20 +1311,42 @@ async function subirArchivoChat(convId, blob, nombre) {
   return api(`/panel/conversaciones/${encodeURIComponent(convId)}/adjunto`, { method: 'POST', body: JSON.stringify({ datos, mime: blob.type, archivo: nombre }) });
 }
 const chipArchivo = (a, idQuitar) => (a ? `<span class="arch-chip">${ICONO_ARCH[a.tipo] || '📎'} ${esc(a.nombre)} <span class="ayuda">${(a.tamano / 1048576).toFixed(1)} MB</span>${idQuitar ? `<button type="button" class="x" id="${idQuitar}" aria-label="Quitar archivo">✕</button>` : ''}</span>` : '');
-/** Graba una nota de voz con el micrófono. Devuelve la grabadora (rec.stop() la termina y llama a alTerminar(blob, nombre)). */
-async function grabarNota(alTerminar) {
+/**
+ * Graba una nota de voz con el micrófono. Devuelve { parar, descartar }: parar() la termina y llama a
+ * alTerminar(blob, nombre); descartar() la corta sin llamarlo. Las dos apagan el micrófono.
+ */
+async function grabarNota(alTerminar, tipos = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/aac']) {
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Este navegador no permite grabar audio: adjunta un archivo de audio.');
   let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { throw new Error('No hay permiso para usar el micrófono.'); }
-  const tipo = ['audio/ogg;codecs=opus', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/aac'].find((t) => MediaRecorder.isTypeSupported?.(t));
-  const trozos = []; const rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
+  const apagar = () => flujo.getTracks().forEach((t) => t.stop());
+  const tipo = tipos.find((t) => MediaRecorder.isTypeSupported?.(t));
+  const trozos = []; let rec;
+  try { rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined); } catch { apagar(); throw new Error('Este navegador no permite grabar audio: adjunta un archivo de audio.'); }
+  let descartada = false;
   rec.ondataavailable = (e) => trozos.push(e.data);
   rec.onstop = () => {
-    flujo.getTracks().forEach((t) => t.stop());
+    apagar();
+    if (descartada) return;
     const blob = new Blob(trozos, { type: (rec.mimeType || tipo || 'audio/mp4').split(';')[0] });
     alTerminar(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('webm') ? 'webm' : 'm4a'));
   };
   rec.start();
-  return rec;
+  return {
+    parar: () => { if (rec.state !== 'inactive') rec.stop(); },
+    descartar: () => { descartada = true; if (rec.state !== 'inactive') rec.stop(); else apagar(); },
+  };
+}
+/** Corta sin adjuntarla la nota de voz que se graba en un chat (al cambiar de chat o de sección) y apaga el micrófono. */
+function descartarGrabacion() {
+  const g = estado.grabacion; if (!g) return;
+  estado.grabacion = null; g.descartar();
+  avisar('Se ha descartado la nota de voz: has salido del chat mientras grababas.');
+}
+/** Lo mismo en Probar IA, al cambiar de prueba o de sección. */
+function descartarGrabacionPrueba() {
+  const g = estado.prueba.grabacion; if (!g) return;
+  estado.prueba.grabacion = null; g.descartar();
+  avisar('Se ha descartado la nota de voz: has salido de la prueba mientras grababas.');
 }
 const formProg = (p, v) => `<form id="${p}form" class="prog"><textarea id="${p}txt" rows="2" maxlength="1000" placeholder="Mensaje tal cual lo recibirá el lead${v.archivo ? ' (pie del archivo, opcional)' : ''}">${esc(v.texto || '')}</textarea>${chipArchivo(v.archivo, p + 'quitar')}
   <div class="fila-f">${botonEmoji(p + 'txt')}<input type="datetime-local" id="${p}fec" value="${fechaLocal(v.cuando)}" aria-label="Fecha y hora"><button type="button" class="mini" id="${p}adj" title="Adjuntar imagen, vídeo, audio o PDF">📎 ${v.archivo ? 'Cambiar archivo' : 'Archivo'}</button><input type="file" id="${p}file" accept="${ACEPTA_ARCH}" hidden><button class="primario mini">${v.id ? 'Guardar cambios' : 'Programar'}</button><button type="button" class="mini" id="${p}cerrar">${v.id ? 'Cancelar edición' : 'Cancelar'}</button></div>
@@ -1266,6 +1363,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   const movil = matchMedia('(max-width: 1040px)').matches;
   if (!$('#ch').classList.contains('con-hilo') && movil) estado.scrollLista = window.scrollY;
   if (estado.conv !== id) { estado.progAbierto = false; estado.prog = null; estado.editProg = null; estado.respArchivo = null; estado.tplAbierto = false; estado.tpl = null; }
+  if (estado.grabacion && estado.grabacion.conv !== id) descartarGrabacion(); // la nota de voz era de otro chat
   estado.conv = id;
   // La dirección lleva el chat: se puede compartir el enlace y, en el móvil, «atrás» vuelve a la lista
   const dir = '#chats/' + encodeURIComponent(id);
@@ -1330,18 +1428,32 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
     t.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $('#fresp').requestSubmit(); } };
     const adjuntar = async (blob, nombre) => {
       $('#rerr').textContent = 'Subiendo el archivo…';
-      try { estado.respArchivo = await subirArchivoChat(id, blob, nombre); estado.respTexto = $('#rtxt')?.value || ''; abrir(id, { datos: d, mantener: true }); }
-      catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; }
+      try {
+        const subido = await subirArchivoChat(id, blob, nombre);
+        // Si mientras subía has cambiado de chat o de sección, no se adjunta a otro ni se vuelve a este
+        if (estado.conv !== id || estado.seccion !== 'chats') return avisar('El archivo no se ha adjuntado: has cambiado de chat mientras se subía.');
+        estado.respArchivo = subido; estado.respTexto = $('#rtxt')?.value || ''; abrir(id, { datos: d, mantener: true });
+      } catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; }
     };
     $('#radj').onclick = () => $('#rfile').click();
     $('#rfile').onchange = (e) => { const f = e.target.files[0]; if (f) adjuntar(f, f.name); };
     $('#rquitar') && ($('#rquitar').onclick = () => { estado.respArchivo = null; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true }); });
+    // La nota de voz es de este chat: al cambiar de chat o de sección se descarta (y se apaga el micrófono)
     $('#rgrab').onclick = async () => {
-      if (estado.grabacion) { estado.grabacion.rec.stop(); return; }
+      if (estado.grabacion?.conv === id) { estado.grabacion.parar(); return; }
+      descartarGrabacion();
+      let g;
       try {
-        const rec = await grabarNota((blob, nombre) => { estado.grabacion = null; if (!blob.size) { abrir(id, { datos: d, mantener: true }); return avisar('La grabación ha salido vacía.'); } adjuntar(blob, nombre); });
-        estado.grabacion = { rec, conv: id }; estado.respTexto = t.value; abrir(id, { datos: d, mantener: true });
-      } catch (err) { $('#rerr').textContent = err.message; }
+        g = await grabarNota((blob, nombre) => {
+          if (estado.grabacion === g) estado.grabacion = null;
+          if (estado.conv !== id || estado.seccion !== 'chats') return;
+          if (!blob.size) { abrir(id, { datos: d, mantener: true }); return avisar('La grabación ha salido vacía.'); }
+          adjuntar(blob, nombre);
+        });
+      } catch (err) { if ($('#rerr')) $('#rerr').textContent = err.message; return; }
+      // Mientras se pedía permiso para el micrófono se ha cambiado de chat: no se graba
+      if (estado.conv !== id || estado.seccion !== 'chats') { g.descartar(); return; }
+      g.conv = id; estado.grabacion = g; estado.respTexto = $('#rtxt')?.value ?? t.value; abrir(id, { datos: d, mantener: true });
     };
     // Un mensaje de WhatsApp enviado no se puede borrar: se espera unos segundos con «Deshacer» antes de mandarlo de verdad
     $('#fresp').onsubmit = (e) => {
@@ -1754,7 +1866,8 @@ async function seguimientos() {
 }
 
 async function editorRegla() {
-  const [{ reglas: todas, etiquetas: etqs }, recLista] = await Promise.all([api('/panel/reglas'), api('/panel/recursos').catch(() => [])]);
+  // Si los recursos no llegan, no se puede guardar: se quitaría sin querer el que lleva el seguimiento
+  const [{ reglas: todas, etiquetas: etqs }, recLista] = await Promise.all([api('/panel/reglas'), api('/panel/recursos').catch(() => null)]);
   estado.recLista = recLista;
   if (estado.seccion !== 'seguimientos') return;
   const original = estado.editRegla.id ? todas.find((r) => r.id === estado.editRegla.id) : null;
@@ -1795,7 +1908,9 @@ async function editorRegla() {
         <label class="check"><input type="checkbox" id="rxpru" ${d.excluir.soloConPrueba ? 'checked' : ''}> Solo a quien tiene una clase de prueba reservada</label>
       </section>
       <section><h3>Al enviarse</h3>
-        <label class="fila-f">Adjuntar el recurso <select id="rrec"><option value="">Ninguno</option>${(estado.recLista || []).filter((x) => x.activo).map((x) => `<option value="${x.id}" ${d.recursoId === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select> <span class="ayuda">(solo dentro de las 24 h: la plantilla no lleva archivos)</span></label>
+        <label class="fila-f">Adjuntar el recurso ${estado.recLista
+          ? `<select id="rrec"><option value="">Ninguno</option>${estado.recLista.filter((x) => x.activo || x.id === d.recursoId).map((x) => `<option value="${x.id}" ${d.recursoId === x.id ? 'selected' : ''}>${esc(x.nombre)}${x.activo ? '' : ' (desactivado: no se envía)'}</option>`).join('')}</select>`
+          : '<select id="rrec" disabled><option value="">No se han podido cargar los recursos</option></select>'} <span class="ayuda">(solo dentro de las 24 h: la plantilla no lleva archivos)</span></label>
         <label class="fila-f">Poner la etiqueta <select id="rpon"><option value="">Ninguna</option>${etqs.map((e) => `<option value="${e.id}" ${d.ponerEtiqueta === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></label>
         <label class="check"><input type="checkbox" id="rpla" ${d.plantilla ? 'checked' : ''}> En WhatsApp, si han pasado más de 24 h, enviarlo por plantilla <span class="ayuda">(si no, no sale)</span></label>
         <label class="check"><input type="checkbox" id="ract" ${d.activo ? 'checked' : ''}> Activo</label>
@@ -1809,7 +1924,9 @@ async function editorRegla() {
       d.canales = [...m.querySelectorAll('[data-can]')].filter((x) => x.checked).map((x) => x.dataset.can);
       if ($('#rcondt')) d.condicion = $('#rcondt').value; if ($('#rins')) d.instrucciones = $('#rins').value; if ($('#rfijo')) d.textoFijo = $('#rfijo').value;
       d.excluir = { clientes: $('#rxcli').checked, pausada: $('#rxpau').checked, calladasHoras: $('#rxcal').checked ? Number($('#rxcalh').value) : 0, soloConPrueba: $('#rxpru').checked };
-      d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; d.recursoId = $('#rrec').value ? Number($('#rrec').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
+      // El recurso que ya lleva sale en la lista aunque esté desactivado (si no, guardar cualquier otro cambio lo quitaría);
+      // sin la lista de recursos, se deja como estaba
+      d.ponerEtiqueta = $('#rpon').value ? Number($('#rpon').value) : null; if (estado.recLista) d.recursoId = $('#rrec').value ? Number($('#rrec').value) : null; d.plantilla = $('#rpla').checked; d.activo = $('#ract').checked;
     };
     m.querySelectorAll('[name="rtipo"]').forEach((x) => x.onchange = () => { leer(); d.tipo = x.value; pintar(); });
     m.querySelectorAll('[name="rmodo"]').forEach((x) => x.onchange = () => { leer(); d.modo = x.value; pintar(); });
@@ -1819,6 +1936,7 @@ async function editorRegla() {
     $('#rbor') && ($('#rbor').onclick = async () => { const b = $('#rbor'); if (b.dataset.seguro !== '1') { b.dataset.seguro = '1'; b.textContent = '¿Borrar? Se cancelan sus envíos pendientes'; return; } await api('/panel/reglas/' + encodeURIComponent(original.id), { method: 'DELETE' }); salir(); });
     $('#fr').onsubmit = async (e) => {
       e.preventDefault(); leer();
+      if (!estado.recLista) { $('#rerr').textContent = 'No se han podido cargar los recursos: vuelve a abrir el seguimiento antes de guardar (si no, se perdería el archivo que adjunta).'; return; }
       if ([...m.querySelectorAll('[name="rcond"]')].find((x) => x.checked)?.value === 'si' && !d.condicion.trim()) { $('#rerr').textContent = 'Escribe la condición o marca «Siempre».'; return; }
       try { await api(original ? '/panel/reglas/' + encodeURIComponent(original.id) : '/panel/reglas', { method: original ? 'PUT' : 'POST', body: JSON.stringify(d) }); estado.condAbierta = false; salir(); }
       catch (err) { $('#rerr').textContent = err.message; }
@@ -1865,6 +1983,18 @@ async function editorLanzamiento() {
   previa();
   $('#lvol').onclick = salir; $('#lcan').onclick = salir;
   $('#fl').onsubmit = async (e) => { e.preventDefault(); try { await api('/panel/lanzamientos', { method: 'POST', body: JSON.stringify(datos()) }); salir(); } catch (err) { $('#lerr').textContent = err.message; } };
+}
+
+/**
+ * Vuelve a pintar dentro de `ms` una página que se actualiza sola (un reporte que se analiza, una pasada de la
+ * batería), pero solo con la pestaña a la vista: si está oculta, espera a que vuelva.
+ */
+function repetirVisible(ms, fn) {
+  setTimeout(() => {
+    if (!document.hidden) return fn();
+    const alVolver = () => { if (document.hidden) return; document.removeEventListener('visibilitychange', alVolver); fn(); };
+    document.addEventListener('visibilitychange', alVolver);
+  }, ms);
 }
 
 // ---------- Reportes e instrucciones ----------
@@ -1965,7 +2095,7 @@ async function fichaReporte(id) {
         ${r.version_aplicada ? `<p>✅ Aplicado en la versión ${r.version_aplicada} del ${esc(DOC_NOMBRE[p?.doc] || '')}. <a href="#reportes/instrucciones">Ver versiones</a></p>` : ''}
       </section>
       <section><h3>Lo que se reportó</h3><p><b>Qué falló:</b> ${esc(r.que_fallo)}</p>${r.que_esperaba ? `<p><b>Qué debería haber hecho:</b> ${esc(r.que_esperaba)}</p>` : ''}${r.texto_exacto ? `<p><b>Texto exacto:</b> «${esc(r.texto_exacto)}»</p>` : ''}
-        ${msgs.length ? `<div class="mini-chat">${msgs.map((m, k) => `<div class="burbuja b-${esc(m.autor)} ${k === msgs.length - 1 && m.autor === 'ia' ? 'reportada' : ''}">${esc(m.texto)}${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : ''}<div class="meta">${AUT[m.autor] || m.autor}</div></div>`).join('')}</div>` : ''}</section>
+        ${msgs.length ? `<div class="mini-chat">${msgs.map((m, k) => `<div class="burbuja b-${esc(m.autor)} ${k === msgs.length - 1 && m.autor === 'ia' ? 'reportada' : ''}">${esc(m.texto)}${m.transcripcion ? `<div class="transcripcion">🎙️ «${esc(m.transcripcion)}»</div>` : ''}<div class="meta">${esc(AUT[m.autor] || m.autor)}</div></div>`).join('')}</div>` : ''}</section>
       ${p ? `<section><h3>Cambio propuesto en «${esc(DOC_NOMBRE[p.doc])}»</h3>${p.resumen ? `<p><b>${esc(p.resumen)}</b></p>` : ''}
         <p class="ayuda"><ins>verde</ins>: se añade · <del>rojo</del>: se quita</p>
         ${p.cambios.map((x, k) => `<p class="ayuda">Cambio ${k + 1}${x.buscar ? '' : ' (se añade al final)'}</p>${htmlDiffPalabras(x.buscar, x.reemplazar)}`).join('')}</section>` : ''}
@@ -1986,7 +2116,7 @@ async function fichaReporte(id) {
   $('#rrean') && ($('#rrean').onclick = () => accion('reanalizar'));
   $('#rdesc') && ($('#rdesc').onclick = () => accion('descartar'));
   $('#fresp') && ($('#fresp').onsubmit = (e) => { e.preventDefault(); accion('responder', { respuesta: e.target.r.value }); });
-  if (['analizando', 'recibido'].includes(r.estado)) setTimeout(() => { if (location.hash === `#reportes/${id}`) fichaReporte(id); }, 4000);
+  if (['analizando', 'recibido'].includes(r.estado)) repetirVisible(4000, () => { if (location.hash === `#reportes/${id}`) fichaReporte(id); });
 }
 
 const htmlResumen = (r) => `<p class="ayuda">Prompt v${r.version} y base de conocimiento v${r.negocio_version}</p><div class="resumen-grid">${r.apartados.map((a) => `<div class="res-ap"><b>${esc(a.titulo)}</b><ul>${a.puntos.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`).join('')}</div>`;
@@ -2068,7 +2198,7 @@ async function bateriaPagina(pasadaId) {
     <section class="doc"><h3>Pasadas</h3>${d.pasadas.length ? `<div class="tabla"><table><tr><th>#</th><th>Versión</th><th>Resultado</th><th>Casos</th><th>Coste</th><th>Fecha</th><th></th></tr>${d.pasadas.map((p) => `<tr><td>${p.id}</td><td>Prompt v${p.prompt_v} · Base v${p.negocio_v}${p.borradores ? ' <span class="chip azul">borrador</span>' : ''}${p.filtro.grupo ? ` <span class="chip">${esc(p.filtro.grupo)}</span>` : ''}${p.filtro.tema ? ` <span class="chip">${esc(p.filtro.tema)}</span>` : ''}</td>
       <td>${p.estado === 'en_curso' ? `<span class="chip ambar">en marcha ${p.hechos}/${p.total}</span>` : p.estado !== 'terminada' ? `<span class="chip rojo">${esc(p.estado)}</span>` : `<b>${pctTxt(p.pasan, p.hechos)}</b>`}</td><td>${p.pasan}/${p.hechos}</td><td>${(p.usd * (estado.info.eur_por_usd || 0.92)).toFixed(2)} €</td><td>${hora(p.created_at)}</td><td><a href="#reportes/bateria/${p.id}">Ver</a></td></tr>`).join('')}</table></div>` : '<p class="ayuda">Todavía no se ha lanzado ninguna.</p>'}</section>
     <section class="doc"><h3>Casos <button class="mini" id="bnuevo">+ Nuevo caso</button></h3><div id="bform"></div>
-      <div class="tabla"><table><tr><th>Caso</th><th>Tipo</th><th>Tema</th><th>Grupo</th><th>Criterios</th><th></th></tr>${d.casos.map((c) => `<tr class="${c.activo ? '' : 'apagada'}"><td>${esc(c.nombre)}<div class="ayuda">${ORIGEN[c.origen] || c.origen}</div></td><td>${c.tipo === 'escenario' ? `Lead simulado · ${c.turnos} turnos` : `Momento · ${c.mensajes} mensajes`}</td><td>${esc(c.tema || '')}</td><td>${c.grupo === 'reserva' ? '<span class="chip violeta">reserva</span>' : 'ajuste'}</td><td><details><summary>${c.criterios.length}</summary><ol class="crit">${c.criterios.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></details></td>
+      <div class="tabla"><table><tr><th>Caso</th><th>Tipo</th><th>Tema</th><th>Grupo</th><th>Criterios</th><th></th></tr>${d.casos.map((c) => `<tr class="${c.activo ? '' : 'apagada'}"><td>${esc(c.nombre)}<div class="ayuda">${esc(ORIGEN[c.origen] || c.origen)}</div></td><td>${c.tipo === 'escenario' ? `Lead simulado · ${c.turnos} turnos` : `Momento · ${c.mensajes} mensajes`}</td><td>${esc(c.tema || '')}</td><td>${c.grupo === 'reserva' ? '<span class="chip violeta">reserva</span>' : 'ajuste'}</td><td><details><summary>${c.criterios.length}</summary><ol class="crit">${c.criterios.map((x) => `<li>${esc(x)}</li>`).join('')}</ol></details></td>
         <td class="acciones-f"><button class="mini" data-bed="${esc(c.id)}">Editar</button><button class="mini" data-bon="${esc(c.id)}" data-v="${c.activo ? 0 : 1}">${c.activo ? 'Desactivar' : 'Activar'}</button></td></tr>`).join('')}</table></div></section>`;
   const m = $('#main');
   $('#fbat') && ($('#fbat').onsubmit = async (e) => {
@@ -2105,15 +2235,20 @@ async function bateriaPagina(pasadaId) {
   $('#bnuevo').onclick = () => formCaso(null);
   m.querySelectorAll('[data-bed]').forEach((b) => b.onclick = () => formCaso(b.dataset.bed));
   m.querySelectorAll('[data-bon]').forEach((b) => b.onclick = async () => { await api('/panel/bateria/casos/' + encodeURIComponent(b.dataset.bon), { method: 'PUT', body: JSON.stringify({ activo: b.dataset.v === '1' }) }); bateriaPagina(); });
-  if (enCurso) setTimeout(() => { if (location.hash === '#reportes/bateria') bateriaPagina(); }, 6000);
+  if (enCurso) repetirVisible(6000, () => { if (location.hash === '#reportes/bateria') bateriaPagina(); });
 }
 
 async function bateriaPasada(id) {
-  const lista = await api('/panel/bateria');
-  const p0 = lista.pasadas.find((x) => x.id === id);
-  // Se compara con la última pasada terminada de producción con el mismo filtro (si esta no lo es)
-  const ref = lista.pasadas.find((x) => x.id !== id && x.estado === 'terminada' && !x.borradores && JSON.stringify(x.filtro) === JSON.stringify(p0?.filtro) && x.id < id);
-  const r = await api(`/panel/bateria/pasadas/${id}${ref ? `?comparar=${ref.id}` : ''}`);
+  // Se compara con la última pasada terminada de producción con el mismo filtro (si esta no lo es). Se busca una vez
+  // por pasada: mientras esta va en marcha, la de referencia no cambia (no puede haber dos a la vez).
+  if (estado.refPasada?.id !== id) {
+    const lista = await api('/panel/bateria');
+    const p0 = lista.pasadas.find((x) => x.id === id);
+    const ref = lista.pasadas.find((x) => x.id !== id && x.estado === 'terminada' && !x.borradores && JSON.stringify(x.filtro) === JSON.stringify(p0?.filtro) && x.id < id);
+    estado.refPasada = { id, ref: ref?.id || null };
+  }
+  const ref = estado.refPasada.ref;
+  const r = await api(`/panel/bateria/pasadas/${id}${ref ? `?comparar=${ref}` : ''}`);
   if (estado.seccion !== 'reportes' || location.hash !== `#reportes/bateria/${id}`) return;
   const p = r.pasada; const c = r.comparacion;
   const AUT = { lead: 'Lead', ia: 'Sofía', humano: 'Equipo' };
@@ -2133,10 +2268,10 @@ async function bateriaPasada(id) {
       ${x.repeticiones.map((rep) => `<div class="rep-r"><b>Repetición ${rep.n}: ${rep.pasa ? '✓ pasa' : '✗ falla'}</b>${rep.error ? `<p class="error">${esc(rep.error)}</p>` : ''}
         ${rep.fallos_auto.length ? `<p class="error">Automáticos: ${rep.fallos_auto.map(esc).join(' · ')}</p>` : ''}
         <ul class="crit">${rep.criterios.map((k) => `<li class="${k.cumple ? 'si' : 'no'}">${k.cumple ? '✓' : '✗'} ${esc(k.criterio)}<div class="ayuda">${esc(k.motivo)}</div></li>`).join('')}</ul>
-        <details><summary class="ayuda">Ver la conversación</summary><div class="mini-chat">${rep.conversacion.map((mm) => `<div class="burbuja b-${esc(mm.autor)}">${esc(mm.texto)}<div class="meta">${AUT[mm.autor] || mm.autor}</div></div>`).join('')}</div>
+        <details><summary class="ayuda">Ver la conversación</summary><div class="mini-chat">${rep.conversacion.map((mm) => `<div class="burbuja b-${esc(mm.autor)}">${esc(mm.texto)}<div class="meta">${esc(AUT[mm.autor] || mm.autor)}</div></div>`).join('')}</div>
           <p class="ayuda">Herramientas: ${(rep.estado.herramientas || []).map(esc).join(', ') || 'ninguna'} · fase ${esc(rep.estado.fase || '–')} · sede ${esc(rep.estado.sede || '–')}${rep.estado.derivado ? ' · derivado' : ''}${rep.estado.prueba_pedida ? ' · prueba pedida' : ''}${rep.estado.alta ? ` · alta ${esc(rep.estado.alta)}` : ''}${rep.estado.lo_deja_para ? ` · lo deja para ${esc(rep.estado.lo_deja_para)}` : ''}</p></details></div>`).join('')}</details>`).join('') || '<div class="vacio">Todavía no hay resultados.</div>'}`;
   $('#bcanp') && ($('#bcanp').onclick = async () => { await api(`/panel/bateria/pasadas/${id}/cancelar`, { method: 'POST' }); bateriaPasada(id); });
-  if (p.estado === 'en_curso') setTimeout(() => { if (location.hash === `#reportes/bateria/${id}`) bateriaPasada(id); }, 6000);
+  if (p.estado === 'en_curso') repetirVisible(6000, () => { if (location.hash === `#reportes/bateria/${id}`) bateriaPasada(id); });
 }
 
 // ---------- Probar IA ----------
@@ -2152,6 +2287,7 @@ async function probar() {
   const desdeHash = location.hash.split('/')[1];
   if (desdeHash && listaP.some((c) => c.id === desdeHash)) p.id = desdeHash;
   if (p.id && !listaP.some((c) => c.id === p.id)) p.id = null;
+  if (p.grabacion && p.grabacion.conv !== p.id) descartarGrabacionPrueba(); // la nota de voz era de otra prueba
   const disponible = estado.info.modelo_configurado;
   $('#main').innerHTML = `<div class="cab-seccion"><h2>Probar IA</h2><span class="ayuda">Nada sale a GHL, AimHarder ni a ningún lead. Las etiquetas son las reales.</span></div>
     ${disponible ? '' : '<div class="aviso" role="status">Para que Sofía responda falta configurar la clave de Anthropic en el VPS. Puedes preparar pruebas igualmente.</div>'}
@@ -2186,6 +2322,7 @@ function pintarListaP() {
 }
 
 async function abrirPrueba(id) {
+  if (estado.prueba.grabacion && estado.prueba.grabacion.conv !== id) descartarGrabacionPrueba();
   const d = await api('/probar/conversaciones/' + encodeURIComponent(id));
   if (estado.seccion !== 'probar' || estado.prueba.id !== id) return;
   pintarPrueba(d);
@@ -2194,6 +2331,8 @@ async function abrirPrueba(id) {
 function pintarPrueba(d, escribiendo = false) {
   const p = estado.prueba; p.datos = d;
   const c = d.conv; const disponible = estado.info.modelo_configurado;
+  if (p.grabacion && p.grabacion.conv !== c.id) descartarGrabacionPrueba(); // la nota de voz era de otra prueba
+  const grabando = p.grabacion?.conv === c.id;
   const sim = c.simulacion || {};
   const ETQ = { lead: 'Lead', ia: 'Sofía', sistema: 'Sistema', humano: 'Equipo' };
   $('#pchat').innerHTML = `<div class="cab"><div><button class="volver" id="pvolver">Pruebas</button> <b>${esc(c.nombre)}</b> <span class="chip">${esc(CANAL[c.canal])}</span>
@@ -2216,7 +2355,7 @@ function pintarPrueba(d, escribiendo = false) {
       ${escribiendo ? '<div class="burbuja b-sistema" role="status">Sofía está escribiendo…</div>' : ''}</div>
     <form id="pf" class="p-form"><input type="file" id="pfile" accept="audio/*,image/*" hidden>
       <button type="button" id="padj" class="icono" title="Enviar una imagen o un audio como el lead" aria-label="Adjuntar imagen o audio" ${disponible && !escribiendo ? '' : 'disabled'}>📎</button>
-      <button type="button" id="pgrab" class="icono ${p.grabando ? 'grabando' : ''}" title="${p.grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" aria-label="${p.grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" ${disponible && !escribiendo ? '' : 'disabled'}>${p.grabando ? '⏹️' : '🎙️'}</button>
+      <button type="button" id="pgrab" class="icono ${grabando ? 'grabando' : ''}" title="${grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" aria-label="${grabando ? 'Parar y enviar la nota de voz' : 'Grabar una nota de voz'}" ${disponible && !escribiendo ? '' : 'disabled'}>${grabando ? '⏹️' : '🎙️'}</button>
       <textarea id="pt" rows="1" aria-label="Mensaje de prueba" placeholder="Escribe como un lead de ${esc(CANAL[c.canal])}…" title="Intro envía · Mayús+Intro, salto de línea" ${disponible && !escribiendo ? '' : 'disabled'}></textarea><button class="primario" ${disponible && !escribiendo ? '' : 'disabled'}>Enviar</button></form>`;
   $('#pm').scrollTop = 1e9;
   cargarMedios($('#pm'));
@@ -2244,22 +2383,23 @@ function pintarPrueba(d, escribiendo = false) {
   };
   $('#padj').onclick = () => $('#pfile').click();
   $('#pfile').onchange = (e) => { const f = e.target.files[0]; if (f) subir(f, f.name); };
+  // La nota de voz es de esta prueba: al cambiar de prueba o de sección se descarta (y se apaga el micrófono)
   $('#pgrab').onclick = async () => {
-    if (p.grabando) { p.grabadora.stop(); return; }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return alertaP('Este navegador no permite grabar audio. Adjunta un archivo de audio.');
-    let flujo; try { flujo = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { return alertaP('No hay permiso para usar el micrófono.'); }
-    const tipos = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac'];
-    const tipo = tipos.find((t) => MediaRecorder.isTypeSupported?.(t));
-    const trozos = []; const rec = new MediaRecorder(flujo, tipo ? { mimeType: tipo } : undefined);
-    rec.ondataavailable = (e) => trozos.push(e.data);
-    rec.onstop = () => {
-      flujo.getTracks().forEach((t) => t.stop()); p.grabando = false;
-      const blob = new Blob(trozos, { type: (rec.mimeType || tipo || 'audio/mp4').split(';')[0] });
-      pintarPrueba(d);
-      if (!blob.size) return alertaP('La grabación ha salido vacía. Mantén pulsado un poco más o adjunta el audio con 📎.');
-      subir(blob, 'nota-de-voz.' + (blob.type.includes('ogg') ? 'ogg' : blob.type.includes('webm') ? 'webm' : 'm4a'));
-    };
-    p.grabadora = rec; p.grabando = true; rec.start(); pintarPrueba(d);
+    if (p.grabacion?.conv === c.id) { p.grabacion.parar(); return; }
+    descartarGrabacionPrueba();
+    let g;
+    try {
+      g = await grabarNota((blob, nombre) => {
+        if (p.grabacion === g) p.grabacion = null;
+        if (estado.seccion !== 'probar' || p.id !== c.id) return;
+        pintarPrueba(d);
+        if (!blob.size) return alertaP('La grabación ha salido vacía. Mantén pulsado un poco más o adjunta el audio con 📎.');
+        subir(blob, nombre);
+      }, ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4', 'audio/aac']);
+    } catch (err) { return alertaP(err.message); }
+    // Mientras se pedía permiso para el micrófono se ha cambiado de prueba: no se graba
+    if (estado.seccion !== 'probar' || p.id !== c.id) { g.descartar(); return; }
+    g.conv = c.id; p.grabacion = g; pintarPrueba(d);
   };
   $('#psim').onclick = async () => { p.verSim = !p.verSim; if (p.verSim) p.versiones = await api('/panel/instrucciones').catch(() => null); pintarPrueba(d); };
   $('#pmovil').onclick = () => { p.movil = !p.movil; $('#p2').classList.toggle('movil', p.movil); pintarPrueba(d); };
@@ -2321,13 +2461,25 @@ function pintarAnalisis(d, escribiendo) {
 
 function alertaP(texto) { $('#pm')?.insertAdjacentHTML('beforeend', `<div class="burbuja b-sistema error" role="alert">${esc(texto)}</div>`); }
 
+/** Descarga un archivo del servidor (exportaciones, vídeos y documentos de un chat). Los fallos se avisan abajo. */
+const EXT_DESCARGA = { 'application/pdf': 'pdf', 'video/mp4': 'mp4', 'video/3gpp': '3gp', 'video/quicktime': 'mov', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'image/jpeg': 'jpg' };
 async function descargar(ruta, nombre) {
-  const cabecera = integrado ? { 'x-metrotools-client': 'zapp' } : { authorization: 'Bearer ' + token };
-  const r = await fetch((integrado ? './api' : '/admin') + ruta, { headers: cabecera, cache: 'no-store' });
-  if (!r.ok) return alertaP('No se ha podido exportar.');
-  const url = URL.createObjectURL(await r.blob());
-  const a = Object.assign(document.createElement('a'), { href: url, download: nombre });
-  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  ocupado(1);
+  try {
+    const r = await peticion(ruta, { cache: 'no-store' });
+    if (!r.ok) {
+      const j = r.headers.get('content-type')?.includes('application/json') ? await r.json().catch(() => ({})) : {};
+      throw new Error(j.error || 'No se ha podido descargar el archivo. Inténtalo otra vez.');
+    }
+    const blob = await r.blob();
+    // Sin extensión (vídeos y documentos de un chat), se pone la de su tipo
+    if (!/\.[a-z0-9]{2,5}$/i.test(nombre)) { const t = blob.type.split(';')[0]; nombre += '.' + (EXT_DESCARGA[t] || (t.split('/')[1] || '').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin'); }
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href: url, download: nombre });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (e) {
+    if (!/sesión de MetroTools|Clave incorrecta/.test(e.message)) avisar(e.message);
+  } finally { ocupado(-1); }
 }
 
 // ---------- Ajustes (con controles como los de Zapp) y registro de actividad ----------
