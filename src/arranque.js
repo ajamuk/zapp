@@ -5,7 +5,8 @@
  *  - chats que Sofía estaba contestando → vuelven a la cola (contesta en cuanto arranque);
  *  - seguimientos que se estaban enviando → error (mejor perder uno que mandarlo dos veces; sale en las alertas);
  *  - reportes a medio analizar → error, con botón «Volver a analizar» en el panel;
- *  - avisos de GHL a medio procesar → vuelven a la cola de avisos (avisos-ghl.js) y se procesan enseguida.
+ *  - avisos de GHL a medio procesar → vuelven a la cola de avisos (avisos-ghl.js) y se procesan enseguida;
+ *  - primeros WhatsApp de solicitudes web a medio enviar → «incierta», con alerta para comprobarlos (formularios.js).
  */
 export function recuperar(db, ahora = new Date()) {
   // Solo vuelven a la cola si de ese turno no había salido nada: con una burbuja ya enviada, repetir el turno
@@ -27,7 +28,10 @@ export function recuperar(db, ahora = new Date()) {
   const pasadas = db.prepare("UPDATE bateria_pasadas SET estado = 'error', error = 'interrumpida por un reinicio del servicio', terminado_at = datetime('now') WHERE estado = 'en_curso'").run().changes;
   // Procesarlos otra vez no duplica sus mensajes (se registran por su id de GHL); perderlos sí perdía mensajes
   const avisos = db.prepare("UPDATE ghl_avisos SET estado = 'pendiente', proximo_ms = ? WHERE estado = 'procesando'").run(ahora.getTime()).changes;
-  return { chats, seguimientos, reportes, ...(pasadas ? { pasadas } : {}), ...(avisos ? { avisos } : {}) };
+  // Primer WhatsApp de una solicitud web que se estaba enviando: no se sabe si salió. No se repite (mejor comprobarlo
+  // en Nexor que mandarlo dos veces): pasa a «incierta», como un envío que falla, y quien arranca abre su alerta.
+  const solicitudes = db.prepare("UPDATE solicitudes_web SET estado = 'incierta' WHERE estado = 'enviando' RETURNING id").all().map((r) => r.id);
+  return { chats, seguimientos, reportes, ...(pasadas ? { pasadas } : {}), ...(avisos ? { avisos } : {}), ...(solicitudes.length ? { solicitudes } : {}) };
 }
 
 /**

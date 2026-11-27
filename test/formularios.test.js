@@ -132,3 +132,19 @@ test('la cita de Nexor pasa la sede, la actividad y la hora sin disparar un What
   assert.equal(saved.estado, 'sin_permiso');
   assert.equal(salientes.length, 1); // Solo el formulario web de la otra persona de prueba.
 });
+
+test('reinicio a mitad de envío: la solicitud queda «incierta» (no se repite) y se devuelve para abrir su alerta', async () => {
+  const { openDb, repo: crearRepo } = await import('../src/db.js');
+  const { recuperar } = await import('../src/arranque.js');
+  const repo = crearRepo(openDb(':memory:'));
+  const meter = repo.db.prepare(`INSERT INTO solicitudes_web (id, contacto, formulario, fecha, telefono_hash, sede, servicio, asunto, estado)
+    VALUES (?, 'k1', 'f1', 1, 'h', 'getafe', NULL, 'entrenar en Getafe', ?)`);
+  meter.run('s-enviando', 'enviando');
+  meter.run('s-aceptada', 'aceptada');
+  const r = recuperar(repo.db, new Date());
+  assert.deepEqual(r.solicitudes, ['s-enviando']);
+  const estado = (id) => repo.db.prepare('SELECT estado FROM solicitudes_web WHERE id = ?').get(id).estado;
+  assert.equal(estado('s-enviando'), 'incierta');
+  assert.equal(estado('s-aceptada'), 'aceptada');
+  assert.equal(recuperar(repo.db, new Date()).solicitudes, undefined, 'sin nada a medias no devuelve nada');
+});
