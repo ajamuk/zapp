@@ -10,6 +10,14 @@ Eventos usados: `CLIENT_CREATED`, `CLIENT_DEACTIVATED`, `CLIENT_REACTIVATED`, `M
 
 - URL por sede: `https://setter.crossfitmpo.com/webhooks/aimharder/<parla|getafe|las_rosas>?token=<AIMHARDER_WEBHOOK_TOKEN>`.
   AimHarder no firma los avisos (solo los cifra), así que el token de la URL es lo que impide que nadie los falsifique.
+- **El token no debe quedar en los registros de nginx.** El formato normal del access log guarda la URL entera,
+  con `?token=…`. En el repositorio, la ruta del webhook ya registra sin esa parte (`log_format zapp_sin_query` en
+  `deploy/nginx-setter.conf`; `sofia_sin_query` en `deploy/vps-propio/nginx-cliente.conf`, que va en el bloque http).
+  **El nginx de producción no se actualiza solo con el despliegue:** hay que copiar el cambio a mano
+  (`nginx -t && systemctl reload nginx`) y, después, **rotar el token** (los registros antiguos ya lo tienen):
+  nuevo `AIMHARDER_WEBHOOK_TOKEN` en el `.env`, reiniciar el servicio y cambiar la URL en AimHarder en cada sede.
+  El error log de nginx también copia la URL completa cuando falla la conexión con Sofía: limita quién lo lee y
+  bórralo tras rotar.
 - Cifrado en sobre: AES-256-GCM, con la clave AES cifrada con la clave pública RSA de la sede (OAEP **SHA-1**).
   Cada sede tiene su propio par de claves; Sofía guarda solo la privada.
 - **Primero se guarda, luego se contesta.** El evento descifrado se guarda en la cola (`aimharder_eventos`, estado

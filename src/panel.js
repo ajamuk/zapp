@@ -459,10 +459,12 @@ export function consumo(db, { meses = 6, dias = 31, eurPorUsd = Number(process.e
 }
 
 // ---------- Exportar ----------
-// Un nombre o un mensaje de un lead que empiece por = + - @ se abriría en Excel como fórmula: se le antepone un
-// apóstrofo para que quede como texto (los teléfonos y los números negativos se dejan como están).
-const sinFormula = (t) => (/^[=+\-@\t]/.test(t) && !/^[+-]?[\d\s.,]+$/.test(t) ? `'${t}` : t);
-const celda = (v) => { const t = sinFormula(v == null ? '' : String(v).replace(/\r?\n/g, ' ')); return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+// Un nombre o un mensaje de un lead que empiece por = + - @ (también tras espacios o caracteres de control) se
+// abriría en Excel como fórmula: se le antepone un apóstrofo para que quede como texto (los teléfonos y los números
+// negativos se dejan como están). Todo salto de línea (también un \r suelto, que Excel lee como fila nueva) va
+// como espacio: así nadie cuela una fila que empiece por «=».
+const sinFormula = (t) => (/^(?:\t|[\s\p{Cc}]*[=+\-@])/u.test(t) && !/^[+-]?[\d\s.,]+$/.test(t) ? `'${t}` : t);
+const celda = (v) => { const t = sinFormula(v == null ? '' : String(v).replace(/\r\n|[\r\n\u2028\u2029]/g, ' ')); return /[;"]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
 const csv = (cab, filas) => `\uFEFF${[cab, ...filas].map((f) => f.map(celda).join(';')).join('\r\n')}\r\n`; // BOM + «;» para que Excel en español lo abra bien
 
 /** CSV de los chats que cumplen los criterios: uno por fila, o todos sus mensajes (formato «mensajes»). */

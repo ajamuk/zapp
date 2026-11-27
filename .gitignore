@@ -1,6 +1,19 @@
 node_modules/
 .env
+# Variantes del .env (producción, copias…): solo el ejemplo va al repositorio
+.env.*
+!.env.example
 data/
 *.log
 .DS_Store
 simulador/simulador.html
+# Bases de datos, copias y claves que puedan quedar fuera de data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+# Materiales internos de la marca
+/marca/

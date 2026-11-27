@@ -41,14 +41,14 @@ y al revés. Por eso **esa topología no se admite**:
 conversaciones y las etiquetas son nuevos y no hay nada que compartir. Compartir subcuenta con otra línea no es una
 configuración válida para `MODE=live`.
 
-## El número de Sofía es el que ya tenía la subcuenta (+34 604 84 08 58)
+## El número de Sofía es el que ya tenía la subcuenta
 
 Confirmado el 23 nov 2026: el número propio es el WhatsApp que ya está conectado en la subcuenta de GHL, y es el
 **único** número de esa subcuenta (WhatsApp → Numbers: 1). Los 86 mensajes revisados por API llevan ese número en
 `to` (entrantes) y `from` (salientes). No hay otra línea con la que compartir conversación, así que:
 
 ```sh
-SOFIA_WA_NUMERO=+34604840858
+SOFIA_WA_NUMERO=+34600000099   # número de ejemplo: el real va solo en el .env del servidor
 SOFIA_WA_LOCATION_ID=<el mismo id que GHL_LOCATION_ID>
 SOFIA_WA_ADOPTAR_CHATS=true     # los chats que ya había son de este mismo número
 SOFIA_WA_PLANTILLAS=true        # el workflow «Sofía · enviar plantilla» envía desde este número

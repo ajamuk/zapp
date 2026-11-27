@@ -180,11 +180,11 @@ test('plantillas: catálogo con validación y variables', () => {
 
 test('plantillas: el cuerpo que se manda a GHL (formato de la bandeja, número propio)', async () => {
   const peticiones = [];
-  const ghl = new Ghl({ token: 't', baseUrl: 'https://ghl.test', aislamiento: { modo: 'activo', numero: '+34604840858' }, fetchImpl: async (url, o) => { peticiones.push({ url, body: JSON.parse(o.body) }); return new Response(JSON.stringify({ messageId: 'm1' }), { status: 200 }); } });
+  const ghl = new Ghl({ token: 't', baseUrl: 'https://ghl.test', aislamiento: { modo: 'activo', numero: '+34600000099' }, fetchImpl: async (url, o) => { peticiones.push({ url, body: JSON.parse(o.body) }); return new Response(JSON.stringify({ messageId: 'm1' }), { status: 200 }); } });
   const r = await ghl.enviarPlantillaWa({ contactId: 'k1', nombre: 'sofia_seguimiento_v1', idioma: 'es', categoria: 'MARKETING', variables: ['ana'], texto: 'hola ana' });
   assert.equal(r.messageId, 'm1');
   assert.equal(peticiones[0].url, 'https://ghl.test/conversations/messages');
-  assert.deepEqual(peticiones[0].body, { type: 'WhatsApp', contactId: 'k1', message: 'hola ana', fromNumber: '+34604840858',
+  assert.deepEqual(peticiones[0].body, { type: 'WhatsApp', contactId: 'k1', message: 'hola ana', fromNumber: '+34600000099',
     whatsapp: { type: 'template', template: { name: 'sofia_seguimiento_v1', lang: 'es', category: 'MARKETING' }, placeholders: { header: [], body: ['ana'], buttons: [] } } });
 });
 

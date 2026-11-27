@@ -36,6 +36,13 @@ export class GhlCaptura {
   async getContact() { return { contact: {} }; }
 }
 
+/**
+ * Lector de JSON para las subidas en base64 (hasta 36 MB). Va en cada ruta de subida, detrás de la clave; el
+ * lector general (1 MB) se salta estas rutas (`esRutaDeSubida`) para no leer el cuerpo antes de comprobarla.
+ */
+export const jsonSubidas = express.json({ limit: '36mb' });
+export const esRutaDeSubida = (ruta) => /^\/(?:admin|metrotools\/api)\/(?:probar\/conversaciones\/[^/]+|panel\/recursos|panel\/conversaciones\/[^/]+)\/adjunto\/?$/i.test(String(ruta || ''));
+
 export const rutaPruebas = () => process.env.PRUEBAS_DB_PATH || (config.dbPath === ':memory:' ? ':memory:' : path.join(path.dirname(config.dbPath), 'pruebas.db'));
 
 /**
@@ -118,16 +125,28 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
 
   const sinModelo = (res) => (!config.ai.apiKey && !complete ? res.status(503).json({ error: 'Falta configurar la clave de Anthropic en el VPS.' }) : null);
 
-  /** Ejecuta una acción del modelo sobre un chat de prueba, sin solapes y guardando los efectos. */
-  async function turno(req, res, accion) {
+  /**
+   * Ejecuta una acción del modelo sobre un chat de prueba, sin solapes y guardando los efectos. `preparar` (p. ej.
+   * guardar y transcribir un archivo) va después de comprobar el chat y con el chat ya reservado; si falla, 400.
+   */
+  async function turno(req, res, accion, { preparar } = {}) {
     const c = pruebas().getConv(req.params.id);
     if (!c) return res.status(404).json({ error: 'Esa prueba ya no existe.' });
     if (sinModelo(res)) return;
     if (enCurso.has(c.id)) return res.status(409).json({ error: 'Sofía todavía está respondiendo.' });
     enCurso.add(c.id);
+    let previo;
+    if (preparar) {
+      try { previo = await preparar(); } catch (e) {
+        enCurso.delete(c.id);
+        // Un fallo del disco (ENOSPC, EACCES…) lleva rutas del servidor: se registra y sale un mensaje corto
+        if (/^E[A-Z]/.test(String(e?.code || ''))) { console.error('Probar IA, subida:', e.message); return res.status(500).json({ error: 'Ha habido un error interno. Inténtalo otra vez.' }); }
+        return res.status(400).json({ error: e.message });
+      }
+    }
     const sb = sandbox(c);
     try {
-      const out = await accion(c, sb);
+      const out = await accion(c, sb, previo);
       const ia = new Set(out?.mensajes || []);
       sistema(c.id, sb.ghl.salida.filter((x) => !ia.has(x)));
       if (out?.nota) sistema(c.id, [out.nota]);
@@ -200,11 +219,10 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
   });
 
   // Audio o imagen como si lo mandara el lead. Body: { datos (base64), mime, nombre, texto? }
-  r.post('/conversaciones/:id/adjunto', async (req, res) => {
-    let subida;
-    try { subida = await procesarSubida(req.body || {}, opciones.medios); } catch (e) { return res.status(400).json({ error: e.message }); }
+  // El archivo se guarda y se transcribe solo si la prueba existe, hay modelo y Sofía no está respondiendo ya.
+  r.post('/conversaciones/:id/adjunto', jsonSubidas, async (req, res) => {
     const texto = typeof req.body?.texto === 'string' ? req.body.texto.trim() : '';
-    return turno(req, res, async (c, { setter }) => {
+    return turno(req, res, async (c, { setter }, subida) => {
       const r1 = await setter.onInbound({ conversationId: c.id, contactId: c.id, canal: c.channel, texto, nombre: c.nombre, telefono: c.telefono, messageId: crypto.randomUUID(), adjuntos: [], subida });
       if (subida.adjunto === 'audio') sistema(c.id, [subida.transcripcion ? `Transcripción: «${subida.transcripcion}»` : `No se ha podido transcribir el audio${subida.media_error ? ` (${subida.media_error})` : ''}.`]);
       if (r1?.socio) return { nota: 'Detectado como socio (teléfono en AimHarder): Sofía no contesta y avisa al equipo.' };
@@ -212,7 +230,7 @@ export function routerProbar({ repo, pruebas: pruebasInicial, complete, ...opcio
       if (conv.ai_paused || conv.derivado) return { nota: `Sofía no contesta: ${conv.pause_reason || 'IA pausada en este chat'}.` };
       pruebas().updateConv(c.id, { respond_at: null });
       return setter.responder(c.id);
-    });
+    }, { preparar: () => procesarSubida(req.body || {}, opciones.medios) });
   });
 
   r.get('/conversaciones/:id/media/:msg', (req, res) => {
@@ -394,11 +412,12 @@ export function exportar(d, conAnalisis = true) {
 
 /** Envía un audio o imagen guardado (solo dentro de la carpeta de medios). */
 const TIPOS_VISIBLES = /^(image\/(jpeg|png|webp|gif|heic)|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/pdf)$/;
-export function enviarMedio(res, m, base = carpetaMedios()) {
+// `cache`: privada en el panel; /r/ (público, lo descargan GHL y Meta) pasa la suya. Solo se pone si hay archivo.
+export function enviarMedio(res, m, base = carpetaMedios(), { cache = 'private, max-age=3600' } = {}) {
   if (!m?.media_ruta) return res.status(404).json({ error: 'Sin archivo.' });
   const abs = path.resolve(base, m.media_ruta);
   if (!abs.startsWith(path.resolve(base) + path.sep) || !fs.existsSync(abs)) return res.status(404).json({ error: 'El archivo ya no está.' });
-  res.set('Cache-Control', 'private, max-age=3600');
+  res.set('Cache-Control', cache);
   // Lo que manda un lead puede venir con cualquier tipo: solo se muestran en el navegador imágenes, audio, vídeo y
   // PDF. Lo demás (HTML, SVG…) se entrega como descarga, para que nunca se ejecute con la sesión del panel.
   const mime = String(m.media_mime || '').toLowerCase();
