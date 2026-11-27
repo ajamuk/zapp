@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede, normalizarModalidad, pagoCanaveral, textoFestivos } from './knowledge.js';
+import { knowledge, consultarHorarios, consultarTarifas, calcularPrimerRecibo, ofertaCanaveral, normalizarSede, normalizarModalidad, pagoCanaveral, textoFestivos, SEDE_NOMBRE } from './knowledge.js';
 import { validarDatos } from './aimharder/alta-navegador.js';
 import { plazasCanaveral } from './canaveral.js';
 import { runTurn, systemBlocks } from './llm.js';
@@ -16,6 +16,7 @@ import { textosActivos, versionesActivas } from './documentos.js';
 import * as recursos from './recursos.js';
 import * as archivos from './archivos.js';
 import * as plantillasWa from './plantillas.js';
+import { contextoSolicitud } from './formularios.js';
 import * as primerContacto from './primer-contacto.js';
 import * as vozReal from './voz.js';
 import { textoAviso, avisadoEnEsteCierre, TIPO_AVISO } from './fuera-horario.js';
@@ -55,7 +56,6 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Herramientas que cambian algo fuera del chat y no se deben repetir ni dar por no hechas
 const NO_REPETIBLES = ['preparar_alta', 'reservar_prueba_parla', 'derivar_a_equipo', 'pregunta_sin_respuesta'];
 const MOTIVOS_DERIVAR = ['salud', 'gestion_socio', 'cobro', 'llamada', 'visita', 'no_documentado', 'otro'];
-const SEDE_NOMBRE = Object.fromEntries(config.negocio.sedes.map((s) => [s.id, s.nombre])); // config/negocio.json
 // Zona horaria del negocio tal como se le dice a Sofía («hora de Madrid» con Europe/Madrid)
 const ZONA_TXT = `hora de ${String(config.tz).split('/').pop().replace(/_/g, ' ')}`;
 
@@ -764,6 +764,7 @@ export class Setter {
       this.notaVoz(conv),
       conv.retomar ? (() => { const r = JSON.parse(conv.retomar); return `- El lead dijo que lo dejaba para más adelante (${r.motivo || 'sin motivo'}); hay que retomarlo el ${r.fecha}. Si vuelve a aplazarlo, indica la nueva fecha en \`retomar\`.`; })() : '',
       primerContacto.contextoIA(conv),
+      contextoSolicitud(this.repo.db, conv, this.now()),
       this.etiquetas?.contextoIA(conv.id) || '',
       recursos.contextoIA(this.catalogo),
       extra,

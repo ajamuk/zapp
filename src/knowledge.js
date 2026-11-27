@@ -222,3 +222,5 @@ export function calcularPrimerRecibo({ sede, tarifa, fecha_inicio, plazas_ocupad
 export function esFestivo(sede, fechaIso) {
   return festivosDeSede(normalizarSede(sede)).some((x) => x.fecha === fechaIso);
 }
+
+export const SEDE_NOMBRE = Object.fromEntries(config.negocio.sedes.map(({ id, nombre }) => [id, nombre]));

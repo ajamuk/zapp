@@ -72,6 +72,13 @@ export const config = {
   tz: env('BUSINESS_TZ', 'Europe/Madrid'),
   ghlWebhookEnabled: env('GHL_WEBHOOK_ENABLED', 'true') === 'true',
   webhookSecret: env('WEBHOOK_SECRET'),
+  formularios: {
+    desde: env('SOFIA_FORMULARIOS_DESDE'),
+    ids: env('SOFIA_FORMULARIOS_IDS').split(',').map((id) => id.trim()).filter(Boolean),
+    campoServicio: env('SOFIA_FORMULARIOS_CAMPO_SERVICIO'),
+    campoAsunto: env('SOFIA_FORMULARIOS_CAMPO_ASUNTO'),
+    plantilla: env('SOFIA_FORMULARIOS_PLANTILLA'),
+  },
   // Teléfonos del equipo para probar: Sofía los trata como lead aunque sean socios y les contesta de verdad
   // también en modo shadow (separados por comas)
   telefonosPrueba: env('TEST_PHONES').split(',').map((x) => x.trim()).filter(Boolean),
