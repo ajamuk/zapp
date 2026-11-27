@@ -103,6 +103,20 @@ test('el modelo decide; si falla, decide el respaldo', async () => {
   assert.equal((await pideInformacion('jaja', { complete: caido })).ok, false);
 });
 
+test('el filtro va sin razonamiento en Haiku (con margen de tokens y tiempo límite corto); otros modelos, esfuerzo bajo', async () => {
+  const vistos = [];
+  const complete = async (req, opciones) => { vistos.push({ req, opciones }); return { stop_reason: 'end_turn', content: [{ type: 'text', text: '{"lead":true}' }] }; };
+  await pideInformacion('¿precio?', { complete, modelo: 'claude-haiku-5-5' });
+  const { req, opciones } = vistos[0];
+  assert.deepEqual(req.thinking, { type: 'disabled' });
+  assert.equal(req.output_config.effort, undefined);
+  assert.ok(req.max_tokens >= 1024);
+  assert.deepEqual(opciones, { timeout: 15000, maxRetries: 1 });
+  await pideInformacion('¿precio?', { complete, modelo: 'claude-sonnet-5-5' });
+  assert.equal(vistos[1].req.thinking, undefined, 'Sonnet 5.5 no admite apagar el razonamiento');
+  assert.equal(vistos[1].req.output_config.effort, 'low');
+});
+
 // ---------- Entrada ----------
 
 test('petición clara por Instagram a la cuenta propia: se abre el chat y Sofía contesta por Instagram', async () => {

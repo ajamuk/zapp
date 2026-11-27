@@ -73,7 +73,7 @@ test('primer contacto: sin Sofía queda en pausa; un número que ya tiene chat n
 });
 
 test('primer contacto: con el número propio aislado, el chat queda verificado; mal configurado no sale nada', async () => {
-  const aisl = estadoAislamiento({ numero: '+34604840858', locationId: 'loc1', locationCliente: 'loc1' });
+  const aisl = estadoAislamiento({ numero: '+34600000099', locationId: 'loc1', locationCliente: 'loc1' });
   assert.equal(aisl.modo, 'activo');
   const { repo, setter, plantilla } = montar({ aislamiento: aisl });
   const r = await setter.iniciarConversacion({ ...DATOS, plantilla });

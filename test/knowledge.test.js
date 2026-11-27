@@ -83,6 +83,12 @@ test('Parla cierra a las 13:30 en Nochebuena y Nochevieja: solo las clases que t
   assert.deepEqual(cierresAnticipados('parla', 'crossfit', { hoy: '2026-11-21', cierres: { parla: { '2026-11-23': { cierra: '13:30' } } } })[0].horas, ['07:00', '09:30', '10:30', '12:30']);
 });
 
+test('los días especiales de consultar_horarios se cuentan desde el «hoy» que se le pasa (reloj del setter, zona del negocio)', () => {
+  const fechas = (hoy) => (consultarHorarios({ sede: 'parla', modalidad: 'crossfit' }, { hoy }).dias_con_horario_especial || []).map((x) => x.fecha);
+  assert.ok(fechas('2026-12-24').includes('2026-12-24'), 'el mismo día todavía cuenta');
+  assert.ok(!fechas('2026-12-25').includes('2026-12-24'), 'al día siguiente ya no');
+});
+
 test('El Cañaveral: mientras el pago no esté habilitado, no se le dice al lead que pague ya', () => {
   assert.match(pagoCanaveral(), /TODAVÍA NO ESTÁ HABILITADO/);
   assert.equal(calcularPrimerRecibo({ sede: 'el_canaveral', tarifa: 'M', fecha_inicio: '2027-02-01' }).pago_habilitado, false);

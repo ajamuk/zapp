@@ -206,25 +206,56 @@ export function dosPreguntas(mensajes) {
 
 /** Herramientas cuyo resultado tiene que ver Sofía antes de contestar (no se aceptan en el mismo paso que `responder`). */
 export const ESPERAR_RESULTADO = ['preparar_alta', 'reservar_prueba_parla', 'calcular_primer_recibo', 'consultar_horarios', 'consultar_tarifas'];
+// De estas, las que hacen algo de verdad: su resultado se espera siempre, aunque ya se le haya pedido esperar dos veces
+const ESPERAR_SIEMPRE = ['preparar_alta', 'reservar_prueba_parla'];
 
 /** Respaldo en el servidor si el modelo se niega. Haiku no lo tiene: con él se llama sin `fallbacks`. */
 export const opcionesRespaldo = (modelo) => (/haiku/.test(modelo) ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' });
 
+const BLOQUES_CACHEABLES = new Set(['text', 'image', 'document', 'tool_use', 'tool_result']);
+
+/**
+ * Copia de `messages` con un punto de caché (5 min) en el último bloque del último mensaje: los pasos siguientes del
+ * mismo turno (herramientas, correcciones) leen el historial de la caché en vez de pagarlo entero otra vez. No toca
+ * el original, así que nunca se acumulan marcas (la API admite 4 por petición; el sistema ya lleva una de 1 h).
+ */
+export function conCache(messages = []) {
+  if (!messages.length) return messages;
+  const ultimo = messages.at(-1);
+  const bloques = typeof ultimo.content === 'string' ? [{ type: 'text', text: ultimo.content }] : Array.isArray(ultimo.content) ? ultimo.content : null;
+  if (!bloques?.length || !BLOQUES_CACHEABLES.has(bloques.at(-1).type)) return messages;
+  const content = [...bloques.slice(0, -1), { ...bloques.at(-1), cache_control: { type: 'ephemeral' } }];
+  return [...messages.slice(0, -1), { ...ultimo, content }];
+}
+
+/** Error de un turno anulado por el tope de tiempo (`control.cancelado`): no se ejecuta nada más. */
+const turnoAnulado = () => Object.assign(new Error('turno anulado: ha pasado el tope de tiempo'), { cancelado: true, noReintentar: true });
+
 /**
  * Ejecuta un turno: llama al modelo, resuelve herramientas y devuelve la entrada de `responder`.
- * `complete` se puede sustituir en tests.
+ * `complete` se puede sustituir en tests. `control.cancelado` (el tope de setter.atender) corta el turno antes del
+ * siguiente paso o herramienta: un turno abandonado no sigue haciendo gestiones mientras corre su reintento.
  */
-export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta, modelo = config.ai.model, effort = config.ai.effort }) {
+export async function runTurn({ system, messages, ejecutarHerramienta, complete, maxPasos = 6, onUsage, onHerramienta, modelo = config.ai.model, effort = config.ai.effort, control = null }) {
   // Sonnet 5.5 no admite forzar herramienta (tool_choice any/tool → 400): se pide en modo auto y, si contesta
   // en texto sin llamar a `responder`, se le recuerda una vez. Si el modelo se niega por seguridad, la API
   // reintenta con su modelo de respaldo (fallbacks "default").
   // Tiempo límite de 60 s por llamada (el SDK reintenta 2 veces los fallos de red, 429 y 5xx): una respuesta
   // normal tarda 4-8 s, y sin límite una llamada colgada bloquearía el chat hasta 10 minutos.
   const respaldo = opcionesRespaldo(modelo);
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, ...respaldo }, { timeout: 60000, maxRetries: 2 }));
+  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, messages: conCache(req.messages), ...respaldo }, { timeout: 60000, maxRetries: 2 }));
   const conv = [...messages];
+  const vigente = () => { if (control?.cancelado) throw turnoAnulado(); };
+  const ejecutar = async (u) => {
+    vigente();
+    let out;
+    try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
+    onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
+    return out;
+  };
   let recordatorios = 0; let correcciones = 0; let esperas = 0;
   for (let paso = 0; paso < maxPasos; paso++) {
+    vigente();
     const t0 = Date.now();
     const res = await llamar({
       model: modelo,
@@ -237,35 +268,28 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     });
     // Una fila por intento facturable (modelo real, caché por duración, coste ya calculado)
     for (const f of usosDe(res, modelo)) onUsage?.(f, Date.now() - t0);
-    if (res.stop_reason === 'refusal') throw new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`);
+    // Negativa (ya después del modelo de respaldo): repetir la misma petición daría lo mismo, no se reintenta
+    if (res.stop_reason === 'refusal') throw Object.assign(new Error(`El modelo se ha negado a responder (${res.stop_details?.category || 'sin categoría'})`), { rechazo: true, noReintentar: true });
     if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó por longitud'); // una herramienta a medias no se ejecuta
+    vigente(); // el tope saltó mientras pensaba: ni se ejecuta ni se devuelve nada
     const usos = (res.content || []).filter((b) => b.type === 'tool_use');
     const final = usos.find((u) => u.name === 'responder');
     if (final?.input) final.input = { ...final.input, mensajes: comoLista(final.input.mensajes) };
-    // Comprobación fija antes de enviar: si falla, se le devuelve al modelo una vez para que lo corrija
-    const pega = final && usos.length === 1 && correcciones < 1 ? revisarRespuesta(final.input) : null;
-    if (pega) {
-      correcciones++;
-      conv.push({ role: 'assistant', content: res.content });
-      conv.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: final.id, content: pega, is_error: true }] });
-      continue;
-    }
     // `responder` a la vez que una herramienta cuyo resultado necesita (el alta, la reserva, horarios, precios): lo
     // habría escrito sin verlo («ya está tu alta en marcha»). Se ejecuta la herramienta y se le pide contestar después.
-    const prisa = final && esperas < 2 && usos.filter((u) => ESPERAR_RESULTADO.includes(u.name));
-    if (prisa?.length) {
-      esperas++;
+    // Las consultas se esperan dos veces como mucho; el alta y la reserva, siempre (lo limita maxPasos).
+    const prisa = final ? usos.filter((u) => ESPERAR_RESULTADO.includes(u.name) && (esperas < 2 || ESPERAR_SIEMPRE.includes(u.name))) : [];
+    // Comprobación fija antes de enviar: si falla, se le devuelve al modelo una vez para que lo corrija. Las demás
+    // herramientas de ese paso se ejecutan y reciben su resultado (toda llamada necesita el suyo).
+    const pega = final && !prisa.length && correcciones < 1 ? revisarRespuesta(final.input) : null;
+    if (pega || prisa.length) {
+      if (pega) correcciones++; else esperas++;
+      const aviso = pega || `No enviado: has contestado antes de ver el resultado de ${prisa.map((x) => `\`${x.name}\``).join(', ')}. Mira el resultado y vuelve a llamar a \`responder\` una sola vez, con lo que ha pasado de verdad.`;
       conv.push({ role: 'assistant', content: res.content });
       const resultados = [];
       for (const u of usos) {
-        if (u === final || u.name === 'responder') {
-          resultados.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: `No enviado: has contestado antes de ver el resultado de ${prisa.map((x) => `\`${x.name}\``).join(', ')}. Mira el resultado y vuelve a llamar a \`responder\` una sola vez, con lo que ha pasado de verdad.` });
-          continue;
-        }
-        let out;
-        try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
-        onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
-        resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
+        if (u.name === 'responder') resultados.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: aviso });
+        else resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(await ejecutar(u)) });
       }
       conv.push({ role: 'user', content: resultados });
       continue;
@@ -273,12 +297,8 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     if (final) {
       // Si junto a `responder` pidió otras herramientas (derivar, reservar, enviar un archivo…), se ejecutan también:
       // si no, el lead leería «te paso con el equipo» sin que el chat se derive de verdad.
-      for (const u of usos.filter((x) => x !== final && x.name !== 'responder')) {
-        let out;
-        try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
-        onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
-      }
-      return { respuesta: final.input, herramientas: conv.length - messages.length };
+      for (const u of usos.filter((x) => x.name !== 'responder')) await ejecutar(u);
+      return { respuesta: final.input };
     }
     if (!usos.length) {
       if (recordatorios++ >= 1) throw new Error('El modelo no usó la herramienta responder');
@@ -288,12 +308,7 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
     }
     conv.push({ role: 'assistant', content: res.content });
     const resultados = [];
-    for (const u of usos) {
-      let out;
-      try { out = await ejecutarHerramienta(u.name, u.input); } catch (e) { out = { ok: false, error: e.message }; }
-      onHerramienta?.({ nombre: u.name, entrada: u.input, resultado: out });
-      resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(out) });
-    }
+    for (const u of usos) resultados.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(await ejecutar(u)) });
     conv.push({ role: 'user', content: resultados });
   }
   throw new Error('Demasiados pasos de herramientas sin respuesta final');
@@ -301,15 +316,17 @@ export async function runTurn({ system, messages, ejecutarHerramienta, complete,
 
 /**
  * Llamada que devuelve un objeto JSON con el esquema dado (structured outputs). Se usa para el optimizador de
- * reportes, que no habla con leads. `complete` se puede sustituir en tests.
+ * reportes, que no habla con leads. `complete` se puede sustituir en tests (recibe la petición y { timeout, maxRetries }).
+ * `thinking` y `effort` son opcionales (p. ej. el filtro de Instagram, que es un sí/no, va sin razonamiento).
  */
-export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000, onUsage }) {
-  const llamar = complete || ((req) => getClient().beta.messages.create({ ...req, ...opcionesRespaldo(modelo) }, { timeout: 240000, maxRetries: 1 }));
+export async function pedirJSON({ system, contenido, schema, modelo = config.ai.modeloOptimizador, complete, maxTokens = 16000, onUsage, thinking = null, effort = null, timeout = 240000, maxRetries = 1 }) {
+  const llamar = complete || ((req, opciones) => getClient().beta.messages.create({ ...req, ...opcionesRespaldo(modelo) }, opciones));
   const res = await llamar({
     model: modelo, max_tokens: maxTokens, system,
     messages: [{ role: 'user', content: contenido }],
-    output_config: { format: { type: 'json_schema', schema } },
-  });
+    output_config: { format: { type: 'json_schema', schema }, ...(effort ? { effort } : {}) },
+    ...(thinking ? { thinking } : {}),
+  }, { timeout, maxRetries });
   for (const f of usosDe(res, modelo)) onUsage?.(f);
   if (res.stop_reason === 'refusal') throw new Error('El modelo se ha negado a analizarlo');
   if (res.stop_reason === 'max_tokens') throw new Error('La respuesta del modelo se cortó');

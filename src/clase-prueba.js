@@ -12,8 +12,6 @@ import Database from 'better-sqlite3';
 import { config } from './config.js';
 import { horaMadrid } from './followups.js';
 
-export const SEDES_RESERVA = ['parla'];
-
 /** Nombre de la clase en AimHarder para cada modalidad de prueba. */
 const CLASE = { academy: /academy/i, crossfit: /^\s*crossfit\s*$/i, hyrox: /hyrox/i };
 
@@ -103,7 +101,10 @@ export async function reservarEnAimHarder(api, { modalidad, fecha, hora, nombre_
     booking_notes: notas || 'Clase de prueba reservada por Sofía (WhatsApp/Instagram)' };
   try {
     const r = await api.reservarInvitado(datos);
-    return { estado: 'reservada', schedule_id: sesion.schedule_id, booking_id: idDe(r), detalle: `Reservada en AimHarder (sesión ${sesion.schedule_id}).` };
+    // Sin número de reserva no consta como hecha (y no se podría anular ni seguir): la termina el equipo
+    const id = idDe(r);
+    if (!/^\d+$/.test(id || '')) return { estado: 'fallida', schedule_id: sesion.schedule_id, detalle: 'AimHarder respondió sin número de reserva: comprobar en AimHarder si quedó hecha antes de reservarla a mano.' };
+    return { estado: 'reservada', schedule_id: sesion.schedule_id, booking_id: id, detalle: `Reservada en AimHarder (sesión ${sesion.schedule_id}).` };
   } catch (e) {
     return { estado: 'fallida', schedule_id: sesion.schedule_id, detalle: e.message };
   }
@@ -119,22 +120,33 @@ export async function resultadoAimHarder(api, bookingId) {
   return 'sin_ausencia';
 }
 
+// Conexión de solo lectura a la base de metro-trial-ops: se abre una vez (antes, una por turno) y se vuelve a abrir
+// si el archivo cambia (otra ruta o lo han sustituido: otro inodo) o si una consulta falla.
+let trialOps = null;
+const cerrarTrialOps = () => { try { trialOps?.db.close(); } catch { /* ya cerrada */ } trialOps = null; };
+
 /**
  * Pruebas que sigue metro-trial-ops (calendarios de prueba de GHL) para ese contacto, solo lectura.
  * Devuelve la última { center, class_type, start_time, lifecycle, outcome } o null.
  */
 export function pruebaTrialOps(contactId, ruta = config.trialOps.db) {
-  if (!ruta || !contactId || !fs.existsSync(ruta)) return null;
-  let db;
+  if (!ruta || !contactId) return null;
+  let ino;
+  try { ino = fs.statSync(ruta).ino; } catch { cerrarTrialOps(); return null; }
   try {
-    db = new Database(ruta, { readonly: true, fileMustExist: true });
-    db.pragma('busy_timeout = 2000');
-    return db.prepare(`SELECT center, class_type, start_time, lifecycle, outcome, appointment_status FROM trials
-      WHERE contact_id = ? ORDER BY datetime(start_time) DESC LIMIT 1`).get(contactId) || null;
+    if (!trialOps || trialOps.ruta !== ruta || trialOps.ino !== ino) {
+      cerrarTrialOps();
+      const db = new Database(ruta, { readonly: true, fileMustExist: true });
+      db.pragma('busy_timeout = 2000');
+      trialOps = { ruta, ino, db, consulta: db.prepare(`SELECT center, class_type, start_time, lifecycle, outcome, appointment_status FROM trials
+        WHERE contact_id = ? ORDER BY datetime(start_time) DESC LIMIT 1`) };
+    }
+    return trialOps.consulta.get(contactId) || null;
   } catch (e) {
     console.warn('[metro-trial-ops]', e.message);
+    cerrarTrialOps();
     return null;
-  } finally { db?.close(); }
+  }
 }
 
 /** outcome/lifecycle de metro-trial-ops → resultado de aquí (null si aún no hay). */
@@ -157,7 +169,7 @@ export function describirTrialOps(t, ahora = new Date()) {
   const inicio = new Date(t.start_time);
   const r = resultadoTrialOps(t);
   const donde = `${t.center}, ${t.class_type}`;
-  const f = (o) => inicio.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', ...o });
+  const f = (o) => inicio.toLocaleString('es-ES', { timeZone: config.tz, ...o });
   if (Number.isFinite(inicio.getTime()) && inicio > ahora) {
     const cuando = f({ weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
     if (r === 'cancelada') return `Tenía una clase de prueba en el calendario (${donde}) para el ${cuando}, pero está anulada.`;
