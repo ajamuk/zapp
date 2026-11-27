@@ -79,6 +79,7 @@ export const config = {
     campoAsunto: env('SOFIA_FORMULARIOS_CAMPO_ASUNTO'),
     plantilla: env('SOFIA_FORMULARIOS_PLANTILLA'),
     recepcionSecret: env('SOFIA_RECEPCION_SECRET'),
+    pruebasSecret: env('SOFIA_PRUEBAS_SECRET'),
   },
   // Teléfonos del equipo para probar: Sofía los trata como lead aunque sean socios y les contesta de verdad
   // también en modo shadow (separados por comas)

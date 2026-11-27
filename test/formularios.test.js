@@ -31,6 +31,7 @@ function entorno({ dnd = false, incierto = false, abierto = false } = {}) {
   const ghl = {
     formularios: async () => ({ submissions: cartera, meta: { nextPage: null } }),
     getContact: async () => ({ contact: { id: 'contacto', locationId, phone: datos.phone, firstName: 'Prueba', dnd } }),
+    buscarContactoPorTelefono: async () => ({ id: 'contacto', locationId, phone: datos.phone, dnd }),
     buscarConversacion: async () => abierto ? { id: 'chat' } : null,
     mensajes: async () => [{ canal: 'whatsapp', fecha: createdAt }],
     req: async () => ({}),
@@ -88,4 +89,30 @@ test('recepción guarda una sola entrada durable y Meta valida subcuenta y formu
   assert.equal(revisar.meta({ locationId: 'otra', contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), false);
   assert.equal(revisar.meta({ locationId, contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), true);
   assert.equal(r.db.prepare('SELECT count(*) AS n FROM solicitudes_externas').get().n, 2);
+});
+
+test('un recordatorio válido y concurrente produce un solo envío, y uno incierto queda bloqueado', async () => {
+  const clave = '9f4d3ef5-228a-4316-ab93-f3d4509cbf47';
+  const datosAviso = {
+    recipientPhone: datos.phone, appointmentAt: '2026-11-27T14:30:00Z',
+    templateName: 'sofia_seguimiento_v1', templateLanguage: 'es_ES', bodyVariables: ['Tu clase de prueba en Parla'],
+  };
+  for (const caso of [{}, { incierto: true }, { dnd: true }]) {
+    const { r, revisar, salientes } = entorno(caso);
+    crear(r.db, { nombre: 'sofia_seguimiento_v1', idioma: 'es_ES', cuerpo: 'Recordatorio. {{1}}' });
+    assert.equal((await revisar.recordatorio({ ...datosAviso, appointmentAt: createdAt }, clave))[0], 400);
+    const resultados = await Promise.all([revisar.recordatorio(datosAviso, clave), revisar.recordatorio(datosAviso, clave)]);
+    assert.equal(salientes.length, caso.dnd ? 0 : 1);
+    const [status, recibo] = await revisar.recordatorio(datosAviso, clave);
+    if (caso.dnd) assert.equal(status, 422);
+    else if (caso.incierto) {
+      assert.equal(status, 409);
+      assert.equal(recibo.retryable, false);
+    } else {
+      assert.equal(status, 200);
+      assert.equal(recibo.messageId, 'mensaje');
+      assert.equal(recibo.messageText, 'Recordatorio. Tu clase de prueba en Parla');
+      assert.ok(resultados.some(([codigo]) => codigo === 200));
+    }
+  }
 });

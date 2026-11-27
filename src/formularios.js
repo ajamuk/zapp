@@ -190,6 +190,45 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
     return true;
   }
 
+  const getAviso = repo.db.prepare('SELECT resultado FROM avisos_prueba WHERE id = ?');
+  const reclamarAviso = repo.db.prepare('INSERT OR IGNORE INTO avisos_prueba (id, fecha) VALUES (?, ?)');
+  const guardarAviso = repo.db.prepare('UPDATE avisos_prueba SET resultado = ? WHERE id = ?');
+  const avisoIncierto = [409, { code: 'send_unconfirmed', detail: 'Comprobar el mensaje en Nexor antes de reenviar', retryable: false }];
+  const repetirAviso = (fila) => fila?.resultado ? [200, JSON.parse(fila.resultado)] : avisoIncierto;
+
+  async function recordatorio(d, clave) {
+    const id = String(clave || '');
+    const telefono = normalizarTelefono(d?.recipientPhone);
+    const fecha = Date.parse(d?.appointmentAt);
+    const variable = typeof d?.bodyVariables?.[0] === 'string' ? d.bodyVariables[0].trim() : '';
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id) || !telefono ||
+        !Number.isFinite(fecha) || fecha <= clock() || fecha > clock() + HORAS_24 || !variable || variable.length > 550 ||
+        d.templateName !== 'sofia_seguimiento_v1' || d.templateLanguage !== 'es_ES') {
+      return [400, { code: 'invalid_reminder', retryable: false }];
+    }
+    const existente = getAviso.get(id);
+    if (existente) return repetirAviso(existente);
+    const plantilla = repo.db.prepare('SELECT id FROM plantillas_wa WHERE nombre = ? AND activa = 1').get(d.templateName);
+    if (!plantilla) return [503, { code: 'template_not_approved', retryable: true }];
+    const contacto = await ghl.buscarContactoPorTelefono(telefono);
+    if (!contacto?.id || contacto.locationId !== locationId || normalizarTelefono(contacto.phone) !== telefono || contactoBloqueado(contacto)) {
+      return [422, { code: 'contact_not_available', detail: 'Revisar el contacto o el permiso de WhatsApp en Nexor', retryable: false }];
+    }
+    const { plantilla: modelo, variables, texto } = prepararEnvio(repo.db, plantilla.id, [variable]);
+    if (!reclamarAviso.run(id, clock()).changes) return repetirAviso(getAviso.get(id));
+    try {
+      const respuesta = await ghl.enviarPlantillaWa({
+        contactId: contacto.id, nombre: modelo.nombre, idioma: modelo.idioma, categoria: modelo.categoria, variables, texto,
+      });
+      if (!respuesta?.messageId) return avisoIncierto;
+      const resultado = { messageId: respuesta.messageId, conversationId: respuesta.conversationId || '', messageText: texto, provider: 'sofia' };
+      guardarAviso.run(JSON.stringify(resultado), id);
+      return [200, resultado];
+    } catch {
+      return avisoIncierto;
+    }
+  }
+
   function meta(payload) {
     const datos = payload.customData || payload.custom_data || {};
     const origen = datos.formulario_sofia;
@@ -250,5 +289,5 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
       catch { console.error(`[formularios] fallo de proceso para la solicitud ${solicitud.id}`); }
     }
   }
-  return Object.assign(revisar, { recepcion, meta });
+  return Object.assign(revisar, { recepcion, meta, recordatorio });
 }
