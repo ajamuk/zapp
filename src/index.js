@@ -108,7 +108,22 @@ for (const sede of SEDES) { try { const k = claveDeSede(config.aimharder.webhook
 const procesarEventosAimharder = crearProcesador({ repo, apis: clientesApi() });
 const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
   ? manejadorWebhook({ repo, claves: clavesWebhook, sedes: SEDES, despertar: () => procesarEventosAimharder() }) : null;
-const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook, avisos: avisosGhl });
+let formularios = null;
+if (config.formularios.desde) {
+  try {
+    formularios = procesadorFormularios({
+      setter, ajustes: config.formularios, locationId: config.ghl.locationId,
+      avisar: (id) => registrarAlerta(repo.db, { clave: `formulario-incierto-${id}`, tipo: 'servidor',
+        titulo: 'El primer WhatsApp de una solicitud web requiere comprobación',
+        detalle: `Solicitud ${id}. Verificar el mensaje en Nexor antes de reintentar.`, nivel: 'aviso' }),
+    });
+  } catch (e) {
+    registrarAlerta(repo.db, { clave: 'formularios-config', tipo: 'servidor',
+      titulo: 'La recepción de formularios web está desactivada', detalle: e.message, nivel: 'error' });
+  }
+}
+
+const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook, avisos: avisosGhl, formularios });
 if (config.ghlWebhookEnabled && !ghlConfigurado) registrarAlerta(repo.db, { clave: 'ghl-sin-configurar', tipo: 'ghl', titulo: 'Falta conectar GoHighLevel (GHL_TOKEN y GHL_LOCATION_ID)', detalle: 'Sin ellos Sofía no recibe ni envía mensajes. El panel y Probar IA funcionan.', nivel: 'aviso' });
 else resolverAlerta(repo.db, 'ghl-sin-configurar');
 const servidor = app.listen(config.port, config.host, () => {
@@ -160,20 +175,7 @@ if (config.ghlWebhookEnabled && ghlConfigurado) {
   cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
 }
 
-if (config.formularios.desde) {
-  try {
-    const revisar = procesadorFormularios({
-      setter, ajustes: config.formularios, locationId: config.ghl.locationId,
-      avisar: (id) => registrarAlerta(repo.db, { clave: `formulario-incierto-${id}`, tipo: 'servidor',
-        titulo: 'El primer WhatsApp de una solicitud web requiere comprobación',
-        detalle: `Solicitud ${id}. Verificar el mensaje en Nexor antes de reintentar.`, nivel: 'aviso' }),
-    });
-    cada('formularios-web', 30_000, revisar, 10_000);
-  } catch (e) {
-    registrarAlerta(repo.db, { clave: 'formularios-config', tipo: 'servidor',
-      titulo: 'La recepción de formularios web está desactivada', detalle: e.message, nivel: 'error' });
-  }
-}
+if (formularios) cada('formularios-web', 30_000, formularios, 10_000);
 
 // Horarios de clases desde AimHarder: una vez al día (la primera a los 3 minutos de arrancar). Si cambian, Sofía
 // usa los nuevos al momento y queda apuntado; si AimHarder falla, se queda con los que tenía y sale una alerta.

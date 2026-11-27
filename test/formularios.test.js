@@ -67,3 +67,25 @@ test('respeta la baja de mensajes y el chat abierto y concilia un envío inciert
     assert.equal(r.db.prepare('SELECT estado FROM solicitudes_web WHERE id = ?').get('a').estado, estado);
   }
 });
+
+test('quioscos, citas y opinión se guardan como contexto sin inferir permiso ni reservas', () => {
+  const extras = ['hrjdwDKjjm07JJjNpEj6', 'sk2RgvYpQM64Y5w2FNkE', 'u2sPxLPd7WJ6g9QWpq3L'];
+  const scope = { ...match, ids: new Set(extras) };
+  for (const [n, formId] of extras.entries()) {
+    const info = prepararSolicitud(registro('ext' + n, formId), scope);
+    assert.equal(info.consiente, false);
+  }
+  assert.match(prepararSolicitud(registro('cita', extras[1]), scope).asunto, /solicitud de clase de prueba en Parla/);
+});
+
+test('recepción guarda una sola entrada durable y Meta valida subcuenta y formulario', () => {
+  const { r, revisar } = entorno();
+  const clave = '3eadc8a9-221e-4b7e-8965-cfabe2a56cb9';
+  const payload = { centre: 'getafe', name: 'Recepción prueba', phone: datos.phone, consent: true, experience: 'past' };
+  assert.equal(revisar.recepcion(payload, clave), true);
+  assert.equal(revisar.recepcion(payload, clave), true);
+  assert.equal(revisar.recepcion({ ...payload, consent: false }, clave), false);
+  assert.equal(revisar.meta({ locationId: 'otra', contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), false);
+  assert.equal(revisar.meta({ locationId, contact_id: 'a'.repeat(20), customData: { formulario_sofia: 'academia_parla' } }), true);
+  assert.equal(r.db.prepare('SELECT count(*) AS n FROM solicitudes_externas').get().n, 2);
+});

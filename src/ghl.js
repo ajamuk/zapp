@@ -300,6 +300,10 @@ export class Ghl {
    * Crea el contacto (o devuelve el que ya hay con ese teléfono: GHL deduplica por teléfono) para escribirle por
    * primera vez. Devuelve { id, nuevo }.
    */
+  async buscarContactoPorTelefono(telefono) {
+    const q = new URLSearchParams({ locationId: config.ghl.locationId, number: telefono });
+    return (await this.req('GET', `/contacts/search/duplicate?${q}`, undefined, { version: 'v3' }))?.contact || null;
+  }
   async upsertContacto({ telefono, nombre, fuente = 'Sofía · primer contacto' }) {
     const r = await this.req('POST', '/contacts/upsert', { locationId: config.ghl.locationId, phone: telefono, firstName: nombre, source: fuente });
     const id = r?.contact?.id;
