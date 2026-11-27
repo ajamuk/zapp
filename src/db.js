@@ -245,6 +245,11 @@ CREATE TABLE IF NOT EXISTS recursos (
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS avisos_prueba (
+  id TEXT PRIMARY KEY,
+  fecha INTEGER NOT NULL,
+  resultado TEXT
+);
 CREATE TABLE IF NOT EXISTS plantillas_wa (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL UNIQUE,       -- nombre exacto de la plantilla aprobada (GHL / Meta)

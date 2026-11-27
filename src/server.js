@@ -180,6 +180,24 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     } catch (e) { console.error('Webhook:', e); }
   });
 
+  app.post('/internal/recepcion', (req, res) => {
+    if (!igual(req.get('x-sofia-intake-key'), config.formularios.recepcionSecret)) return res.sendStatus(401);
+    if (!formularios) return res.sendStatus(503);
+    if (!formularios.recepcion(req.body, req.get('idempotency-key'))) return res.sendStatus(400);
+    res.status(202).json({ recibido: true });
+  });
+
+  app.post('/internal/pruebas/recordatorio', async (req, res) => {
+    if (!igual(req.get('authorization')?.replace(/^Bearer /, ''), config.formularios.pruebasSecret)) return res.sendStatus(401);
+    if (!formularios) return res.sendStatus(503);
+    try {
+      const [status, datos] = await formularios.recordatorio(req.body, req.get('idempotency-key'));
+      res.status(status).json(datos);
+    } catch {
+      res.status(503).json({ code: 'crm_not_ready', detail: 'No se pudo preparar el recordatorio en Nexor', retryable: true });
+    }
+  });
+
   // Webhooks de AimHarder (uno por sede: la URL lleva la sede y un token). Responde rápido; el trabajo va después.
   app.post('/webhooks/aimharder/:sede', async (req, res) => {
     if (!aimharderWebhook || !config.aimharder.webhookToken) return res.status(503).json({ error: 'webhooks de AimHarder desactivados' });
