@@ -90,6 +90,21 @@ CREATE TABLE IF NOT EXISTS aimharder_eventos (
   accion TEXT NOT NULL,
   recibido TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Avisos de GHL (POST /webhooks/ghl): se guardan antes de contestar 200 y se procesan desde aquí (avisos-ghl.js),
+-- con sus reintentos. Un reinicio ya no pierde un aviso a medias: al arrancar, lo que estaba «procesando» vuelve a la cola.
+CREATE TABLE IF NOT EXISTS ghl_avisos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  evento TEXT NOT NULL,             -- JSON del aviso ya normalizado (parseWebhook)
+  contact_id TEXT,
+  estado TEXT NOT NULL DEFAULT 'pendiente', -- pendiente | procesando | hecho | descartado | error
+  motivo TEXT,                      -- por qué espera: conversacion | aislamiento | repaso (avisos-ghl.js)
+  intentos INTEGER NOT NULL DEFAULT 0, -- reintentos hechos por ese motivo
+  proximo_ms INTEGER NOT NULL DEFAULT 0,
+  creado_ms INTEGER NOT NULL,
+  detalle TEXT,
+  recibido TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ghl_avisos_cola ON ghl_avisos(estado, proximo_ms);
 CREATE TABLE IF NOT EXISTS altas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   conversation_id TEXT NOT NULL,
@@ -586,6 +601,20 @@ export function repo(db, { espejo = null } = {}) {
         .run(estado ?? null, intentos ?? null, proximo_ms ?? null, error, id),
     resumenEventosAimharder: () => Object.fromEntries(db.prepare('SELECT estado, count(*) n FROM aimharder_eventos GROUP BY estado').all().map((r) => [r.estado, r.n])),
     podarEventosAimharder: (dias = 30) => db.prepare(`DELETE FROM aimharder_eventos WHERE estado != 'pendiente' AND recibido < datetime('now', ?)`).run(`-${dias} days`),
+    // Avisos de GHL guardados antes de contestar 200 (avisos-ghl.js)
+    guardarAvisoGhl: ({ evento, contact_id = null, ahora = Date.now() }) =>
+      Number(db.prepare('INSERT INTO ghl_avisos (evento, contact_id, proximo_ms, creado_ms) VALUES (?, ?, ?, ?)').run(evento, contact_id, ahora, ahora).lastInsertRowid),
+    /** Pasa el aviso a «procesando» si seguía pendiente y lo devuelve; null si ya lo tiene otro o está terminado. */
+    tomarAvisoGhl: (id) => db.prepare("UPDATE ghl_avisos SET estado = 'procesando' WHERE id = ? AND estado = 'pendiente' RETURNING *").get(id) || null,
+    avisosGhlPendientes: (ahora = Date.now(), limite = 100) =>
+      db.prepare("SELECT * FROM ghl_avisos WHERE estado = 'pendiente' AND proximo_ms <= ? ORDER BY creado_ms, id LIMIT ?").all(ahora, limite),
+    reprogramarAvisoGhl: (id, { motivo, intentos, proximo_ms, evento = null }) =>
+      db.prepare("UPDATE ghl_avisos SET estado = 'pendiente', motivo = ?, intentos = ?, proximo_ms = ?, evento = COALESCE(?, evento) WHERE id = ?").run(motivo, intentos, proximo_ms, evento, id),
+    cerrarAvisoGhl: (id, estado, detalle = null) => db.prepare('UPDATE ghl_avisos SET estado = ?, detalle = ? WHERE id = ?').run(estado, detalle, id),
+    /** Otro aviso del mismo contacto que ya espera a que GHL devuelva su conversación (para compartir sus reintentos). */
+    avisoGhlEsperandoConversacion: (contactId, excepto) =>
+      db.prepare("SELECT intentos, proximo_ms FROM ghl_avisos WHERE contact_id = ? AND estado = 'pendiente' AND motivo = 'conversacion' AND id != ? ORDER BY id LIMIT 1").get(contactId, excepto) || null,
+    podarAvisosGhl: (antesDeMs) => db.prepare("DELETE FROM ghl_avisos WHERE estado NOT IN ('pendiente', 'procesando') AND creado_ms < ?").run(antesDeMs).changes,
     /** Actualiza un solo socio (webhook) sin tocar el resto del índice. */
     actualizarSocio: db.transaction((sede, f) => {
       db.prepare('DELETE FROM socios WHERE sede = ? AND aimharder_id = ?').run(sede, f.aimharder_id);

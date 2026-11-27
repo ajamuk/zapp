@@ -29,7 +29,6 @@ function montar({ recientes, mensajes }) {
     aimharder: { buscarSocioPorTelefono: async () => ({ esSocio: false }) },
     complete: async () => ({ content: [{ type: 'tool_use', id: 't', name: 'responder', input: { fase: 'f2 diagnóstico', sede: 'parla', mensajes: ['hola, te cuento'] } }], usage: { input_tokens: 1, output_tokens: 1 } }),
   });
-  setter.repasosAislamiento = [];
   return { repo, setter, sal };
 }
 

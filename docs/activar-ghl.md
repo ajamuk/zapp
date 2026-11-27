@@ -53,8 +53,12 @@ GHL → Automatización → Workflows → nuevo desde cero:
 - **Acción:** *Webhook* (o *Custom Webhook*), método `POST`, URL `https://<dominio-webhook>/webhooks/ghl`.
   - Cabecera: `x-setter-secret` = el `WEBHOOK_SECRET`.
   - No hace falta nada en *Custom Data*: el servicio lee `contact_id`, `full_name`, `phone` y `tags` del formato de
-    GHL y, con cada aviso, lee los mensajes nuevos de la conversación en GHL (id, canal y adjuntos). Así no se pierde
-    ninguno aunque GHL se salte el aviso de un mensaje que llega mientras procesa el anterior.
+    GHL y, con cada aviso, lee los mensajes nuevos de la conversación en GHL (id, canal y adjuntos), por páginas hasta
+    el último repaso. Así no se pierde ninguno aunque GHL se salte el aviso de un mensaje que llega mientras procesa el
+    anterior, ni aunque lleguen más de 30 entre dos repasos.
+  - Cada aviso se guarda en la base (tabla `ghl_avisos`) antes de contestar 200, y sus reintentos («GHL aún no
+    devuelve la conversación del contacto nuevo», «aún no lista el mensaje») también: un reinicio o un despliegue no
+    los pierde. Si no se puede guardar, el servicio contesta 500.
   - Dos disparadores *Customer Replied* (uno por canal): el filtro *Reply channel* solo admite un valor.
 - Guardar y **publicar**.
 
@@ -63,7 +67,8 @@ GHL → Automatización → Workflows → nuevo desde cero:
 1. Escribir por WhatsApp al número del centro desde un móvil del equipo.
 2. En GHL, en ese contacto, a los 15–50 s debe aparecer una nota `[Borrador IA, no enviado] …`.
 3. En el panel (`/zapp/`) se ve el chat. Si no llega nada: *Historial de ejecución* del workflow (código de
-   respuesta: 401 = secreto mal puesto, 503 = `GHL_WEBHOOK_ENABLED=false`) y `journalctl -u codex-zapp -n 100`.
+   respuesta: 401 = secreto mal puesto, 503 = `GHL_WEBHOOK_ENABLED=false`, 500 = la base no ha podido guardar el aviso)
+   y `journalctl -u codex-zapp -n 100`.
 
 Dejarlo unos días en prueba y comparar las notas de Sofía con lo que contesta el equipo.
 

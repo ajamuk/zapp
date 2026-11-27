@@ -33,6 +33,7 @@ import { routerProbar, GhlCaptura, enviarMedio, jsonSubidas, esRutaDeSubida } fr
 import * as etq from './etiquetas.js';
 import { estadoAislamiento, enmascarar } from './aislamiento.js';
 import { enSegundoPlano } from './arranque.js';
+import { crearAvisos } from './avisos-ghl.js';
 
 const panelPath = path.join(config.root, 'panel', 'index.html');
 const htmlPanel = readFileSync(panelPath, 'utf8');
@@ -83,8 +84,10 @@ const igual = (a, b) => {
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
 
-export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead, aimharderWebhook = null }) {
+export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones, etiquetas = new etq.Etiquetador({ repo }), pruebas: pruebasRepo, medios, ghl = null, salud = null, completeLead, aimharderWebhook = null, avisos = null }) {
   const app = express();
+  // Cola de avisos de GHL: la de index.js (con su bucle de reintentos) o una propia (tests)
+  const avisosGhl = avisos || (setter?.handleWebhook ? crearAvisos({ repo, setter }) : null);
   app.disable('x-powered-by');
   // Cabeceras de seguridad en todas las respuestas: el navegador no adivina tipos de archivo, no se puede
   // incrustar el panel en otra web y no se filtra la dirección al salir a un enlace.
@@ -154,14 +157,17 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     return enviarMedio(res, { media_ruta: r.media_ruta, media_mime: r.mime }, medios?.base || carpetaMedios(), { cache: CACHE_PUBLICA });
   });
 
-  // Webhook de GHL (mensajes entrantes y salientes). Responde rápido; el trabajo se hace después.
+  // Webhook de GHL (mensajes entrantes y salientes). El aviso se guarda en la base y solo entonces se contesta 200
+  // (rápido); el trabajo se hace después. Si no se puede guardar, 500: no se da por recibido algo que se podría perder.
   app.post('/webhooks/ghl', async (req, res) => {
     if (!igual(req.get('x-setter-secret'), config.webhookSecret)) return res.status(401).json({ error: 'secreto no válido' });
     if (!config.ghlWebhookEnabled) return res.status(503).json({ error: 'entrada de GHL desactivada' });
     const evt = parseWebhook(req.body);
+    let id;
+    try { id = avisosGhl.guardar(evt); } catch (e) { console.error('[webhook] no se ha podido guardar el aviso:', e.message); return res.status(500).json({ error: 'no se ha podido guardar el aviso' }); }
     res.json({ recibido: true });
     try {
-      const r = await setter.handleWebhook(evt);
+      const r = await avisosGhl.procesar(id);
       // Un aviso que no se puede atribuir a ningún chat no debe perderse en silencio
       if (r?.ignorado === 'faltan ids' && r.reintento) console.warn(`[webhook] ${evt.contactId}: GHL aún no devuelve la conversación del contacto; se vuelve a preguntar en unos segundos`);
       else if (r?.ignorado === 'faltan ids') console.warn('[webhook] aviso de GHL sin contacto o conversación: no se ha procesado', Object.keys(req.body || {}).join(','));

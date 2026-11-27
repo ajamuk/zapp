@@ -35,7 +35,9 @@ y al revés. Por eso **esa topología no se admite**:
   `from`), Sofía **no actúa en esa conversación**: si no tenía chat, no lo crea; si lo tenía, queda bloqueado
   (`aislado_bloqueo`), sin respuesta pendiente ni seguimientos, y no vuelve a activarse solo aunque después escriban a
   su número. Ningún mensaje de la otra línea entra en su historial ni cuenta como respuesta humana.
-- La detección mira los últimos 30 mensajes de la conversación que devuelve GHL. No sustituye a la separación real.
+- La detección lee entera, por páginas, la conversación de GHL de un chat nuevo o por adoptar (hasta 20 páginas de 30
+  mensajes; si no cabe o falla una página, el chat no se atiende todavía). En un chat ya verificado mira lo que ha
+  llegado desde el último repaso. No sustituye a la separación real.
 
 **Lo que hay que hacer:** una **subcuenta de GHL solo para Sofía** con su único número. Ahí los contactos, las
 conversaciones y las etiquetas son nuevos y no hay nada que compartir. Compartir subcuenta con otra línea no es una
