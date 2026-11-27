@@ -12,6 +12,40 @@ const FORMULARIOS = {
   xJcaf7HDOzmVFR8qBOqA: { sede: 'getafe' },
   Rhd8bB6VAlOrZmldEmDR: { sede: 'parla' },
   gMmEDPBKc912y6RWsJm1: { sede: 'las_rosas' },
+  ryK7OnOBu179FUkFpMaL: { sede: 'las_rosas', tipo: 'quiosco' },
+  hrjdwDKjjm07JJjNpEj6: { sede: 'getafe', tipo: 'quiosco' },
+  w6lYwy5DrhiDrHbL448c: { sede: 'parla', tipo: 'quiosco' },
+  AUICT7vBIwRL8gBw8xyA: { sede: 'las_rosas', permiso: 'aviso' },
+  Z4WIoHTFKFuZiX7kcSn5: { sede: 'parla', permiso: 'aviso' },
+  iNHm8fAVl7eO6LKfdpPP: { sede: 'parla', tipo: 'cita' },
+  sk2RgvYpQM64Y5w2FNkE: { sede: 'parla', tipo: 'cita' },
+  EaYGNKXdpWEPzhU2KsP7: { sede: 'parla', tipo: 'cita' },
+  kvAEIjv8F1juV2Yksa0q: { tipo: 'cita' },
+  pPjWm6WOYqnInYWSFngQ: { sede: 'parla', tipo: 'campaña' },
+  a18ck1HvdFXZ5V1zmL4s: { sede: 'getafe', tipo: 'campaña' },
+  eRc129PEIAi1Vdhoa43o: { sede: 'getafe', tipo: 'campaña' },
+  brFVZ9t2tezEeK40dmAn: { sede: 'parla', tipo: 'campaña' },
+  Bt30konfEyZDdXMUeq8k: { tipo: 'campaña' },
+  u2sPxLPd7WJ6g9QWpq3L: { tipo: 'opinión' },
+};
+
+const SEDES_RECEPTION = { getafe: 'getafe', parla: 'parla', 'las-rosas': 'las_rosas' };
+const EXPERIENCIAS = { never: 'No ha entrenado CrossFit antes', current: 'Entrena CrossFit actualmente', past: 'Ha entrenado CrossFit en el pasado' };
+const META = {
+  academia_parla: 'parla',
+  academia_las_rosas: 'las_rosas',
+};
+const CALENDARIOS = {
+  '2D7yvfbpgGlBwPd4OfVJ': ['parla', 'CrossFit Academy'],
+  '3FKFN7Eu7GqqwEv7rtUY': ['parla', 'HYROX'],
+  '3VZU8Ema2Wc6vjDkckp6': ['getafe', 'CrossFit'],
+  '3jOLSxqnzvSFC4ss7oAE': ['las_rosas', 'CrossFit'],
+  '4r3ElGADWcgLZwHAsc0b': ['las_rosas', 'HYROX'],
+  '5mGDs4bIXJ866kQdtksg': ['las_rosas', 'CrossFit Academy'],
+  '6uGfBNp38DAG0TZHgc01': ['parla', 'HYROX'],
+  NDF0tY9j8ulTvhg3IpfI: ['parla', 'CrossFit'],
+  OAxBuktI0NMEW50cxwrF: ['getafe', 'CrossFit Academy'],
+  p5K6wBTuUpvfP6e3xotV: ['getafe', 'HYROX'],
 };
 const SERVICIOS = new Set(['CrossFit Academy', 'CrossFit']);
 const WHATSAPP_APERTURA = 'Sí, podéis responder a mi solicitud por WhatsApp o teléfono y avisarme por ese canal cuando se abra la oferta de apertura de El Cañaveral.';
@@ -27,27 +61,40 @@ export function prepararSolicitud(fila, { ids, campoServicio, locationId, desde,
   const telefono = normalizarTelefono(datos.phone);
   if (!telefono) return null;
   const servicio = lista(datos[campoServicio]).find((opcion) => SERVICIOS.has(opcion)) || null;
-  const sede = SEDE_NOMBRE[ruta.sede];
-  const asunto = ruta.apertura ? 'el aviso de apertura de El Cañaveral' : `${servicio || 'entrenar'} en ${sede}`;
+  const seleccion = lista(datos.djlH6rQjgN3n4Re7vOlR)[0];
+  const sede = ruta.sede || Object.keys(SEDES_RECEPTION).map((id) => SEDES_RECEPTION[id])
+    .find((id) => seleccion === `CrossFit MetroPolitano ${SEDE_NOMBRE[id]}`) || '';
+  const tema = ruta.tipo === 'cita' ? 'una solicitud de clase de prueba' : servicio || 'entrenar';
+  const asunto = ruta.apertura ? 'el aviso de apertura de El Cañaveral'
+    : ruta.tipo === 'opinión' ? 'una opinión enviada a CrossFit MetroPolitano'
+      : `${tema}${sede ? ` en ${SEDE_NOMBRE[sede]}` : ' en MetroPolitano'}`;
+  const consentimiento = lista(datos.terms_and_conditions);
   const consiente = ruta.apertura ? lista(datos.AQSO7RVJ9ucjR1MAWmOs).includes(WHATSAPP_APERTURA)
-    : lista(datos.terms_and_conditions).some((valor) => valor === true || valor === 'Acepto las políticas de privacidad');
+    : ruta.permiso === 'aviso' || (!ruta.tipo && consentimiento.some((v) => v === true || v === 'Acepto las políticas de privacidad'));
+  const experiencia = lista(datos.embxvmEEfSlvh4GuDEnk).find((v) => v === 'Sí' || v === 'No');
   return {
-    id: fila.id, contacto: fila.contactId, formulario: fila.formId, fecha, telefono, sede: ruta.sede,
-    servicio, asunto, consiente, claveTelefono: createHash('sha256').update(telefono).digest('hex'),
+    id: fila.id, contacto: fila.contactId, formulario: fila.formId, fecha, telefono, sede,
+    servicio, asunto, consiente, experiencia: experiencia === 'Sí' ? 'Indicó que ya ha practicado CrossFit' : experiencia === 'No' ? EXPERIENCIAS.never : null,
+    claveTelefono: createHash('sha256').update(telefono).digest('hex'),
   };
 }
 
 export function contextoSolicitud(db, conv, ahora) {
   if (conv.channel !== 'whatsapp' || !conv.contact_id) return '';
-  const solicitud = db.prepare(`SELECT sede, servicio, asunto, estado FROM solicitudes_web
-    WHERE contacto = ? AND fecha >= ? AND estado IN ('enviando', 'aceptada', 'incierta', 'chat_abierto')
+  const solicitud = db.prepare(`SELECT formulario, sede, servicio, asunto, estado, experiencia FROM solicitudes_web
+    WHERE contacto = ? AND fecha >= ? AND estado IN ('enviando', 'aceptada', 'incierta', 'chat_abierto', 'sin_permiso', 'duplicada')
     ORDER BY fecha DESC LIMIT 1`).get(conv.contact_id, ahora.getTime() - 7 * HORAS_24);
   if (!solicitud) return '';
   const servicio = solicitud.servicio
     ? `Eligió ${solicitud.servicio}.`
     : 'Dejó el servicio sin determinar o pidió solo un aviso de apertura.';
   const enviado = solicitud.estado === 'aceptada' ? 'El primer WhatsApp se escribió sobre esa solicitud.' : '';
-  return `- Solicitud reciente del formulario de ${SEDE_NOMBRE[solicitud.sede]}. Asunto: ${solicitud.asunto}. ${servicio} ${enviado} Aprovecha esos datos sin repetir preguntas ya contestadas. Si en el chat ha corregido su elección, sigue lo último que te diga.`;
+  const sede = SEDE_NOMBRE[solicitud.sede] || 'sede por confirmar';
+  const experiencia = solicitud.experiencia ? `${solicitud.experiencia}. ` : '';
+  if (solicitud.formulario === 'cita_ghl') {
+    return `- Cita de Nexor, ${sede}. ${solicitud.asunto}. ${servicio} Verifica si sigue vigente antes de asegurar la plaza.`;
+  }
+  return `- Solicitud reciente, ${sede}. Asunto: ${solicitud.asunto}. ${servicio} ${experiencia}${enviado} Una solicitud de clase no confirma una reserva. Aprovecha los datos y sigue lo último que te diga.`;
 }
 
 function contactoBloqueado(contacto) {
@@ -68,8 +115,8 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
 
   const get = repo.db.prepare('SELECT estado FROM solicitudes_web WHERE id = ?');
   const guardar = repo.db.prepare(`INSERT OR IGNORE INTO solicitudes_web
-    (id, contacto, formulario, fecha, telefono_hash, sede, servicio, asunto, estado)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    (id, contacto, formulario, fecha, telefono_hash, sede, servicio, asunto, estado, experiencia)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const estado = repo.db.prepare('UPDATE solicitudes_web SET estado = ?, mensaje = ? WHERE id = ?');
   const duplicado = repo.db.prepare(`SELECT 1 FROM solicitudes_web
     WHERE (telefono_hash = ? OR contacto = ?) AND fecha >= ?
@@ -78,7 +125,7 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
     if (get.get(s.id)) return false;
     const anterior = duplicado.get(s.claveTelefono, s.contacto, s.fecha - HORAS_24);
     const nuevoEstado = fin || (anterior ? 'duplicada' : 'enviando');
-    guardar.run(s.id, s.contacto, s.formulario, s.fecha, s.claveTelefono, s.sede, s.servicio, s.asunto, nuevoEstado);
+    guardar.run(s.id, s.contacto, s.formulario, s.fecha, s.claveTelefono, s.sede, s.servicio, s.asunto, nuevoEstado, s.experiencia || null);
     return nuevoEstado === 'enviando';
   });
 
@@ -138,15 +185,133 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
     await setter.enSerie(chatId, () => {
       const chat = repo.upsertConv({ id: chatId, contact_id: s.contacto, channel: 'whatsapp', nombre, telefono: s.telefono });
       if (!chat.aislado_bloqueo && chat.channel === 'whatsapp') {
-        repo.updateConv(chatId, { aislado_num: aislamiento.clave, sede: s.sede });
+        repo.updateConv(chatId, { aislado_num: aislamiento.clave, ...(s.sede ? { sede: s.sede } : {}) });
         repo.addMessage({ conversation_id: chatId, external_id: mensaje, autor: 'ia', texto: env.texto, tipo: 'plantilla' });
       }
     });
   }
 
-  return async function revisar() {
+  const encolar = repo.db.prepare('INSERT OR IGNORE INTO solicitudes_externas (id, fecha, carga) VALUES (?, ?, ?)');
+  const resolver = repo.db.prepare('UPDATE solicitudes_externas SET carga = NULL WHERE id = ?');
+
+  function recepcion(d, clave) {
+    const sede = Object.hasOwn(SEDES_RECEPTION, d?.centre) && SEDES_RECEPTION[d.centre];
+    const telefono = normalizarTelefono(d?.phone);
+    const nombre = typeof d?.name === 'string' ? d.name.trim().slice(0, 80) : '';
+    if (!sede || !telefono || !nombre || d.consent !== true || !Object.hasOwn(EXPERIENCIAS, d.experience) ||
+        !/^[a-f0-9-]{36}$/i.test(String(clave || ''))) return false;
+    const id = `recepcion:${clave}`;
+    encolar.run(id, clock(), JSON.stringify({ sede, telefono, nombre, experiencia: EXPERIENCIAS[d.experience] }));
+    return true;
+  }
+
+  const getAviso = repo.db.prepare('SELECT resultado FROM avisos_prueba WHERE id = ?');
+  const reclamarAviso = repo.db.prepare('INSERT OR IGNORE INTO avisos_prueba (id, fecha) VALUES (?, ?)');
+  const guardarAviso = repo.db.prepare('UPDATE avisos_prueba SET resultado = ? WHERE id = ?');
+  const avisoIncierto = [409, { code: 'send_unconfirmed', detail: 'Comprobar el mensaje en Nexor antes de reenviar', retryable: false }];
+  const repetirAviso = (fila) => fila?.resultado ? [200, JSON.parse(fila.resultado)] : avisoIncierto;
+
+  async function recordatorio(d, clave) {
+    const id = String(clave || '');
+    const telefono = normalizarTelefono(d?.recipientPhone);
+    const fecha = Date.parse(d?.appointmentAt);
+    const variable = typeof d?.bodyVariables?.[0] === 'string' ? d.bodyVariables[0].trim() : '';
+    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id) || !telefono ||
+        !Number.isFinite(fecha) || fecha <= clock() || fecha > clock() + HORAS_24 || !variable || variable.length > 550 ||
+        d.templateName !== 'sofia_seguimiento_v1' || d.templateLanguage !== 'es_ES') {
+      return [400, { code: 'invalid_reminder', retryable: false }];
+    }
+    const existente = getAviso.get(id);
+    if (existente) return repetirAviso(existente);
+    const plantilla = repo.db.prepare('SELECT id FROM plantillas_wa WHERE nombre = ? AND activa = 1').get(d.templateName);
+    if (!plantilla) return [503, { code: 'template_not_approved', retryable: true }];
+    const contacto = await ghl.buscarContactoPorTelefono(telefono);
+    if (!contacto?.id || contacto.locationId !== locationId || normalizarTelefono(contacto.phone) !== telefono || contactoBloqueado(contacto)) {
+      return [422, { code: 'contact_not_available', detail: 'Revisar el contacto o el permiso de WhatsApp en Nexor', retryable: false }];
+    }
+    const { plantilla: modelo, variables, texto } = prepararEnvio(repo.db, plantilla.id, [variable]);
+    if (!reclamarAviso.run(id, clock()).changes) return repetirAviso(getAviso.get(id));
+    try {
+      const respuesta = await ghl.enviarPlantillaWa({
+        contactId: contacto.id, nombre: modelo.nombre, idioma: modelo.idioma, categoria: modelo.categoria, variables, texto,
+      });
+      if (!respuesta?.messageId) return avisoIncierto;
+      const resultado = { messageId: respuesta.messageId, conversationId: respuesta.conversationId || '', messageText: texto, provider: 'sofia' };
+      guardarAviso.run(JSON.stringify(resultado), id);
+      return [200, resultado];
+    } catch {
+      return avisoIncierto;
+    }
+  }
+
+  function entradaCrm(payload) {
+    const datos = payload.customData || payload.custom_data || {};
+    const origen = datos.formulario_sofia;
+    const contacto = payload.contact_id || payload.contactId;
+    const location = payload.location_id || payload.locationId || payload.location?.id;
+    if (location !== locationId || !/^[A-Za-z0-9]{20}$/.test(String(contacto || ''))) return false;
+    const fecha = clock();
+    if (origen === 'cita_ghl') {
+      const recibido = datos.cita_id || payload.appointment?.id;
+      const cita = /^[A-Za-z0-9_-]{10,64}$/.test(String(recibido || '')) ? recibido : null;
+      const clave = cita || Math.floor(fecha / (5 * 60_000));
+      encolar.run(`cita:${contacto}:${clave}`, fecha, JSON.stringify({ contacto, cita }));
+      return true;
+    }
+    if (!Object.hasOwn(META, origen)) return false;
+    const id = `meta:${origen}:${contacto}:${new Date(fecha).toISOString().slice(0, 10)}`;
+    encolar.run(id, fecha, JSON.stringify({ sede: META[origen], contacto, servicio: 'CrossFit Academy' }));
+    return true;
+  }
+
+  async function citaNexor(d, fecha) {
+    const { events } = await ghl.req('GET', `/contacts/${d.contacto}/appointments`, undefined, { version: 'v3' });
+    if (!Array.isArray(events)) throw new Error('Nexor no devolvió las citas del contacto');
+    const posibles = events.filter((e) => e.locationId === locationId && e.contactId === d.contacto &&
+      ['booked', 'confirmed', 'new'].includes(String(e.appointmentStatus || e.status).toLowerCase()) &&
+      (d.cita ? e.id === d.cita : [e.dateAdded, e.dateUpdated].some((v) => Math.abs(Date.parse(v) - fecha) <= HORAS_24)));
+    const cita = posibles.length === 1 ? posibles[0] : null;
+    if (!cita && clock() - fecha < 2 * 60_000) return null;
+    const [sede, servicio] = cita && Object.hasOwn(CALENDARIOS, cita.calendarId) ? CALENDARIOS[cita.calendarId] : ['', null];
+    const inicio = cita && /(?:Z|[+-]\d\d:\d\d)$/.test(cita.startTime || '') ? Date.parse(cita.startTime) : NaN;
+    const cuando = Number.isFinite(inicio) ? ` para ${new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'full', timeStyle: 'short', timeZone: 'Europe/Madrid',
+    }).format(inicio)}` : '';
+    const asunto = cita ? `Nexor registró una cita${cuando}` : 'Se recibió un aviso de cita en Nexor';
+    return { sede, servicio, asunto };
+  }
+
+  async function revisarExterno(plantilla) {
+    const entradas = repo.db.prepare('SELECT id, fecha, carga FROM solicitudes_externas WHERE carga IS NOT NULL ORDER BY fecha LIMIT 25').all();
+    for (const fila of entradas) {
+      try {
+        if (get.get(fila.id)) { resolver.run(fila.id); continue; }
+        const d = JSON.parse(fila.carga);
+        const consiente = fila.id.startsWith('recepcion:');
+        const cita = fila.id.startsWith('cita:');
+        if (consiente && !d.contacto) {
+          const previo = await ghl.buscarContactoPorTelefono(d.telefono);
+          d.contacto = previo?.id || (await ghl.upsertContacto({ telefono: d.telefono, nombre: d.nombre, fuente: 'Recepción · visita presencial' })).id;
+          repo.db.prepare('UPDATE solicitudes_externas SET carga = ? WHERE id = ?').run(JSON.stringify(d), fila.id);
+        }
+        const telefono = d.telefono || normalizarTelefono((await ghl.getContact(d.contacto))?.contact?.phone);
+        if (!telefono) { resolver.run(fila.id); continue; }
+        const ficha = cita ? await citaNexor(d, fila.fecha) : {
+          asunto: consiente ? `entrenar en ${SEDE_NOMBRE[d.sede]} después de tu visita` : `CrossFit Academy en ${SEDE_NOMBRE[d.sede]}`,
+        };
+        if (!ficha) continue;
+        const formulario = consiente ? 'recepcion' : cita ? 'cita_ghl' : 'meta';
+        await procesar({ ...d, ...ficha, id: fila.id, formulario, fecha: fila.fecha, telefono,
+          consiente: consiente && fila.fecha > clock() - 2 * HORAS_24, claveTelefono: createHash('sha256').update(telefono).digest('hex') }, plantilla);
+        if (get.get(fila.id)) resolver.run(fila.id);
+      } catch { console.error('[formularios] solicitud externa pendiente de revisión'); }
+    }
+  }
+
+  async function revisar() {
     const plantilla = repo.db.prepare('SELECT id FROM plantillas_wa WHERE nombre = ? AND activa = 1').get(ajustes.plantilla);
     if (!plantilla) throw new Error('La plantilla de solicitud web no está activa en el catálogo de Zapp');
+    await revisarExterno(plantilla);
     const ahora = clock();
     const day = (t) => new Date(t).toISOString().slice(0, 10);
     const startAt = day(Math.max(desde, ahora - 2 * HORAS_24));
@@ -167,5 +332,6 @@ export function procesadorFormularios({ setter, ajustes, locationId, avisar, clo
       try { await procesar(solicitud, plantilla); }
       catch { console.error(`[formularios] fallo de proceso para la solicitud ${solicitud.id}`); }
     }
-  };
+  }
+  return Object.assign(revisar, { recepcion, entradaCrm, recordatorio });
 }

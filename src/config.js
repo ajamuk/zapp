@@ -78,6 +78,8 @@ export const config = {
     campoServicio: env('SOFIA_FORMULARIOS_CAMPO_SERVICIO'),
     campoAsunto: env('SOFIA_FORMULARIOS_CAMPO_ASUNTO'),
     plantilla: env('SOFIA_FORMULARIOS_PLANTILLA'),
+    recepcionSecret: env('SOFIA_RECEPCION_SECRET'),
+    pruebasSecret: env('SOFIA_PRUEBAS_SECRET'),
   },
   // Teléfonos del equipo para probar: Sofía los trata como lead aunque sean socios y les contesta de verdad
   // también en modo shadow (separados por comas)
@@ -172,6 +174,14 @@ export const config = {
     vozId: env('ELEVENLABS_VOICE_ID'),                       // «Voice ID» de la voz (se puede cambiar en Ajustes)
     modelo: env('ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
     baseUrl: env('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io'),
+  },
+  // Cómo llegar a las sedes (src/como-llegar.js). Sin clave de Google, el origen se localiza con OpenStreetMap
+  // (Nominatim) y Sofía da la distancia, el transporte de al lado del box y el enlace de la ruta; con la clave, además,
+  // el tiempo real en transporte público y en coche. Solo sale el texto del origen («Leganés», «metro Sol»…).
+  mapas: {
+    claveGoogle: env('GOOGLE_MAPS_API_KEY'),
+    geocodificador: env('SOFIA_MAPAS', 'auto'), // auto (Google con clave; si no, OpenStreetMap) · google · nominatim · no
+    userAgent: env('SOFIA_MAPAS_USER_AGENT', 'zapp-sofia/1.0'),
   },
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)

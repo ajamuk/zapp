@@ -36,6 +36,12 @@ Sofía escucha las notas de voz y ve las imágenes que manda el lead:
   por conversación, largo máximo y tope de letras al mes; las respuestas con enlaces o correos van siempre por escrito). La voz es de ElevenLabs (`ELEVENLABS_API_KEY`,
   `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`), se pasa a OGG/Opus con ffmpeg y se publica en
   `PUBLIC_URL/r/voz_<código>.ogg`. Sin clave, en modo prueba o si algo falla, sale el texto de siempre.
+- **Cómo llegar** (`src/como-llegar.js`, herramienta `como_llegar`): cuando el lead habla de la ubicación, de cómo
+  llegar o de que le pilla lejos, Sofía localiza su zona y le dice el centro más cercano, el transporte que hay junto al
+  box (`config/como-llegar.json`) y le pasa la ruta de Google Maps. Si el más cercano está a más de `lejos_km`, le dice
+  que ahora le pilla lejos y que esperamos abrir un centro cerca pronto. Sin clave, la zona se busca en OpenStreetMap
+  (Nominatim, una petición por segundo como máximo); con `GOOGLE_MAPS_API_KEY` (Geocoding y Routes API) da además los
+  minutos en transporte público y en coche. `SOFIA_MAPAS=no` lo deja sin consultas externas. Solo sale el texto de la zona.
 - **Etiquetas → Avisar a Meta**: evento de la API de Conversiones al ponerse la etiqueta (`META_PIXEL_ID`,
   `META_CAPI_TOKEN`, `META_TEST_EVENT_CODE`). Teléfono cifrado con SHA-256, una vez por chat y evento; en modo prueba
   no se envía. Lista de eventos al final de Etiquetas.

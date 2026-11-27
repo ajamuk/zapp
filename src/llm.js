@@ -6,7 +6,7 @@ import { usosDe } from './precios.js';
 export const TOOLS = [
   {
     name: 'consultar_horarios',
-    description: 'Horario habitual publicado de una sede y modalidad, opcionalmente filtrado por franja. Úsala siempre antes de dar horarios.',
+    description: 'Horario habitual publicado de una sede y modalidad, opcionalmente filtrado por franja. Úsala siempre antes de dar horarios. En `por_dias` van las horas agrupadas con los días exactos en que hay clase a esa hora: dilas así, sin juntar días que no las tienen.',
     input_schema: {
       type: 'object',
       properties: {
@@ -74,6 +74,17 @@ export const TOOLS = [
         telefono: { type: 'string', description: 'Solo si no es el de esta conversación (por ejemplo, en Instagram)' },
       },
       required: ['modalidad', 'fecha_hora', 'nombre_completo', 'email'],
+    },
+  },
+  {
+    name: 'como_llegar',
+    description: 'Cómo llegar a los centros desde donde vendría el lead: el centro más cercano y a qué distancia, el metro, tren, tranvía o bus que hay junto a cada box, un enlace de Google Maps con la ruta y, cuando se puede calcular, el tiempo en transporte público (con la ruta más rápida) y en coche. Úsala cuando hable de la ubicación, de cómo llegar, de qué transporte tiene cerca o de que le pilla lejos. Si no sabes desde dónde vendría, pregúntaselo antes. Con solo la sede, devuelve el transporte que hay junto a ese box.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        origen: { type: 'string', description: 'Desde dónde vendría, tal como lo dice: barrio, municipio, estación o calle (p. ej. «Leganés», «Vallecas», «metro Sol»). Sin número de portal, nombre ni otros datos personales' },
+        sede: { type: 'string', enum: ['parla', 'getafe', 'las_rosas', 'el_canaveral'], description: 'Solo si pregunta por un centro concreto' },
+      },
     },
   },
   {
@@ -205,7 +216,7 @@ export function dosPreguntas(mensajes) {
 }
 
 /** Herramientas cuyo resultado tiene que ver Sofía antes de contestar (no se aceptan en el mismo paso que `responder`). */
-export const ESPERAR_RESULTADO = ['preparar_alta', 'reservar_prueba_parla', 'calcular_primer_recibo', 'consultar_horarios', 'consultar_tarifas'];
+export const ESPERAR_RESULTADO = ['preparar_alta', 'reservar_prueba_parla', 'calcular_primer_recibo', 'consultar_horarios', 'consultar_tarifas', 'como_llegar'];
 // De estas, las que hacen algo de verdad: su resultado se espera siempre, aunque ya se le haya pedido esperar dos veces
 const ESPERAR_SIEMPRE = ['preparar_alta', 'reservar_prueba_parla'];
 

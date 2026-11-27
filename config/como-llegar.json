@@ -1,0 +1,54 @@
+{
+  "_nota": "Cómo llegar a cada sede (herramienta como_llegar, src/como-llegar.js). «direccion» es la de la tabla de sedes de config/negocio.md (destino del enlace de la ruta). Coordenadas sacadas de los enlaces de mapa de config/negocio.md (Getafe, aproximada desde el portal 39 de Avenida de la Paz). Paradas y líneas de OpenStreetMap, consultadas el 2026-11-27; los minutos andando son aproximados (distancia en línea recta × 1,3 a 80 m/min). Revisar si cambia alguna línea. «lejos_km»: a partir de esta distancia en línea recta al centro más cercano, Sofía le dice que ahora mismo le pilla lejos.",
+  "lejos_km": 15,
+  "sedes": {
+    "parla": {
+      "direccion": "Calle Roma 18, 28983 Parla, Madrid",
+      "lat": 40.2365526,
+      "lon": -3.7568336,
+      "transporte": [
+        "autobús 469 desde Madrid (Plaza Elíptica), 462 desde Getafe y urbano C3: parada Av. América - Jaime I El Conquistador, a unos 4 min andando",
+        "tranvía de Parla: parada Jaime I, a unos 7 min andando",
+        "Cercanías C-4: estación de Parla, a unos 20 min andando",
+        "por la zona también pasan el 471 (Humanes, Fuenlabrada, Pinto) y las circulares urbanas C1 y C2"
+      ],
+      "coche": "se aparca bien en la zona"
+    },
+    "getafe": {
+      "direccion": "Avenida de la Paz 35, El Bercial, Getafe, Madrid",
+      "lat": 40.326,
+      "lon": -3.7298,
+      "transporte": [
+        "metro L12 (MetroSur): estación El Bercial, a unos 6 min andando",
+        "Cercanías C-4: estación Las Margaritas Universidad, a unos 6 min andando",
+        "autobús 446 desde Madrid (Plaza Elíptica): parada Av. Paz - Camerún, al lado del box",
+        "por la zona también pasan el 443 (Plaza Elíptica - Las Margaritas) y el urbano L3"
+      ],
+      "coche": "se aparca bien en la zona"
+    },
+    "las_rosas": {
+      "direccion": "Calle de Sofía 30, San Blas, Madrid",
+      "lat": 40.4251481,
+      "lon": -3.6003373,
+      "transporte": [
+        "metro L2: estación Las Rosas, a unos 5 min andando",
+        "autobús EMT 38 desde Manuel Becerra: parada Sofía-Budapest, a unos 4 min andando",
+        "junto al metro Las Rosas paran también los EMT 140, 153 y E2 (desde Felipe II), a unos 6 min andando",
+        "metro L7: estación Estadio Metropolitano, a unos 15 min andando"
+      ],
+      "coche": "se aparca bien en la zona"
+    },
+    "el_canaveral": {
+      "direccion": "Calle Tolerancia, 46, 28052 Madrid",
+      "lat": 40.4042658,
+      "lon": -3.5553372,
+      "abre": "2027-02-01",
+      "transporte": [
+        "autobuses EMT E5 (exprés desde Manuel Becerra) y 159 (desde Alsacia): paradas a 1-6 min andando (la de Ilusión-Tolerancia está casi en la puerta)",
+        "interurbano 290 (Coslada, Plenilunio): parada en la Avenida Blas de Lezo, a unos 7 min andando",
+        "no hay metro ni Cercanías a menos de 1,5 km"
+      ],
+      "coche": "se aparca bien en la zona"
+    }
+  }
+}
