@@ -17,6 +17,7 @@ Setter IA de CrossFit MetroPolitano. Sustituye a Zapp (ScaleX).
 | `config/prompt-sofia.md` | Prompt de Sofía, reescrito con lo aprendido en Zapp |
 | `config/negocio.md` | Base de conocimiento: tarifas, sedes, normas, pagos, prueba de Parla… |
 | `config/horarios.json`, `tarifas.json`, `festivos.json` | Datos que usan las herramientas (no se dejan a la memoria del modelo) |
+| `config/como-llegar.json` | Punto de cada sede, metro, tren, tranvía y autobús de al lado y distancia a partir de la cual «le pilla lejos» (herramienta `como_llegar`) |
 | `config/followups.json` | Seguimientos copiados de Zapp |
 | `config/etiquetas.json` | Etiquetas de GHL: sede, tipo, tareas, control de la IA |
 | `config/aimharder-alta.json` | Pasos del alta por navegador (pendiente de grabar) |

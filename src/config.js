@@ -175,6 +175,14 @@ export const config = {
     modelo: env('ELEVENLABS_MODEL', 'eleven_multilingual_v2'),
     baseUrl: env('ELEVENLABS_BASE_URL', 'https://api.elevenlabs.io'),
   },
+  // Cómo llegar a las sedes (src/como-llegar.js). Sin clave de Google, el origen se localiza con OpenStreetMap
+  // (Nominatim) y Sofía da la distancia, el transporte de al lado del box y el enlace de la ruta; con la clave, además,
+  // el tiempo real en transporte público y en coche. Solo sale el texto del origen («Leganés», «metro Sol»…).
+  mapas: {
+    claveGoogle: env('GOOGLE_MAPS_API_KEY'),
+    geocodificador: env('SOFIA_MAPAS', 'auto'), // auto (Google con clave; si no, OpenStreetMap) · google · nominatim · no
+    userAgent: env('SOFIA_MAPAS_USER_AGENT', 'zapp-sofia/1.0'),
+  },
   embudo: {
     // Informes mensuales de pruebas que genera metro-trial-crm desde AimHarder (aimharder-AAAA-MM.json)
     pruebasDir: env('EMBUDO_PRUEBAS_DIR', '/opt/metro-trial-crm/data'),

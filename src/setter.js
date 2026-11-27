@@ -7,6 +7,7 @@ import { leerAjustes } from './ajustes.js';
 import { dentroDeHorario, siguienteApertura, hoyLocal, instanteLocal, retardoHumano, chatCaliente, esperar } from './horario.js';
 import { tipoAdjunto } from './etiquetas.js';
 import * as mediosReales from './medios.js';
+import * as mapasReales from './como-llegar.js';
 import * as reglasSeg from './reglas.js';
 import { programarCita, horaMadrid, fueraDeVentana } from './followups.js';
 import { entraEnNivel } from './intensidad.js';
@@ -72,9 +73,9 @@ const ZONA_TXT = `hora de ${String(config.tz).split('/').pop().replace(/_/g, ' '
  * - aislamiento: estado de aislamiento.js (el servicio real pasa el de la configuración; simuladores y tests, ninguno)
  */
 export class Setter {
-  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, voz = vozReal, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
+  constructor({ repo, ghl, aimharder, avisar, complete, etiquetas = null, medios = mediosReales, voz = vozReal, mapas = mapasReales, catalogo = null, borradores = null, now = () => new Date(), sleep = esperar, live = config.mode === 'live', random = Math.random, telefonosPrueba = config.telefonosPrueba, palabraReinicio = config.palabraReinicio, aislamiento = APAGADO }) {
     // catalogo: base con las reglas de seguimiento y etiquetas (en Probar IA, la real; los chats van a otra)
-    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, voz, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
+    Object.assign(this, { repo, ghl, aimharder, avisar, complete, etiquetas, medios, voz, mapas, catalogo: catalogo || repo.db, borradores, now, sleep, live, random, telefonosPrueba, palabraReinicio, aislamiento: aislamiento || APAGADO });
   }
 
   // ---------- Aislamiento en el número propio (aislamiento.js) ----------
@@ -1258,7 +1259,7 @@ export class Setter {
     if (!conv) return '';
     const system = this.sistema(conv, extraContexto, docs);
     const messages = await this.mensajesModelo(this.repo.history(convId));
-    const consulta = { consultar_horarios: (i) => consultarHorarios(i, { hoy: hoyLocal(this.now()).iso }), consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo };
+    const consulta = { consultar_horarios: (i) => consultarHorarios(i, { hoy: hoyLocal(this.now()).iso }), consultar_tarifas: consultarTarifas, calcular_primer_recibo: calcularPrimerRecibo, como_llegar: (i) => this.mapas.comoLlegar(i, { now: this.now() }) };
     const { respuesta } = await runTurn({
       system, messages, complete: this.complete, ...(modelo ? { modelo } : {}),
       ejecutarHerramienta: async (n, i) => (consulta[n] ? consulta[n](i) : { ok: false, error: 'Ahora solo estás redactando un mensaje: no uses esta herramienta.' }),
@@ -1283,6 +1284,7 @@ export class Setter {
         return res;
       }
       case 'calcular_primer_recibo': return calcularPrimerRecibo({ ...input, plazas_ocupadas: this.plazasSiCanaveral(input.sede) });
+      case 'como_llegar': return this.mapas.comoLlegar(input, { now: this.now() });
       case 'preparar_alta': return this.alta(conv, input, efectos);
       case 'reservar_prueba_parla': return this.reservarPrueba(conv, input, efectos);
       case 'pregunta_sin_respuesta': {
