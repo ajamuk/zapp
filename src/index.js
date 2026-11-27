@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { config, clavesDebiles } from './config.js';
-import { openDb, repo as crearRepo, copiaSeguridad } from './db.js';
+import { config, clavesDebiles, isLive } from './config.js';
+import { openDb, repo as crearRepo, copiaSeguridad, podar } from './db.js';
+import { carpetaMedios } from './medios.js';
 import { Ghl } from './ghl.js';
 import { buscarSocioPorTelefono, fichaEnSede, prepararAltaNavegador, sincronizarSocios, sincronizarSiHaceFalta, clientesApi, SEDES } from './aimharder/index.js';
 import { manejadorWebhook, claveDeSede, crearProcesador } from './aimharder/webhook.js';
@@ -24,6 +25,14 @@ process.on('unhandledRejection', (e) => console.error('[promesa sin capturar]', 
 process.on('uncaughtException', (e) => { console.error('[error no capturado]', e?.stack || e); process.exit(1); });
 
 const arrancado = Date.now();
+// En modo real no se arranca con claves que faltan o se adivinan: el webhook y el panel quedarían expuestos
+if (isLive() && clavesDebiles().length) {
+  clavesDebiles().forEach((a) => console.error('[seguridad]', a));
+  console.error('MODE=live necesita WEBHOOK_SECRET y ADMIN_TOKEN aleatorios de al menos 24 caracteres. No se arranca.');
+  process.exit(1);
+}
+// Sin token o subcuenta de GHL no se le pregunta nada a GHL (un negocio recién creado): solo panel y Probar IA
+const ghlConfigurado = Boolean(config.ghl.token && config.ghl.locationId);
 const repo = crearRepo(openDb(config.dbPath));
 const recuperado = recuperar(repo.db);
 if (recuperado.chats || recuperado.seguimientos || recuperado.reportes) console.log('Recuperado tras el reinicio:', JSON.stringify(recuperado));
@@ -81,7 +90,10 @@ const salud = () => {
   const parados = buclesParados(registro, Date.now(), Date.now() - arrancado);
   // La vuelta de «respuestas» no espera a los chats, así que su bucle siempre parece vivo: se mira la cola de verdad.
   // Una respuesta que tocaba hace más de 5 minutos y que nadie está atendiendo es que algo se ha atascado.
-  const atrasadas = repo.db.prepare('SELECT id FROM conversations WHERE respond_at IS NOT NULL AND respond_at < ? AND ai_paused = 0 AND derivado = 0')
+  // Solo cuenta si el bucle de respuestas está en marcha, y no en los 10 primeros minutos: tras un corte, la cola
+  // pendiente se va atendiendo de 4 en 4 y un despliegue no debe darla por caída (ni volver atrás) mientras tanto.
+  const mirarCola = config.ghlWebhookEnabled && Date.now() - arrancado > 10 * 60000;
+  const atrasadas = !mirarCola ? 0 : repo.db.prepare('SELECT id FROM conversations WHERE respond_at IS NOT NULL AND respond_at < ? AND ai_paused = 0 AND derivado = 0')
     .all(new Date(Date.now() - 5 * 60000).toISOString()).filter((c) => !setter.enCurso?.has(c.id)).length;
   return { ok: parados.length === 0 && atrasadas === 0, bucles_parados: parados, respuestas_atrasadas: atrasadas, respondiendo: setter.enCurso?.size || 0, arrancado: new Date(arrancado).toISOString() };
 };
@@ -93,8 +105,10 @@ const procesarEventosAimharder = crearProcesador({ repo, apis: clientesApi() });
 const aimharderWebhook = Object.keys(clavesWebhook).length && config.aimharder.webhookToken
   ? manejadorWebhook({ repo, claves: clavesWebhook, sedes: SEDES, despertar: () => procesarEventosAimharder() }) : null;
 const app = crearApp({ setter, repo, etiquetas, ghl, salud, aimharderWebhook });
-const servidor = app.listen(config.port, '127.0.0.1', () => {
-  console.log(`Setter en http://127.0.0.1:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
+if (config.ghlWebhookEnabled && !ghlConfigurado) registrarAlerta(repo.db, { clave: 'ghl-sin-configurar', tipo: 'ghl', titulo: 'Falta conectar GoHighLevel (GHL_TOKEN y GHL_LOCATION_ID)', detalle: 'Sin ellos Sofía no recibe ni envía mensajes. El panel y Probar IA funcionan.', nivel: 'aviso' });
+else resolverAlerta(repo.db, 'ghl-sin-configurar');
+const servidor = app.listen(config.port, config.host, () => {
+  console.log(`Setter en http://${config.host}:${config.port} · modo ${config.mode} · modelo ${config.ai.model}`);
   if (config.mode !== 'live') console.log('Modo prueba: la IA NO envía mensajes; deja borradores como notas en GHL.');
 });
 // Claves que faltan o son cortas: se avisa en el registro y en las alertas del panel (sin enseñar la clave)
@@ -119,12 +133,24 @@ if (config.ghlWebhookEnabled) {
   // mientras Sofía escribe en otro no empezaría hasta que acabase ese. `tick` ya cuenta los que hay en marcha.
   cada('respuestas', 2000, () => { setter.tick().catch((e) => console.error('[respuestas]', e.message)); }, 1000);
   cada('seguimientos', 60000, () => procesarSeguimientos(setter));
-  // Etiquetas puestas o quitadas en GHL (también reintenta las que no llegaron a subir)
-  cada('etiquetas-ghl', 15 * 60000, async () => { const r = await etiquetas.sincronizarDesdeGhl(); if (r.puestas + r.quitadas + r.subidas) console.log('Etiquetas GHL:', JSON.stringify(r)); }, 60000);
-  // Chats nuevos de los que no llegó el aviso de GHL: cada 3 minutos se repasan las conversaciones recientes
-  cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
   // Etiquetas con regla de inactividad («si no responde en X h»)
   cada('etiquetas-inactividad', 5 * 60000, () => etiquetas.revisarInactividad());
+}
+if (config.ghlWebhookEnabled && ghlConfigurado) {
+  // Etiquetas puestas o quitadas en GHL (también reintenta las que no llegaron a subir y las quitadas pendientes).
+  // Cada 15 minutos, los contactos con actividad en el último día; los de 30 días, una vez por noche (hacia las 4).
+  // Antes eran los de 30 días cada 15 minutos: una lectura por contacto, que con mucho volumen agota el cupo de GHL.
+  let revisionCompleta = null;
+  cada('etiquetas-ghl', 15 * 60000, async () => {
+    const ahora = new Date();
+    const dia = ahora.toLocaleDateString('sv-SE', { timeZone: config.tz });
+    const completa = revisionCompleta !== dia && Number(ahora.toLocaleString('en-GB', { timeZone: config.tz, hour: '2-digit', hour12: false })) === 4;
+    const r = await etiquetas.sincronizarDesdeGhl({ dias: completa ? 30 : 1 });
+    if (completa) revisionCompleta = dia;
+    if (r.puestas + r.quitadas + r.subidas) console.log(`Etiquetas GHL${completa ? ' (revisión de 30 días)' : ''}:`, JSON.stringify(r));
+  }, 60000);
+  // Chats nuevos de los que no llegó el aviso de GHL: cada 3 minutos se repasan las conversaciones recientes
+  cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
 }
 
 // Horarios de clases desde AimHarder: una vez al día (la primera a los 3 minutos de arrancar). Si cambian, Sofía
@@ -138,7 +164,7 @@ cada('horarios', 24 * 3600 * 1000, async () => {
 
 // Alertas del sistema: comprobaciones cada 10 minutos (la primera al minuto de arrancar)
 cada('alertas', 10 * 60000, async () => {
-  await vigilar(repo.db, { ghl, avisar: avisarEquipo });
+  await vigilar(repo.db, { ghl: ghlConfigurado ? ghl : null, entradaGhl: config.ghlWebhookEnabled && ghlConfigurado, avisar: avisarEquipo });
   const parados = buclesParados(registro, Date.now(), Date.now() - arrancado).filter((n) => n !== 'alertas');
   if (parados.length) registrarAlerta(repo.db, { clave: 'bucle-parado', tipo: 'servidor', titulo: 'Una tarea interna de Sofía se ha parado', detalle: `Tareas sin terminar una vuelta: ${parados.join(', ')}. Si sigue así, reiniciar el servicio.` }, { avisar: avisarEquipo });
   else resolverAlerta(repo.db, 'bucle-parado');
@@ -150,6 +176,10 @@ cada('mantenimiento', 3600 * 1000, async () => {
   repo.db.pragma('wal_checkpoint(PASSIVE)');
   const copia = await copiaSeguridad(repo.db, config.dbPath);
   if (copia) console.log('Copia de seguridad:', copia);
+  // Datos efímeros que ya no sirven (capturas de altas fallidas, notas de voz enviadas, alertas resueltas, pasadas
+  // de la batería): PODA_*_DIAS en el .env, 0 = no borrar. Nunca borra mensajes ni archivos de los leads.
+  const poda = podar({ db: repo.db, dataDir: path.dirname(config.dbPath), mediaDir: carpetaMedios() });
+  if (Object.values(poda).some(Boolean)) console.log('Poda:', JSON.stringify(poda));
   // La base de Probar IA, si existe (abierta aparte, solo para copiarla)
   const rp = rutaPruebas();
   if (rp !== ':memory:' && (await import('node:fs')).existsSync(rp)) {

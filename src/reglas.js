@@ -8,13 +8,11 @@
 //   tras-cita    — después de la clase de prueba: sale `minutos` después de la hora de la clase. Igual que cita.
 //   largo-plazo  — el lead lo deja para más adelante: en la fecha que da (o `minutos` después); `despues_de` encadena.
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { rutaConfig } from './config.js';
 
 export const TIPOS = ['silencio', 'etiqueta', 'cita', 'tras-cita', 'largo-plazo'];
 export const TIPOS_CITA = ['cita', 'tras-cita'];
 const json = (t, d) => { try { return t ? JSON.parse(t) : d; } catch { return d; } };
-const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Fila → objeto que usa el código (con los alias de antes: dias, despuesDe, plantillaWhatsapp). */
 export function deFila(f) {
@@ -58,7 +56,7 @@ function sembrarTrasPrueba(db) {
 export function sembrarReglas(db) {
   if (db.prepare('SELECT count(*) n FROM reglas_seguimiento').get().n) return sembrarTrasPrueba(db);
   let base;
-  try { base = JSON.parse(fs.readFileSync(path.join(raiz, 'config', 'followups.json'), 'utf8')); } catch { return; }
+  try { base = JSON.parse(fs.readFileSync(rutaConfig('followups.json'), 'utf8')); } catch { return; }
   let toggles = {};
   try { toggles = JSON.parse(db.prepare("SELECT valor FROM ajustes WHERE clave = 'seguimientos'").get()?.valor || '{}'); } catch { /* sin ajustes */ }
   const reglas = [...base.reglas];

@@ -1,0 +1,11 @@
+{
+  "_nota": "Perfil del negocio: nombre, asistente y sedes. Cada negocio tiene el suyo en su CONFIG_DIR (docs/vps-propio.md). Las variables por sede del .env llevan el id en mayúsculas: GHL_USER_<ID>, AIMHARDER_TOKEN_<ID>, AIMHARDER_REFRESH_<ID>, AIMHARDER_WEBHOOK_KEY_<ID>, TELEGRAM_CHAT_<ID>. «alias»: palabras (en minúsculas y sin tildes) por las que se reconoce la sede en un texto; se prueban en este orden. «aimharder»: la sede tiene AimHarder propio. «equipo»: otra sede cuyo usuario de GHL la atiende si no tiene GHL_USER_<ID> propio. Los avisos de una sede sin TELEGRAM_CHAT_<ID> van al chat general.",
+  "nombre": "CrossFit MetroPolitano",
+  "asistente": "Sofía",
+  "sedes": [
+    { "id": "parla", "nombre": "Parla", "alias": ["parla"], "aimharder": true },
+    { "id": "getafe", "nombre": "Getafe", "alias": ["getafe", "bercial"], "aimharder": true },
+    { "id": "las_rosas", "nombre": "Las Rosas", "alias": ["rosas", "rozas", "san blas"], "aimharder": true },
+    { "id": "el_canaveral", "nombre": "El Cañaveral", "alias": ["canaveral", "vicalvaro"], "aimharder": false, "equipo": "las_rosas" }
+  ]
+}

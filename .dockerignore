@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+data
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+marca
+simulador/simulador.html
+AGENTS.md
+CLAUDE.md
+EMPIEZA-AQUI.md
+clientes

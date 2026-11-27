@@ -53,6 +53,13 @@ El simulador HTML independiente se puede regenerar con `npm run build-simulador`
   `npm run prueba-extremo` (arranca el servicio contra un GHL de mentira, con el modelo real: no toca producción),
   conservar los horarios específicos del VPS y cambiar `current` antes de reiniciar `codex-zapp`.
 
+## VPS propio y otros negocios
+
+- [`docs/vps-propio.md`](docs/vps-propio.md): un contenedor Docker por negocio (`Dockerfile`, `deploy/vps-propio/`),
+  alta de un negocio nuevo, actualizaciones con vuelta atrás, copias y el paso de MetroPolitano al VPS propio.
+- [`docs/multi-negocio.md`](docs/multi-negocio.md): qué se configura ya por negocio (`CONFIG_DIR`, `config/negocio.json`)
+  y qué sigue escrito para MetroPolitano.
+
 ## Conectar GHL
 
 Guía paso a paso: [`docs/activar-ghl.md`](docs/activar-ghl.md). En el VPS, `npm run verificar-ghl` comprueba token, usuarios y permisos sin enviar nada.

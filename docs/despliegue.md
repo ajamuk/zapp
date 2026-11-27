@@ -19,8 +19,9 @@ producción se quedan en el servidor.
 
 Tras pasar las pruebas, actualiza `current`, reinicia solo `codex-zapp` y comprueba `/health`.
 Si el reinicio o la comprobación falla, vuelve a la release previa. `previous` mantiene el enlace
-de retorno y `current/.commit` identifica el SHA desplegado. El workflow conserva las releases
-existentes y las copias disponibles para recuperación.
+de retorno y `current/.commit` identifica el SHA desplegado. Tras un despliegue correcto se conservan las cinco
+releases más recientes (`ZAPP_RELEASES_CONSERVAR`) además de `current` y `previous`, y se borran las demás.
+Cada release ocupa unos 75 MB. Las copias de `backups/` no se tocan.
 
 ## Configuración del VPS y GitHub
 
@@ -45,3 +46,21 @@ Un fallo de la prueba de extremo a extremo deja un registro protegido en
 `/opt/codex-hosting/apps/zapp/backups/extremo-*.log`. Si un cambio supera el arranque pero falla
 después, pausar los despliegues, volver al directorio apuntado por `previous`, reiniciar
 `codex-zapp` y comprobar de nuevo la salud y el panel. La base de datos queda en su ruta persistente.
+
+## Pendiente en el VPS actual
+
+- **El servicio corre como root.** `codex-zapp.service` no tiene `User=`. El servicio, su Chromium y las pruebas del
+  despliegue se ejecutan como root. Para cambiarlo, en una ventana autorizada:
+  1. Crea un usuario de sistema (`useradd --system --home /opt/metro-setter zapp`).
+  2. Dale la carpeta de `DB_PATH` (`chown -R zapp: <carpeta de DB_PATH>`).
+  3. Da acceso de lectura a lo que el servicio lee de otras apps: el almacén de tokens de AimHarder, las bases de
+     metro-trial-ops y clientes-analytics, el registro de El Cañaveral, el Python de hermes y el modelo de metrito-stt.
+  4. Añade al servicio `User=zapp`, `Group=zapp`, `ProtectSystem=strict`, `ReadWritePaths=<carpeta de DB_PATH>`,
+     `ProtectHome=true` y `CapabilityBoundingSet=`.
+  5. Reinicia y comprueba `/health`, una respuesta en modo prueba, una transcripción y el panel.
+
+  El VPS propio ya funciona así: el contenedor usa el usuario `node`, sin privilegios
+  ([vps-propio.md](vps-propio.md)).
+- **Cambios en `config/prompt-sofia.md` y `config/negocio.md`.** Solo se copian a la base la primera vez. Después,
+  Sofía usa la versión en producción del panel (Ajustes → Instrucciones). Un cambio en esos archivos no llega a
+  producción al desplegar: hay que crear la versión en el panel y activarla.
