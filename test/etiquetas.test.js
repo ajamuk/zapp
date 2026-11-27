@@ -232,6 +232,51 @@ test('sincronización con GHL: tags que llegan, tags quitados en GHL y reintento
   assert.equal(t.puestas, 3); // hyrox vuelve a los dos chats y «le parece caro» llega también al de Instagram
 });
 
+test('quitar en el panel: si GHL no la quita o la lleva otro chat del contacto, la revisión no la vuelve a poner', async () => {
+  const { db, repo, e, sal, avanzar } = montar();
+  const parar = etq.crear(db, { nombre: 'Parar', acciones: { pausar_ia: true, avisar: true } });
+  repo.upsertConv({ id: 'c1b', contact_id: 'k1', channel: 'instagram' });
+  await e.sincronizarContacto('k1', ['parar']);
+  avanzar(1);
+  sal.avisos.length = 0;
+
+  // GHL falla al quitarla: la revisión siguiente ve el tag, no la pone otra vez ni repite sus acciones, y reintenta
+  let falla = true;
+  const ghl = { addTags: async () => {}, removeTags: async (_, t) => { if (falla) throw new Error('GHL caído'); sal.quitadas.push(...t); } };
+  const e2 = new etq.Etiquetador({ repo, ghl, avisar: async (t) => sal.avisos.push(t), now: () => new Date() });
+  await e2.quitar('c1b', parar.id);
+  await e2.quitar('c1', parar.id);
+  let r = await e2.sincronizarContacto('k1', ['parar']);
+  assert.equal(r.puestas, 0);
+  assert.equal(etq.deChats(db, ['c1', 'c1b']).c1?.length ?? 0, 0);
+  assert.equal(sal.avisos.length, 0);
+  falla = false;
+  r = await e2.sincronizarContacto('k1', ['parar']);
+  assert.deepEqual(sal.quitadas, ['parar']);
+  assert.equal(db.prepare('SELECT count(*) n FROM etiquetas_quitadas').get().n, 0);
+
+  // Ya quitada de verdad: si alguien la vuelve a poner en GHL, sí llega
+  r = await e2.sincronizarContacto('k1', ['parar']);
+  assert.equal(r.puestas, 2);
+});
+
+test('quitar en un solo chat del contacto: el tag sigue en GHL por el otro y este chat no la recupera', async () => {
+  const { db, repo, e, sal, avanzar } = montar();
+  const caro = etq.crear(db, { nombre: 'Le parece caro' });
+  repo.upsertConv({ id: 'c1b', contact_id: 'k1', channel: 'instagram' });
+  await e.sincronizarContacto('k1', ['le parece caro']);
+  avanzar(1);
+  await e.quitar('c1', caro.id);
+  assert.deepEqual(sal.quitadas, []); // c1b la sigue llevando
+  const r = await e.sincronizarContacto('k1', ['le parece caro']);
+  assert.equal(r.puestas, 0);
+  assert.deepEqual(Object.keys(etq.deChats(db, ['c1', 'c1b'])).filter((k) => etq.deChats(db, [k])[k]?.length), ['c1b']);
+  // Cuando se quita también del otro chat, sale de GHL y no queda nada pendiente
+  await e.quitar('c1b', caro.id);
+  assert.deepEqual(sal.quitadas, ['le parece caro']);
+  assert.equal(db.prepare('SELECT count(*) n FROM etiquetas_quitadas').get().n, 0);
+});
+
 test('catálogo en GHL: crear, renombrar e importar', async () => {
   const { db } = montar();
   const tags = [{ id: 't1', name: 'hyrox' }, { id: 't2', name: 'viejo nombre' }, { id: 't3', name: 'No Contesta' }];

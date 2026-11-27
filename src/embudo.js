@@ -24,16 +24,17 @@ export const SEDES_EMBUDO = ['parla', 'getafe', 'las_rosas'];
 /** Pasos del embudo de cada sede, en orden. Solo Parla trabaja con clase de prueba. */
 export const PASOS_SEDE = { parla: ['leads', 'reservan', 'asisten', 'pagan'], getafe: ['leads', 'pagan'], las_rosas: ['leads', 'pagan'] };
 
-const NOMBRE_SEDE = { parla: 'Parla', getafe: 'Getafe', las_rosas: 'Las Rosas' };
+const NOMBRE_SEDE = Object.fromEntries(config.negocio.sedes.map((s) => [s.id, s.nombre])); // config/negocio.json
 
-/** Medianoche en Madrid del día 1 de un mes, como instante UTC (respeta el horario de verano). */
-function medianocheMadrid(a, m) {
+/** Medianoche del día 1 de un mes en la hora del negocio (BUSINESS_TZ), como instante UTC (respeta el horario de verano). */
+function medianocheMadrid(a, m, tz = config.tz) {
   const utc = Date.UTC(a, m - 1, 1);
-  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' }).format(utc));
+  let h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }).format(utc));
+  if (h > 12) h -= 24; // al oeste de Greenwich, a las 00:00 UTC allí aún es el día anterior
   return new Date(utc - h * 3600 * 1000);
 }
 
-/** Inicio (incluido) y fin (excluido) del mes 'AAAA-MM' en hora de Madrid. */
+/** Inicio (incluido) y fin (excluido) del mes 'AAAA-MM' en la hora del negocio. */
 export function rangoMes(mes) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) throw new Error('Mes con formato AAAA-MM');
   const [a, m] = mes.split('-').map(Number);
@@ -41,7 +42,7 @@ export function rangoMes(mes) {
 }
 
 export function mesActual(ahora = new Date()) {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).format(ahora);
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: config.tz, year: 'numeric', month: '2-digit' }).format(ahora);
 }
 
 /**

@@ -14,6 +14,8 @@ import { entraEnNivel, normasDeTono, NIVELES } from './intensidad.js';
 
 export const VENTANA_MS = 24 * 3600 * 1000;
 const json = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
+// Cómo se nombra la hora del negocio en las instrucciones (con Madrid, el texto de siempre)
+const nombreHora = () => (config.tz === 'Europe/Madrid' ? 'hora de Madrid' : `hora local, ${config.tz}`);
 const QUIEN_DEPENDE_DE_SOFIA = ['silencio', 'largo-plazo'];
 
 /** Instrucciones para que Sofía decida y redacte un seguimiento. */
@@ -52,9 +54,9 @@ function reglaDelPendiente(db, s) {
 export function contextoTarea(regla, s, { plantilla = false, ahora = new Date(), reglas: todas = [], nivel } = {}) {
   const c = json(s?.contexto);
   const futuro = s?.due_at && new Date(s.due_at) - ahora > 60000;
-  const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const cuando = futuro ? new Date(s.due_at).toLocaleString('es-ES', { timeZone: config.tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   return [
-    futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (hora de Madrid). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
+    futuro ? `IMPORTANTE: este mensaje se enviará el ${cuando} (${nombreHora()}). Redáctalo como si ya fuera ese momento y el lead no hubiera vuelto a escribir desde su último mensaje; decide si se cumple la condición pensando en ese momento, no en hoy.` : '',
     'Las fechas y los días que salen en la conversación eran correctos cuando se dijeron (aunque ponga «hoy», «mañana» o «estamos a…»): no los corrijas ni te disculpes por ellos. Si alguno ya ha pasado, propón directamente el siguiente que encaje.',
     contextoSeguimiento(regla.tipo === 'tras-cita' && s?.resultado ? { ...regla, ...(instruccionesTrasPrueba(s.resultado) || {}) } : regla, nivel ? normasDeTono(regla, todas, nivel) : []),
     regla.tipo === 'tras-cita' && s?.resultado ? `Resultado de la prueba (comprobado ahora): ${RESULTADOS[s.resultado] || s.resultado}.` : '',
@@ -136,15 +138,17 @@ function motivoParaNoEnviar(s, regla, conv, ajustes, ahora, noLead = false, toda
  * Procesa los seguimientos vencidos (de cualquier tipo). La IA decide si se cumple la condición y redacta el
  * texto, o usa el que ya tenía preparado. En modo prueba el envío queda como borrador (nota en GHL).
  */
-export async function procesarSeguimientos(setter) {
+export async function procesarSeguimientos(setter, { presupuestoMs = PRESUPUESTO_MS, reloj = Date.now } = {}) {
   const { repo } = setter;
   const ahora = setter.now();
   const ajustes = leerAjustes(repo);
   await procesarLanzamientos(setter);
-  let aplazados = 0;
+  // Tope de tiempo real por vuelta (no el reloj simulado): lo que no dé tiempo queda pendiente para la siguiente
+  const inicio = reloj();
   const tomar = repo.db.prepare("UPDATE scheduled SET estado = 'enviando' WHERE id = ? AND estado = 'pendiente'");
   const sigueEnMarcha = repo.db.prepare("SELECT 1 FROM scheduled WHERE id = ? AND estado = 'enviando'");
   for (const s of repo.dueScheduled(ahora.toISOString())) {
+   if (presupuestoMs > 0 && reloj() - inicio > presupuestoMs) break;
    let mio = false;
    try { // un fallo en un envío nunca corta los demás
     if (setter.enCurso?.has(s.conversation_id)) continue; // Sofía está contestando en ese chat: al siguiente minuto
@@ -153,6 +157,17 @@ export async function procesarSeguimientos(setter) {
     const regla = reglaDelPendiente(setter.catalogo, s);
     let conv = repo.getConv(s.conversation_id);
     if (!regla || !conv) { repo.finishScheduled(s.id, 'omitido', 'regla o conversación desconocida'); continue; }
+    // Fuera de horario (salvo los mensajes a mano, que salen a su hora exacta): se omite ya lo que se sabe sin salir
+    // de la base y el resto pasa a la apertura, sin repasar GHL ni AimHarder (se hace al enviarlo de verdad)
+    if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
+      const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id), reglas.listar(setter.catalogo));
+      if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
+      repo.finishScheduled(s.id, 'cancelado', 'fuera de horario: reprogramado');
+      const apertura = huecoTrasApertura(repo.db, siguienteApertura(ahora));
+      const r = repo.schedule(conv.id, s.regla_id, apertura.toISOString(), json(s.contexto), s.tipo, s.texto_previsto);
+      if (s.previsto_msg != null) repo.guardarPrevisto(r.lastInsertRowid, s.texto_previsto, s.previsto_msg);
+      continue;
+    }
     // Aislamiento: a un chat que no es del número propio no se le escribe ni se toca nada suyo en GHL
     if (setter.permitido && !setter.permitido(conv)) {
       if (!(await setter.intentarAdoptar?.(conv.id))) { repo.finishScheduled(s.id, 'omitido', 'aislamiento: chat no verificado para el número propio'); continue; }
@@ -186,15 +201,6 @@ export async function procesarSeguimientos(setter) {
     const todas = reglas.listar(setter.catalogo);
     const no = motivoParaNoEnviar(s, regla, conv, ajustes, ahora, esNoLead(repo.db, conv.id), todas);
     if (no) { repo.finishScheduled(s.id, 'omitido', no); continue; }
-    // Los mensajes a mano salen a su hora exacta; el resto, dentro del horario de Sofía
-    if (s.tipo !== 'manual' && !dentroDeHorario(ahora)) {
-      repo.finishScheduled(s.id, 'cancelado', 'fuera de horario: reprogramado');
-      // Los envíos de un lanzamiento conservan su reparto (uno cada 20 s) al pasar a la siguiente apertura
-      const apertura = new Date(siguienteApertura(ahora).getTime() + (s.tipo === 'lanzamiento' ? (aplazados++) * ESPACIADO_MS : 0));
-      const r = repo.schedule(conv.id, s.regla_id, apertura.toISOString(), json(s.contexto), s.tipo, s.texto_previsto);
-      if (s.previsto_msg != null) repo.guardarPrevisto(r.lastInsertRowid, s.texto_previsto, s.previsto_msg);
-      continue;
-    }
 
     // Plantilla de WhatsApp elegida por el equipo: se envía directamente (vale pasadas las 24 h)
     if (s.tipo === 'manual' && json(s.contexto)?.plantilla) {
@@ -302,13 +308,13 @@ export function cancelarPorEtiqueta(repo, catalogo, convId, etiquetaId) {
   if (ids.length) repo.cancelScheduled(convId, 'se quitó la etiqueta', { tipos: ['etiqueta'], reglaIds: ids });
 }
 
-/** Instante UTC de «AAAA-MM-DD HH:MM» en hora de Madrid, o null. */
-export function horaMadrid(texto) {
+/** Instante UTC de «AAAA-MM-DD HH:MM» en la hora del negocio (BUSINESS_TZ; por defecto Madrid), o null. */
+export function horaMadrid(texto, tz = config.tz) {
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(texto || ''));
   if (!m) return null;
   const [a, mes, d, h, mi] = m.slice(1).map(Number);
   const aprox = Date.UTC(a, mes - 1, d, h, mi);
-  const enMadrid = Number(new Date(aprox).toLocaleString('en-GB', { timeZone: 'Europe/Madrid', hour: '2-digit', hourCycle: 'h23' }));
+  const enMadrid = Number(new Date(aprox).toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hourCycle: 'h23' }));
   let dif = enMadrid - h; if (dif > 12) dif -= 24; if (dif < -12) dif += 24;
   const f = new Date(aprox - dif * 3600e3);
   return Number.isNaN(f.getTime()) ? null : f;
@@ -326,7 +332,7 @@ export function programarCita(repo, catalogo, convId, fechaHora, ahora = new Dat
   repo.cancelScheduled(convId, 'clase de prueba cambiada', { tipos: ['cita'] });
   repo.updateConv(convId, { prueba_fecha: clase.toISOString() });
   if (!conv || String(convId).startsWith('prueba-')) return clase;
-  const etiqueta = clase.toLocaleString('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  const etiqueta = clase.toLocaleString('es-ES', { timeZone: config.tz, weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   for (const r of reglas.listar(catalogo).filter((x) => reglas.TIPOS_CITA.includes(x.tipo) && x.activo && x.canales.includes(conv.channel))) {
     const due = new Date(clase.getTime() + (r.tipo === 'tras-cita' ? 1 : -1) * r.minutos * 60000);
     if (due > ahora) repo.schedule(convId, r.id, due.toISOString(), { prueba: etiqueta }, 'cita');
@@ -421,6 +427,20 @@ export function validarLanzamiento(d = {}, ahora = new Date()) {
 }
 
 const ESPACIADO_MS = 20 * 1000; // uno cada 20 s, para no saturar a GHL ni parecer spam
+const PRESUPUESTO_MS = 90 * 1000; // tiempo máximo de una vuelta de seguimientos (el bucle se da por parado a los 3 min)
+
+/**
+ * Hora de envío de un seguimiento aplazado a la apertura: uno cada 20 s detrás de los que ya esperan esa misma
+ * apertura (también los aplazados en vueltas anteriores), para que no salgan todos de golpe al abrir.
+ */
+export function huecoTrasApertura(db, apertura) {
+  const t0 = apertura.getTime();
+  const filas = db.prepare("SELECT due_at FROM scheduled WHERE estado = 'pendiente' AND due_at >= ? AND due_at < ?")
+    .all(apertura.toISOString(), new Date(t0 + 864e5).toISOString());
+  let ultimo = -1;
+  for (const f of filas) { const d = Date.parse(f.due_at) - t0; if (d % ESPACIADO_MS === 0) ultimo = Math.max(ultimo, d / ESPACIADO_MS); }
+  return new Date(t0 + (ultimo + 1) * ESPACIADO_MS);
+}
 
 /** Cuando llega la hora de un lanzamiento, se prepara un envío por destinatario, repartidos en el tiempo. */
 export async function procesarLanzamientos(setter) {

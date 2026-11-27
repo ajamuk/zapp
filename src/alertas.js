@@ -4,15 +4,21 @@
 import fs from 'node:fs';
 import { config } from './config.js';
 
-export function registrar(db, { clave, tipo, titulo, detalle = '', nivel = 'error' }, { avisar } = {}) {
+/** Número de una variable de entorno (vacía o no numérica = el valor por defecto; 0 = desactivado). */
+const numEnv = (k, d) => { const v = process.env[k]; const n = Number(v); return v === undefined || v === '' || !Number.isFinite(n) ? d : n; };
+
+export function registrar(db, { clave, tipo, titulo, detalle = '', nivel = 'error' }, { avisar, reavisoHoras = numEnv('ALERTAS_REAVISO_HORAS', 3) } = {}) {
   const abierta = db.prepare('SELECT * FROM alertas WHERE clave = ? AND resuelta_at IS NULL').get(clave);
   if (abierta) {
     db.prepare("UPDATE alertas SET veces = veces + 1, ultima = datetime('now'), detalle = ? WHERE id = ?").run(String(detalle).slice(0, 1000), abierta.id);
     return { nueva: false, id: abierta.id };
   }
+  // Un problema que va y viene (se resuelve y vuelve a abrirse) no avisa otra vez hasta pasadas `reavisoHoras`
+  const avisadaHace = reavisoHoras > 0 && nivel === 'error'
+    && db.prepare("SELECT 1 FROM alertas WHERE clave = ? AND nivel = 'error' AND primera >= datetime('now', ?)").get(clave, `-${Math.round(reavisoHoras * 60)} minutes`);
   const r = db.prepare('INSERT INTO alertas (clave, tipo, nivel, titulo, detalle) VALUES (?, ?, ?, ?, ?)').run(clave, tipo, nivel, titulo, String(detalle).slice(0, 1000));
   // Por Telegram solo lo grave (Sofía deja de atender). Los de nivel «aviso» se quedan en el panel.
-  if (nivel === 'error') Promise.resolve(avisar?.(`⚠️ ZAPP · ${titulo}${detalle ? `\n${String(detalle).slice(0, 300)}` : ''}`)).catch(() => {});
+  if (nivel === 'error' && !avisadaHace) Promise.resolve(avisar?.(`⚠️ ZAPP · ${titulo}${detalle ? `\n${String(detalle).slice(0, 300)}` : ''}`)).catch(() => {});
   return { nueva: true, id: Number(r.lastInsertRowid) };
 }
 
@@ -31,7 +37,8 @@ const jwtExp = (t) => { try { return JSON.parse(Buffer.from(String(t).split('.')
  * Comprobaciones periódicas. Cada una registra o resuelve su alerta. `ghl` es el cliente real.
  * Devuelve la lista de comprobaciones con su resultado (para el panel y los tests).
  */
-export async function vigilar(db, { ghl, avisar, ahora = new Date(), tokenStore = config.aimharder.tokenStore, entradaGhl = config.ghlWebhookEnabled, disco = config.dbPath } = {}) {
+export async function vigilar(db, { ghl, avisar, ahora = new Date(), tokenStore = config.aimharder.tokenStore, entradaGhl = config.ghlWebhookEnabled, disco = config.dbPath,
+  sinMensajesHoras = numEnv('ALERTA_SIN_MENSAJES_HORAS', 6) } = {}) {
   const res = [];
   const comprobar = async (clave, tipo, titulo, fn, nivel = 'error') => {
     let problema = null;
@@ -55,7 +62,8 @@ export async function vigilar(db, { ghl, avisar, ahora = new Date(), tokenStore 
   });
 
   await comprobar('ia-errores', 'ia', 'La IA está fallando', async () => {
-    const e = n("SELECT count(*) n FROM ai_runs WHERE error IS NOT NULL AND datetime(created_at) >= datetime('now', '-30 minutes')");
+    // ai_runs.created_at tiene el formato de datetime('now'): comparado tal cual, usa el índice por fecha
+    const e = n("SELECT count(*) n FROM ai_runs WHERE created_at >= datetime('now', '-30 minutes') AND error IS NOT NULL");
     const ultimo = db.prepare('SELECT error FROM ai_runs WHERE error IS NOT NULL ORDER BY id DESC LIMIT 1').get()?.error;
     return e >= 2 ? `${e} errores en los últimos 30 minutos. Último: ${ultimo}` : null;
   });
@@ -66,22 +74,24 @@ export async function vigilar(db, { ghl, avisar, ahora = new Date(), tokenStore 
   });
 
   await comprobar('seguimientos-error', 'seguimientos', 'Hay seguimientos que fallan al enviarse', async () => {
-    const e = n("SELECT count(*) n FROM scheduled WHERE estado = 'error' AND datetime(due_at) >= datetime('now', '-6 hours')");
+    // due_at y messages.created_at van en ISO (toISOString): se comparan con un límite en ISO para usar los índices
+    const e = n("SELECT count(*) n FROM scheduled WHERE estado = 'error' AND due_at >= ?", new Date(Date.now() - 6 * 3600e3).toISOString());
     const d = db.prepare("SELECT detalle FROM scheduled WHERE estado = 'error' ORDER BY id DESC LIMIT 1").get()?.detalle;
     return e ? `${e} en las últimas 6 horas. Último: ${d}` : null;
   }, 'aviso');
 
   await comprobar('transcripcion', 'medios', 'No se pueden escuchar las notas de voz', async () => {
-    const e = n("SELECT count(*) n FROM messages WHERE adjunto = 'audio' AND media_error IS NOT NULL AND datetime(created_at) >= datetime('now', '-6 hours')");
+    const e = n("SELECT count(*) n FROM messages WHERE created_at >= ? AND adjunto = 'audio' AND media_error IS NOT NULL", new Date(Date.now() - 6 * 3600e3).toISOString());
     return e >= 2 ? `${e} audios sin transcribir en las últimas 6 horas.` : null;
   }, 'aviso');
 
   await comprobar('sin-mensajes', 'ghl', 'No llegan mensajes de GHL', async () => {
-    if (!entradaGhl) return null;
+    // ALERTA_SIN_MENSAJES_HORAS: horas sin mensajes de leads para avisar (0 = no se comprueba; un negocio pequeño)
+    if (!entradaGhl || !(sinMensajesHoras > 0)) return null;
     const h = Number(new Intl.DateTimeFormat('es-ES', { hour: 'numeric', hourCycle: 'h23', timeZone: config.tz }).format(ahora));
     if (h < 11 || h > 21) return null; // solo de día, cuando siempre escribe alguien
     const ultimo = db.prepare("SELECT max(created_at) t FROM messages WHERE autor = 'lead'").get()?.t;
-    return !ultimo || ahora - new Date(ultimo) > 6 * 3600e3 ? `El último mensaje de un lead llegó ${ultimo ? `el ${new Date(ultimo).toLocaleString('es-ES', { timeZone: config.tz })}` : 'nunca'}. Revisar el webhook o el workflow de GHL.` : null;
+    return !ultimo || ahora - new Date(ultimo) > sinMensajesHoras * 3600e3 ? `El último mensaje de un lead llegó ${ultimo ? `el ${new Date(ultimo).toLocaleString('es-ES', { timeZone: config.tz })}` : 'nunca'}. Revisar el webhook o el workflow de GHL.` : null;
   });
 
   await comprobar('disco', 'servidor', 'Queda poco espacio en el disco', async () => {

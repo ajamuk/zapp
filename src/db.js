@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS conv_etiquetas (
   PRIMARY KEY (conversation_id, etiqueta_id)
 );
 CREATE INDEX IF NOT EXISTS conv_etiquetas_etq ON conv_etiquetas(etiqueta_id);
+-- Etiquetas quitadas en el panel cuyo tag sigue en GHL (falló al quitarlo o lo lleva otro chat del contacto):
+-- mientras estén aquí, la revisión de GHL no las vuelve a poner y reintenta quitar el tag
+CREATE TABLE IF NOT EXISTS etiquetas_quitadas (
+  conversation_id TEXT NOT NULL,
+  etiqueta_id INTEGER NOT NULL,
+  quitada_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (conversation_id, etiqueta_id)
+);
 CREATE TABLE IF NOT EXISTS vistas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
@@ -325,6 +333,45 @@ export async function copiaSeguridad(db, dbPath, { dias = 14, ahora = new Date()
   const viejas = fs.readdirSync(dir).filter((f) => f.startsWith(`${base}-`) && f.endsWith('.db')).sort().slice(0, -dias);
   for (const f of viejas) fs.rmSync(path.join(dir, f), { force: true });
   return destino;
+}
+
+/** Días de cada poda (variable de entorno; vacía = por defecto, 0 = no se poda). */
+const diasEnv = (k, d) => { const v = process.env[k]; const n = Number(v); return v === undefined || v === '' || !Number.isFinite(n) ? d : Math.max(0, n); };
+export const diasPoda = () => ({
+  capturas: diasEnv('PODA_CAPTURAS_DIAS', 14),   // data/alta-error-*.png (capturas del panel de AimHarder con datos del lead)
+  voz: diasEnv('PODA_VOZ_DIAS', 60),             // notas de voz de Sofía (media/voz/*.ogg), ya entregadas
+  alertas: diasEnv('PODA_ALERTAS_DIAS', 90),     // alertas ya resueltas
+  bateria: diasEnv('PODA_BATERIA_DIAS', 180),    // resultados de la batería de pruebas (conversaciones simuladas)
+});
+
+/** Borra los archivos `.ext` de `dir` (sin entrar en subcarpetas) que empiezan por `prefijo` y son anteriores a `limite`. */
+function borrarViejos(dir, { prefijo = '', ext, limite }) {
+  let n = 0;
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir); } catch { return 0; }
+  for (const f of nombres) {
+    if (!f.startsWith(prefijo) || !f.endsWith(ext)) continue;
+    const ruta = path.join(dir, f);
+    try { const st = fs.statSync(ruta); if (st.isFile() && st.mtimeMs < limite) { fs.rmSync(ruta, { force: true }); n++; } } catch { /* ya no está */ }
+  }
+  return n;
+}
+
+/**
+ * Poda de lo que es efímero y crece sin fin: capturas de altas fallidas, notas de voz de Sofía ya enviadas,
+ * alertas resueltas y resultados viejos de la batería. Nunca toca mensajes ni archivos de los leads.
+ * Devuelve lo borrado de cada cosa.
+ */
+export function podar({ db, dataDir, mediaDir = dataDir ? path.join(dataDir, 'media') : null, ahora = new Date(), dias = diasPoda() } = {}) {
+  const antes = (d) => ahora.getTime() - d * 864e5;
+  // alertas y bateria_resultados guardan la fecha con datetime('now') («AAAA-MM-DD HH:MM:SS», UTC)
+  const sqlite = (d) => new Date(antes(d)).toISOString().replace('T', ' ').slice(0, 19);
+  const out = { capturas: 0, voz: 0, alertas: 0, bateria: 0 };
+  if (dataDir && dias.capturas > 0) out.capturas = borrarViejos(dataDir, { prefijo: 'alta-error-', ext: '.png', limite: antes(dias.capturas) });
+  if (mediaDir && dias.voz > 0) out.voz = borrarViejos(path.join(mediaDir, 'voz'), { ext: '.ogg', limite: antes(dias.voz) });
+  if (db && dias.alertas > 0) out.alertas = db.prepare('DELETE FROM alertas WHERE resuelta_at IS NOT NULL AND resuelta_at < ?').run(sqlite(dias.alertas)).changes;
+  if (db && dias.bateria > 0) out.bateria = db.prepare('DELETE FROM bateria_resultados WHERE created_at < ?').run(sqlite(dias.bateria)).changes;
+  return out;
 }
 
 export function openDb(dbPath) {

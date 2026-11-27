@@ -55,14 +55,16 @@ const MEJOR_ESCRITO = /https?:\/\/|www\.|\S+@\S+\.\S+/i;
 /**
  * ¿Sale esta respuesta como nota de voz? Función pura: recibe las normas y los datos del chat.
  * Devuelve { voz, motivo } (el motivo, para el registro y las pruebas).
+ * `usoDe()`: alternativa a pasar enviadasConv y caracteresMes; solo se consulta la base si pasan las normas baratas.
  */
-export function decidirVoz({ ajustes, canal, clave, vozId, esPrueba, ultimoLeadAudio, enviadasConv = 0, caracteresMes = 0, mensajes = [] }) {
+export function decidirVoz({ ajustes, canal, clave, vozId, esPrueba, ultimoLeadAudio, enviadasConv = 0, caracteresMes = 0, mensajes = [], usoDe = null }) {
   const no = (motivo) => ({ voz: false, motivo });
   if (!ajustes?.activo) return no('apagado');
   if (!clave || !vozId) return no('falta la clave o la voz de ElevenLabs');
   if (canal !== 'whatsapp') return no('solo por WhatsApp');
   if (ajustes.soloPruebas && !esPrueba) return no('solo teléfonos de prueba');
   if (ajustes.soloSiLeadAudio && !ultimoLeadAudio) return no('el lead no ha mandado un audio');
+  if (usoDe) ({ enviadasConv, caracteresMes } = usoDe());
   if (enviadasConv >= ajustes.maxPorConversacion) return no('máximo por conversación');
   const texto = textoHablado(mensajes);
   if (!texto) return no('sin texto');
@@ -75,7 +77,8 @@ export function decidirVoz({ ajustes, canal, clave, vozId, esPrueba, ultimoLeadA
 /** Letras gastadas este mes y notas de voz ya enviadas en un chat (cuentan las que salieron de verdad). */
 export function uso(db, convId = null, ahora = new Date()) {
   const mes = `${ahora.toISOString().slice(0, 7)}-01`;
-  const caracteresMes = db.prepare("SELECT COALESCE(SUM(length(texto)), 0) n FROM messages WHERE media_ruta LIKE 'voz/%' AND enviado = 1 AND date(created_at) >= ?").get(mes).n;
+  // created_at va en ISO: comparado tal cual con «AAAA-MM-01» usa el índice por fecha (solo se leen los del mes)
+  const caracteresMes = db.prepare("SELECT COALESCE(SUM(length(texto)), 0) n FROM messages WHERE created_at >= ? AND media_ruta LIKE 'voz/%' AND enviado = 1").get(mes).n;
   const enviadasConv = convId ? db.prepare("SELECT count(*) n FROM messages WHERE conversation_id = ? AND media_ruta LIKE 'voz/%' AND enviado = 1").get(convId).n : 0;
   return { caracteresMes, enviadasConv };
 }

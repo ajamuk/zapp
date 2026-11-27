@@ -128,7 +128,8 @@ export class Ghl {
     const text = await r.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!r.ok) throw new Error(`GHL ${method} ${path} → ${r.status}: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+    // El cuerpo va recortado: una página de error en HTML acabaría entera en los detalles de la base
+    if (!r.ok) throw new Error(`GHL ${method} ${path} → ${r.status}: ${String(typeof data === 'string' ? data : JSON.stringify(data)).slice(0, 300)}`);
     return data;
   }
 

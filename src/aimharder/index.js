@@ -4,7 +4,8 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { AimHarderApi } from './api.js';
 
-export const SEDES = ['parla', 'getafe', 'las_rosas'];
+// Sedes con AimHarder propio (config/negocio.json)
+export const SEDES = config.aimharder.sedes;
 const ficheroTokens = () => path.join(path.dirname(config.dbPath), 'aimharder-tokens.json');
 
 /** Teléfono a 9 dígitos españoles (sin +34 / 0034, espacios ni guiones). */
@@ -25,35 +26,57 @@ export function leerTokenCompartido(fichero, sede) {
   return t;
 }
 
+/** Tokens renovados guardados ({ sede: { access, refresh } }); {} si no hay fichero o no se puede leer. */
+export function leerTokensGuardados(fichero = ficheroTokens()) {
+  try { return JSON.parse(fs.readFileSync(fichero, 'utf8')) || {}; } catch { return {}; }
+}
+
+/**
+ * Guarda la pareja nueva de una sede sin pisar las demás: se relee el fichero justo antes (otra sede u otro proceso
+ * puede haberlo cambiado) y se escribe entero de una vez (temporal + rename), solo legible por el servicio.
+ */
+export function guardarTokenSede(sede, par, fichero = ficheroTokens()) {
+  const todos = { ...leerTokensGuardados(fichero), [sede]: par };
+  fs.mkdirSync(path.dirname(fichero), { recursive: true });
+  const tmp = `${fichero}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(todos), { mode: 0o600 });
+  fs.renameSync(tmp, fichero);
+}
+
+// Con tokens propios, un solo cliente por sede en todo el proceso: cada renovación cambia la pareja, y dos clientes
+// con copias distintas se dejarían sin acceso el uno al otro.
+const clientesPropios = new Map();
+/** Solo para las pruebas: olvida los clientes creados. */
+export const olvidarClientesApi = () => clientesPropios.clear();
+
 /**
  * Un cliente de API por sede. Con AIMHARDER_TOKEN_STORE se usan los tokens compartidos (sin renovarlos);
  * si no, los del .env, y los renovados se guardan en data/aimharder-tokens.json.
  */
-export function clientesApi() {
+export function clientesApi({ fichero = ficheroTokens(), fetchImpl } = {}) {
   const store = config.aimharder.tokenStore;
   if (store) {
     const out = {};
     for (const sede of SEDES) {
       try { leerTokenCompartido(store, sede); } catch (e) { console.warn(e.message); continue; }
-      out[sede] = new AimHarderApi({ leerToken: () => leerTokenCompartido(store, sede) });
+      out[sede] = new AimHarderApi({ leerToken: () => leerTokenCompartido(store, sede), ...(fetchImpl ? { fetchImpl } : {}) });
     }
     return out;
   }
-  let guardados = {};
-  try { guardados = JSON.parse(fs.readFileSync(ficheroTokens(), 'utf8')); } catch { /* primera vez */ }
+  const guardados = leerTokensGuardados(fichero);
   const out = {};
   for (const sede of SEDES) {
-    const env = config.aimharder.tokens[sede];
-    const t = guardados[sede] || env;
-    if (!t?.access) continue;
-    out[sede] = new AimHarderApi({
-      access: t.access, refresh: t.refresh,
-      onRefresh: (access, refresh) => {
-        guardados[sede] = { access, refresh };
-        fs.mkdirSync(path.dirname(ficheroTokens()), { recursive: true });
-        fs.writeFileSync(ficheroTokens(), JSON.stringify(guardados), { mode: 0o600 });
-      },
-    });
+    const clave = `${fichero}:${sede}`;
+    if (!clientesPropios.has(clave)) {
+      const t = guardados[sede] || config.aimharder.tokens[sede];
+      if (!t?.access) continue;
+      clientesPropios.set(clave, new AimHarderApi({
+        access: t.access, refresh: t.refresh, ...(fetchImpl ? { fetchImpl } : {}),
+        leerGuardado: () => leerTokensGuardados(fichero)[sede],
+        onRefresh: (access, refresh) => guardarTokenSede(sede, { access, refresh }, fichero),
+      }));
+    }
+    out[sede] = clientesPropios.get(clave);
   }
   return out;
 }
@@ -91,19 +114,28 @@ export function filaSocio(sede, c) {
  */
 export async function sincronizarSocios(repo, apis = clientesApi()) {
   const resumen = {};
+  const fallos = [];
   for (const [sede, api] of Object.entries(apis)) {
-    const clientes = await api.clientes({ conTarifas: true });
-    const filas = [];
-    for (const c of clientes) {
-      const f = filaSocio(sede, c);
-      if (f) filas.push(f);
-    }
-    // Una lista vacía o a menos de la mitad que la anterior es un fallo de AimHarder, no una fuga de socios:
-    // se conserva el índice que había (si no, Sofía trataría a los socios como leads).
-    const antes = repo.db.prepare('SELECT count(*) n FROM socios WHERE sede = ?').get(sede).n;
-    if (antes >= 20 && filas.length < antes / 2) throw new Error(`AimHarder devolvió ${filas.length} clientes en ${sede} (había ${antes}): no se actualiza el índice`);
-    repo.reemplazarSocios(sede, filas);
-    resumen[sede] = { clientes: clientes.length, socios: filas.filter((f) => f.activo).length };
+    // Una sede que falla no deja sin actualizar a las demás: el error sale al final
+    try {
+      const clientes = await api.clientes({ conTarifas: true });
+      const filas = [];
+      for (const c of clientes) {
+        const f = filaSocio(sede, c);
+        if (f) filas.push(f);
+      }
+      // Una lista vacía o a menos de la mitad que la anterior es un fallo de AimHarder, no una fuga de socios:
+      // se conserva el índice que había (si no, Sofía trataría a los socios como leads).
+      const antes = repo.db.prepare('SELECT count(*) n FROM socios WHERE sede = ?').get(sede).n;
+      if (antes >= 20 && filas.length < antes / 2) throw new Error(`AimHarder devolvió ${filas.length} clientes en ${sede} (había ${antes}): no se actualiza el índice`);
+      repo.reemplazarSocios(sede, filas);
+      resumen[sede] = { clientes: clientes.length, socios: filas.filter((f) => f.activo).length };
+    } catch (e) { fallos.push(e); }
+  }
+  if (fallos.length) {
+    const e = fallos.length === 1 ? fallos[0] : new Error(fallos.map((x) => x.message).join(' · '));
+    e.resumen = resumen; // lo que sí se sincronizó
+    throw e;
   }
   return resumen;
 }
