@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { partirNombre, prepararFormulario, validarDatos, edad, elegirRecibo, hoyDdMmYyyy } from '../src/aimharder/alta-navegador.js';
+import { partirNombre, prepararFormulario, validarDatos, edad, elegirRecibo, elegirAnticipable, hoyDdMmYyyy } from '../src/aimharder/alta-navegador.js';
 import { mensajesAlta } from '../src/setter.js';
 
 test('parte el nombre completo en nombre y apellidos', () => {
@@ -45,6 +45,21 @@ test('fecha de emisión de hoy en Madrid y elección del recibo de la tarifa', (
   const r = elegirRecibo([{ id: 5, concept: 'Bono 10 11/2026' }, { id: 9, concept: 'CrossFit Academy 2 días 11/2026' }, { id: 7, concept: 'CrossFit Academy 2 días 10/2026' }], 'CrossFit Academy 2 días');
   assert.equal(r.id, 9);
   assert.equal(elegirRecibo([], 'x'), null);
+});
+
+test('generación anticipada: se adelanta el pago del primer mes de la tarifa recién puesta, de ese cliente', () => {
+  // Así lo devuelve AimHarder (GET /api/generationPayments): `id` es el cliente y `membId` la tarifa
+  const lista = [
+    { id: 11, membId: 501, concept: 'Tarifa L 13 Clases 12/2026', amountc: '99.00' },
+    { id: 11, membId: 502, concept: 'Open Box 12/2026', amountc: '60.00' },
+    { id: 22, membId: 503, concept: 'Tarifa L 13 Clases 12/2026', amountc: '99.00' },
+    { id: 33, membId: 504, concept: 'Tarifa M 01/2027', amountc: '95.00' },
+  ];
+  assert.equal(elegirAnticipable(lista, 11, 'Tarifa L 13 Clases', '2026-12-01').membId, 501);
+  assert.equal(elegirAnticipable(lista, '22', null, '2026-12-01').membId, 503, 'un solo pago de ese mes: vale aunque no se sepa el nombre');
+  assert.equal(elegirAnticipable(lista, 11, null, '2026-12-01'), null, 'dos tarifas ese mes y sin nombre: no se adivina');
+  assert.equal(elegirAnticipable(lista, 33, 'Tarifa M', '2026-12-01'), null, 'otro mes: no es el primer pago de esta alta');
+  assert.equal(elegirAnticipable([], 11, 'x', '2026-12-01'), null);
 });
 
 test('aviso de alta al lead: sede, fecha, app, documentos e importe verificado', () => {

@@ -60,6 +60,11 @@ Si un alta falla, se guarda una captura en `data/` y el equipo recibe los datos 
 4. **Forma de pago**: `#clformapago` = 4 (Pago automático con TPV RedSys). Tras guardar se comprueba con `GET /api/client/{id}`.
 5. **Tarifa**: AimHarder calcula el prorrateo. Primer recibo manual y pendiente.
 6. **Emisión**: en `/payments`, `fichaPago(id)` → `#pgDesde` = hoy → `guardarPago`. Se comprueba con `GET /api/pendingPayments?clientId=` que `since` = hoy. El importe pendiente verificado es el que se da al lead.
+   Si no sale ningún recibo pendiente porque el primer mes de la tarifa aún está en **Generación anticipada**
+   (AimHarder lo genera solo el día 1; pasó en Getafe el 28/11/2026 con inicio el 1/12), se adelanta ese pago como hace
+   el equipo con el «+» de esa lista: `GET /api/generationPayments?client=` → el pago de ese cliente y del mes de inicio →
+   `anticipaPago(...)` (rellena concepto, importe, IVA y la tarifa) → `#pgDesde` = hoy, pendiente → `guardarPago`. El
+   importe tiene que coincidir con el calculado; si algo no cuadra, el alta pasa al equipo como antes.
 7. **Antiguo socio**: `POST /api/inviteClient {clid, clmail, box}` y se comprueba `state == 1`. El nuevo recibe la invitación al guardar.
 8. **Aviso al lead** (salvo `avisar_lead: false`): sede, fecha de inicio, correo y app (o recuperar contraseña), y firmar documentos y pagar el primer recibo en la app con el importe verificado. Se comprueba que GHL devuelve el id de cada mensaje; si no, aviso al equipo.
 9. **Nunca** se firma por el lead ni se marca un pago como pagado.

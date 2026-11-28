@@ -86,6 +86,16 @@ export function hoyDdMmYyyy(ahora = new Date(), tz = config.tz) {
   return `${p.day}/${p.month}/${p.year}`;
 }
 
+/**
+ * De la «Generación anticipada» de AimHarder (GET /api/generationPayments), el pago del primer mes de la tarifa recién
+ * puesta: del cliente, del mes de inicio («… 12/2026») y, si se puede, con el nombre de la tarifa en el concepto.
+ */
+export function elegirAnticipable(lista, clienteId, nombreTarifa, inicioIso) {
+  const mes = `${inicioIso.slice(5, 7)}/${inicioIso.slice(0, 4)}`;
+  const delMes = (lista || []).filter((p) => String(p.id) === String(clienteId) && String(p.concept || '').trim().endsWith(mes));
+  return delMes.find((p) => nombreTarifa && String(p.concept).toLowerCase().includes(nombreTarifa.toLowerCase())) || (delMes.length === 1 ? delMes[0] : null);
+}
+
 /** Elige el recibo pendiente que generó esta tarifa: el más reciente del cliente cuyo concepto lleva el nombre de la tarifa. */
 export function elegirRecibo(pendientes, nombreTarifa) {
   const delCliente = [...pendientes].sort((a, b) => Number(b.id) - Number(a.id));
@@ -219,8 +229,37 @@ export async function prepararAltaNavegador(datos, { dryRun = config.aimharder.a
     await page.goto(`${f.base}/payments`, { waitUntil: 'networkidle' });
     const pendientes = async () => page.evaluate(async ({ id, box }) => JSON.parse(await window.jQuery.get('/api/pendingPayments', { box, clientId: id, type: window.jQuery('#fltipo').val() })).pending
       .filter((p) => String(p.clid) === String(id)), { id: clienteId, box });
-    const recibo = elegirRecibo(await pendientes(), tarifa.tarifa);
-    if (!recibo) throw new Error(`No aparece el primer recibo pendiente · ${avance.join(' · ')}`);
+    let recibo = elegirRecibo(await pendientes(), tarifa.tarifa);
+    if (!recibo) {
+      // Si el primer mes de la tarifa aún está en «Generación anticipada» (AimHarder lo genera solo el día 1), al poner
+      // la tarifa no sale ningún recibo pendiente. Se adelanta ese pago como lo hace el equipo con el «+» de esa lista
+      // (anticipaPago): el panel rellena concepto, importe, IVA y la tarifa; queda manual, pendiente y emitido hoy.
+      const gen = await page.evaluate(async ({ id, box }) => JSON.parse(await window.jQuery.get('/api/generationPayments', { box, type: -1, client: id })).payments || [], { id: clienteId, box });
+      const prox = elegirAnticipable(gen, clienteId, tarifa.tarifa, datos.fecha_inicio);
+      if (!prox) throw new Error(`No aparece el primer recibo pendiente ni en la generación anticipada · ${avance.join(' · ')}`);
+      if (f.primerRecibo != null && Math.abs(Number(prox.amountc) - f.primerRecibo) > 0.01) throw new Error(`El pago de la generación anticipada (${prox.amountc} €) no coincide con el calculado (${f.primerRecibo} €) · ${avance.join(' · ')}`);
+      await page.evaluate((p) => window.anticipaPago(p.id, '', p.concept, p.amountc, p.tax, p.membId), prox);
+      await page.waitForFunction(({ memb, cantidad }) => (window.tarifasPagoActual || []).some((t) => String(t).startsWith(`${memb}_`))
+        && Math.abs(Number(window.jQuery('#pgcantidad').val()) - Number(cantidad)) < 0.01, { memb: prox.membId, cantidad: prox.amountc }, { timeout: 20000 });
+      const guardado = page.waitForResponse((x) => /\/api\/payment\b/.test(x.url()) && x.request().method() === 'POST', { timeout: 30000 });
+      const problema = await page.evaluate((hoy) => {
+        const $ = window.jQuery;
+        $('#pgDesde').datepicker('setDate', hoy);
+        // Pendiente: sin fecha de cobro ni forma de cobro (lo paga el lead desde la app)
+        if ($('#pgpago').datepicker('getDate') != null || !$('#pgcashnull').is(':checked')) return 'el pago no quedaría pendiente';
+        if (!window.validaFichaPago()) return `el panel no acepta el pago: ${$('#feedbackMsg').text().trim().slice(0, 200)}`;
+        window.guardarPago(document.createElement('span'));
+        return null;
+      }, hoy);
+      if (problema) throw new Error(`No se pudo adelantar el pago: ${problema} · ${avance.join(' · ')}`);
+      const rp = await guardado;
+      let rpj; try { rpj = JSON.parse(await rp.text()); } catch { rpj = null; }
+      if (rpj?.tienePago != null) throw new Error(`AimHarder dice que ese pago ya estaba generado · ${avance.join(' · ')}`);
+      if (!rpj || rpj.result != 1) throw new Error(`AimHarder no guardó el pago adelantado: ${String(rpj?.errorMsg || rp.status()).slice(0, 200)} · ${avance.join(' · ')}`);
+      avance.push(`pago de «${prox.concept}» adelantado desde la generación anticipada`);
+      recibo = elegirRecibo(await pendientes(), tarifa.tarifa);
+      if (!recibo) throw new Error(`El pago adelantado no aparece en pendientes · ${avance.join(' · ')}`);
+    }
     if (recibo.since !== hoy) {
       await page.evaluate((pid) => window.fichaPago(pid), recibo.id);
       await page.waitForFunction((pid) => String(window.pagoEditId) === String(pid) && window.jQuery('#pgDesde').datepicker('getDate') && document.querySelector('#pgcantidad').value, recibo.id, { timeout: 20000 });
