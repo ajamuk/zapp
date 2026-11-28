@@ -175,6 +175,14 @@ if (config.ghlWebhookEnabled && ghlConfigurado) {
   }, 60000);
   // Chats nuevos de los que no llegó el aviso de GHL: cada 3 minutos se repasan las conversaciones recientes
   cada('barrido-chats', 3 * 60000, () => setter.barrerConversacionesNuevas(), 2 * 60000);
+  // Mensajes del equipo que faltan (GHL solo avisa de los entrantes, y los del móvil llegan tarde): conciliación por
+  // id cada 5 minutos con lo de las últimas 24 h. La primera vuelta, al minuto de arrancar, mira 72 h: pone al día lo
+  // que se perdió mientras Sofía estaba parada.
+  let alArrancar = true;
+  cada('conciliar-salientes', 5 * 60000, async () => {
+    const r = await setter.conciliarRecientes(alArrancar ? { horas: 72, limite: 100 } : {});
+    if (r) alArrancar = false; // si GHL no contestaba, la siguiente vuelta vuelve a mirar las 72 h
+  }, 60000);
 }
 
 // En segundo plano registrado: el apagado ordenado espera a que acabe un envío en curso antes de salir

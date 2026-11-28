@@ -46,6 +46,9 @@ const CANALES_NATIVOS = new Set(['whatsapp', 'instagram', 'messenger']);
 const VENTANA_SYNC = 3 * 60000; // chat sin sincronizar todavía: solo se miran los mensajes de GHL de los últimos 3 min
 const SOLAPE_SYNC = 2 * 60000;  // margen hacia atrás al repasar un chat ya sincronizado
 const PAGINA_GHL = 30; // mensajes por página al leer una conversación de GHL (Ghl.mensajes)
+const HORAS_CONCILIACION = 24; // conciliación por id: horas hacia atrás en las que se buscan mensajes del equipo que falten
+/** Fecha de la base en ISO: `datetime('now')` de SQLite («2026-11-27 22:31:18», UTC) o ISO tal cual. null si no hay. */
+const fechaIso = (f) => (!f ? null : /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(f) ? `${f.replace(' ', 'T')}.000Z` : f);
 const MAX_PAGINAS_HISTORIAL = 20; // aislamiento: páginas de GHL para leer entera la conversación de un chat nuevo o por adoptar
 /** Texto comparable de un mensaje: sin la firma que añade el conector, sin espacios de más y en minúsculas. */
 export function textoComparable(t) {
@@ -360,26 +363,13 @@ export class Setter {
           // mensaje anterior con el mismo texto («hola», «hola») y que GHL aún no liste el nuevo: se repasa luego.
           out.visto = true; out.repasar = true;
         }
-      } else if (m.direccion === 'outbound' && m.source !== 'workflow' && !conocido(m.id) && (!this.aislado() || salienteVerificado(aisl, m))) {
-        const nativo = CANALES_NATIVOS.has(m.canal); const delConector = m.tipo === 'TYPE_CUSTOM_SMS';
-        // Sin texto solo cuenta por el canal nativo (una foto o un audio del equipo); el conector no se puede cotejar
-        const cuenta = (nativo && (t || m.adjuntos.length)) || (delConector && t);
-        // Copia del conector de un saliente nativo que está en la lista (de Sofía, de un workflow de GHL o del
-        // equipo): lo que vale es el nativo, que se trata por su cuenta. Solo sin nativo es alguien desde el móvil.
-        const esCopia = delConector && lista.some((x) => x !== m && x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal)
-          && Math.abs(new Date(x.fecha) - new Date(m.fecha)) < 2 * 60000 && (textoComparable(x.texto) === t || (!textoComparable(x.texto) && x.adjuntos.length)));
-        if (cuenta && !esCopia) {
-          // Sofía está enviando ahora mismo: su burbuja puede verse en GHL antes de quedar registrada aquí.
-          // Se deja para la próxima vez (el cursor no pasa de aquí).
-          if (enMarcha) pendiente = true;
-          else if (this.repo.getConv(convId) && !this.adoptarSinConfirmar(convId, m)) {
-            const nuestro = t && db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
-              .all(convId, iso(m.fecha, -10 * 60000), iso(m.fecha, 10 * 60000)).some((x) => textoComparable(x.texto) === t);
-            if (!nuestro) {
-              await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha }, { verificado: true });
-              out.salientes++;
-            }
-          }
+      } else if (!conocido(m.id) && this.esSalienteDelEquipo(m, lista, aisl)) {
+        // Sofía está enviando ahora mismo: su burbuja puede verse en GHL antes de quedar registrada aquí.
+        // Se deja para la próxima vez (el cursor no pasa de aquí).
+        if (enMarcha) pendiente = true;
+        else if (this.repo.getConv(convId) && !this.adoptarSinConfirmar(convId, m) && !this.mismoTextoRegistrado(convId, m)) {
+          await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha }, { verificado: true });
+          out.salientes++;
         }
       }
       if (!pendiente && (!nuevoCursor || m.fecha > nuevoCursor)) nuevoCursor = m.fecha;
@@ -388,6 +378,99 @@ export class Setter {
     if (nuevoCursor && nuevoCursor !== cursor && lista.incompleta !== 'error' && this.repo.getConv(convId)) this.repo.updateConv(convId, { ghl_sync_at: nuevoCursor });
     if (out.entrantes > 1 || out.salientes) console.log(`[sync] ${convId}: ${out.entrantes} entrantes y ${out.salientes} del equipo recuperados de GHL`);
     return out;
+  }
+
+  /**
+   * ¿Es este saliente de GHL un mensaje del equipo que tiene que estar aquí? No lo es el de un workflow, la copia del
+   * conector de un saliente nativo que está en la lista, ni (con aislamiento) uno que GHL no sitúa en el número propio.
+   */
+  esSalienteDelEquipo(m, lista, aisl = this.aislamiento.modo === 'activo' ? this.aislamiento : null) {
+    if (m.direccion !== 'outbound' || m.source === 'workflow') return false;
+    if (this.aislado() && !salienteVerificado(aisl, m)) return false;
+    const t = textoComparable(m.texto);
+    const nativo = CANALES_NATIVOS.has(m.canal); const delConector = m.tipo === 'TYPE_CUSTOM_SMS';
+    // Sin texto solo cuenta por el canal nativo (una foto o un audio del equipo); el conector no se puede cotejar
+    const cuenta = (nativo && (t || m.adjuntos.length)) || (delConector && t);
+    // Copia del conector de un saliente nativo que está en la lista (de Sofía, de un workflow de GHL o del
+    // equipo): lo que vale es el nativo, que se trata por su cuenta. Solo sin nativo es alguien desde el móvil.
+    const esCopia = delConector && lista.some((x) => x !== m && x.direccion === 'outbound' && CANALES_NATIVOS.has(x.canal)
+      && Math.abs(new Date(x.fecha) - new Date(m.fecha)) < 2 * 60000 && (textoComparable(x.texto) === t || (!textoComparable(x.texto) && x.adjuntos.length)));
+    return Boolean(cuenta && !esCopia);
+  }
+
+  /** ¿Está ya aquí ese texto, enviado por Sofía o desde el panel en torno a esa hora? (aún sin el id de GHL) */
+  mismoTextoRegistrado(convId, m) {
+    const t = textoComparable(m.texto);
+    if (!t) return false;
+    const iso = (ms) => new Date(new Date(m.fecha).getTime() + ms).toISOString();
+    return this.repo.db.prepare("SELECT texto FROM messages WHERE conversation_id = ? AND autor IN ('ia', 'humano') AND enviado = 1 AND created_at >= ? AND created_at <= ?")
+      .all(convId, iso(-10 * 60000), iso(10 * 60000)).some((x) => textoComparable(x.texto) === t);
+  }
+
+  /**
+   * Conciliación por id de los mensajes del equipo (desde GHL, desde la app de GHL o desde el móvil con WhatsApp
+   * Business). A diferencia de `sincronizar`, no depende del cursor: se mira lo de las últimas `horas` y entra todo
+   * saliente del equipo cuyo id no esté aquí, aunque GHL lo haya listado tarde y con su hora original (lo que pasa con
+   * los del móvil) o aunque nadie avisara (GHL solo avisa de los entrantes). Repetirlo no duplica nada.
+   * Los entrantes no se tocan: de esos se encarga `sincronizar` (un entrante viejo no debe provocar una respuesta).
+   *
+   * Un mensaje que ya es pasado (anterior al chat aquí, o con Sofía escribiendo después) queda solo en el historial: no
+   * pausa a Sofía ni dispara etiquetas o palabras para parar o reanudar. Uno posterior se trata como cualquier mensaje
+   * del equipo (`onOutbound`).
+   */
+  async conciliarSalientes(convId, { horas = HORAS_CONCILIACION } = {}) {
+    if (String(convId).startsWith('prueba-') || !this.ghl.mensajes) return null;
+    const previa = this.repo.getConv(convId);
+    if (!previa || !this.permitido(previa)) return null;
+    return this.enSerie(convId, async () => {
+      // Sofía está enviando en este chat: su burbuja puede verse en GHL antes de quedar registrada aquí
+      if (this.enCurso?.has(convId)) return { salientes: 0, historial: 0, enCurso: true };
+      const conv = this.repo.getConv(convId);
+      const db = this.repo.db;
+      const aisl = this.aislamiento.modo === 'activo' ? this.aislamiento : null;
+      const desde = [new Date(this.now().getTime() - horas * 3600000).toISOString(), conv.ghl_sync_suelo].filter(Boolean).sort().pop();
+      const lista = await this.ghl.mensajes(convId, { desde });
+      if (aisl && lista.some((m) => esDeOtraLinea(aisl, m))) return this.bloquearCompartida(convId);
+      const nacido = fechaIso(conv.created_at);
+      const conocido = db.prepare('SELECT 1 FROM messages WHERE external_id = ?');
+      const out = { salientes: 0, historial: 0 };
+      for (const m of lista) {
+        if (!(m.fecha >= desde) || conocido.get(m.id) || !this.esSalienteDelEquipo(m, lista, aisl)) continue;
+        if (this.adoptarSinConfirmar(convId, m) || this.mismoTextoRegistrado(convId, m)) continue;
+        const ultimaIa = db.prepare("SELECT max(created_at) f FROM messages WHERE conversation_id = ? AND autor = 'ia' AND enviado = 1").get(convId)?.f;
+        const pasado = (nacido && m.fecha < nacido) || (ultimaIa && m.fecha < ultimaIa);
+        if (pasado) {
+          const ins = this.repo.addMessage({ conversation_id: convId, external_id: m.id, autor: 'humano', texto: m.texto || '[archivo]', adjunto: tipoAdjunto(m.adjuntos), created_at: m.fecha });
+          if (ins) out.historial++;
+        } else {
+          const r = await this.onOutbound({ evento: 'outbound', conversationId: convId, canal: m.canal, texto: m.texto || '[archivo]', messageId: m.id, userId: m.userId || 'equipo', adjuntos: m.adjuntos, creado: m.fecha }, { verificado: true });
+          if (!r?.ignorado) out.salientes++;
+        }
+      }
+      const n = out.salientes + out.historial;
+      if (n) console.log(`[conciliar] ${convId}: ${n} ${n === 1 ? 'mensaje del equipo recuperado' : 'mensajes del equipo recuperados'} de GHL${out.historial ? ` (${out.historial} solo para el historial)` : ''}`);
+      return out;
+    });
+  }
+
+  /**
+   * Repaso de los chats de aquí con actividad en GHL en las últimas `horas`: a cada uno, `conciliarSalientes`. Los
+   * chats nuevos no entran: de esos se ocupa `barrerConversacionesNuevas`. null si GHL no da la lista.
+   */
+  async conciliarRecientes({ horas = HORAS_CONCILIACION, limite = 50 } = {}) {
+    if (!this.ghl.conversacionesRecientes || !this.ghl.mensajes) return { revisadas: 0, recuperados: 0 };
+    const desdeMs = this.now().getTime() - horas * 3600000;
+    const lista = await this.safe(() => this.ghl.conversacionesRecientes({ limit: limite, desdeMs }));
+    if (!lista) return null;
+    let revisadas = 0; let recuperados = 0;
+    for (const c of lista) {
+      if (new Date(c.ultimo).getTime() < desdeMs || !this.repo.getConv(c.id)) continue;
+      const r = await this.safe(() => this.conciliarSalientes(c.id, { horas }));
+      if (!r) continue; // GHL no responde (o chat no permitido): se vuelve a mirar en el siguiente repaso
+      revisadas++; recuperados += (r.salientes || 0) + (r.historial || 0);
+    }
+    if (recuperados) console.log(`[conciliar] ${revisadas} chats revisados, ${recuperados} mensajes del equipo recuperados de GHL`);
+    return { revisadas, recuperados };
   }
 
   /**
