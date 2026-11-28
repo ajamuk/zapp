@@ -271,7 +271,7 @@ export function detalle(db, id) {
  * Busca en el registro de socios de cada sede (clientes-analytics, solo lectura) a quién corresponde cada alta, por
  * correo o por las 9 últimas cifras del teléfono. Devuelve una función (sede, email, telefono) → { primer, ultimo } | null.
  */
-function buscadorDePagos(rutas = config.embudo.sociosDb) {
+export function buscadorDePagos(rutas = config.embudo.sociosDb) {
   const abiertas = {};
   const u9 = (t) => String(t || '').replace(/\D/g, '').slice(-9);
   const buscar = (sede, email, telefono) => {

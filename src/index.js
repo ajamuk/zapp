@@ -17,6 +17,7 @@ import { Etiquetador } from './etiquetas.js';
 import { vigilar, registrar as registrarAlerta, resolver as resolverAlerta } from './alertas.js';
 import { recuperar, bucle, buclesParados, apagadoOrdenado, enSegundoPlano } from './arranque.js';
 import { crearAvisos } from './avisos-ghl.js';
+import { cerrarAltasDelEquipo } from './altas-equipo.js';
 import { rutaPruebas } from './probar.js';
 import { procesadorFormularios } from './formularios.js';
 import { estadoAislamiento, chatPermitido, cuarentena, enmascarar } from './aislamiento.js';
@@ -196,6 +197,9 @@ cada('horarios', 24 * 3600 * 1000, async () => {
   if (r.fallos.length) registrarAlerta(repo.db, { clave: 'horarios-sync', tipo: 'aimharder', titulo: 'No se pueden comprobar los horarios en AimHarder', detalle: r.fallos.join('\n'), nivel: 'aviso' });
   else resolverAlerta(repo.db, 'horarios-sync');
 }, 3 * 60000);
+
+// Altas que el equipo ha terminado a mano y ya están pagadas (registro de socios): cada 15 minutos se dan por hechas
+cada('altas-equipo', 15 * 60000, () => cerrarAltasDelEquipo({ repo, ghl: ghlConfigurado ? ghl : null, aislamiento }), 2 * 60000);
 
 // Alertas del sistema: comprobaciones cada 10 minutos (la primera al minuto de arrancar)
 cada('alertas', 10 * 60000, async () => {
