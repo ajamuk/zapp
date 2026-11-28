@@ -253,7 +253,8 @@ export function detalle(db, id) {
   return {
     conv: { ...conv, ultimo_turno: conv.ultimo_turno ? JSON.parse(conv.ultimo_turno) : null },
     etiquetas: deChats(db, [id])[id] || [],
-    mensajes: db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY id').all(id),
+    // Por la hora real: un mensaje del equipo que GHL dio tarde (o recuperado después) sale en su sitio, no al final
+    mensajes: db.prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY replace(created_at, ' ', 'T'), id").all(id),
     seguimientos: (() => {
       const ultimo = db.prepare('SELECT max(id) m FROM messages WHERE conversation_id = ? AND enviado = 1').get(id)?.m ?? 0;
       return db.prepare('SELECT * FROM scheduled WHERE conversation_id = ? ORDER BY id DESC LIMIT 20').all(id)

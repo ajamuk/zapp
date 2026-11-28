@@ -287,7 +287,26 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return res.status(400).json({ error: 'Mes no válido.' });
     res.json(await embudo(mes, { repo, ...embudoOpciones }));
   });
-  admin.get('/panel/conversaciones', (req, res) => { const { filtro, vista, criterios, q, limite } = req.query; res.json(panel.conversaciones(db, { filtro, vista, criterios, q: typeof q === 'string' ? q : '', limite })); });
+  admin.get('/panel/conversaciones', (req, res) => {
+    // Alguien tiene el panel a la vista: en segundo plano se buscan en GHL los mensajes del equipo que falten (como
+    // mucho un repaso cada pocos minutos; lo que aparezca sale en el siguiente refresco de la lista)
+    setter?.conciliarAlAbrirPanel?.();
+    const { filtro, vista, criterios, q, limite } = req.query;
+    res.json(panel.conversaciones(db, { filtro, vista, criterios, q: typeof q === 'string' ? q : '', limite }));
+  });
+  // Botón «Actualizar» de la lista: repaso completo ahora (o el que ya estaba en marcha) y cuánto ha traído
+  admin.post('/panel/conciliar', async (_req, res) => {
+    if (!setter?.conciliarRecientes) return res.status(503).json({ error: 'La sincronización con GHL no está disponible.' });
+    const r = await setter.conciliarRecientes({ refrescoMs: 0, motivo: 'botón Actualizar' });
+    return r ? res.json(r) : res.status(502).json({ error: 'GHL no ha contestado. Prueba otra vez en un momento.' });
+  });
+  // Botón «Actualizar» de un chat: ese chat, ahora
+  admin.post('/panel/conversaciones/:id/conciliar', async (req, res) => {
+    if (!setter?.conciliarSalientes) return res.status(503).json({ error: 'La sincronización con GHL no está disponible.' });
+    if (!repo.getConv(req.params.id)) return res.status(404).json({ error: 'no existe' });
+    const r = await setter.safe(() => setter.conciliarSalientes(req.params.id, { motivo: 'botón Actualizar' }));
+    return r ? res.json(r) : res.status(502).json({ error: 'No se ha podido leer este chat en GHL.' });
+  });
   // Audio o imagen de un mensaje (el panel lo pide con su cabecera de acceso y lo muestra)
   admin.get('/panel/conversaciones/:id/media/:msg', (req, res) => {
     const m = db.prepare('SELECT media_ruta, media_mime FROM messages WHERE id = ? AND conversation_id = ?').get(Number(req.params.msg), req.params.id);
@@ -295,6 +314,8 @@ export function crearApp({ setter, repo, complete, completeJSON, embudoOpciones,
   });
   admin.get('/panel/conversaciones/:id', (req, res) => {
     const d = panel.detalle(db, req.params.id);
+    // Chat abierto en el panel: se repasa en GHL en segundo plano (como mucho una vez por minuto)
+    if (d) setter?.conciliarAlAbrirChat?.(req.params.id);
     // ¿Se le puede escribir desde aquí? (cuadro de respuesta del panel; `motivo` vacío = sí)
     if (d && setter?.motivoNoEscribir) d.escribir = { motivo: setter.motivoNoEscribir(d.conv), pausa: Boolean(leerAjustes(repo).pausarSiEquipoEscribe && setter.enviaDeVerdad(d.conv)) };
     // Plantillas de WhatsApp que se le pueden mandar (también pasadas 24 h)

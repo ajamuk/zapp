@@ -538,6 +538,11 @@ const estado = { seccion: location.hash.slice(1).split('/')[0] || 'chats', filtr
 let enVuelo = 0;
 const ocupado = (d) => { enVuelo = Math.max(0, enVuelo + d); document.documentElement.classList.toggle('cargando', enVuelo > 0); };
 
+/** Resultado del botón «Actualizar»: cuántos mensajes del equipo se han traído de GHL. */
+function textoConciliado(n, quien = 'Los chats') {
+  return n ? `${n} ${n === 1 ? 'mensaje del equipo recuperado' : 'mensajes del equipo recuperados'} de GHL.` : `${quien} ya estaba${quien === 'Los chats' ? 'n' : ''} al día con GHL.`;
+}
+
 /** Aviso breve abajo: cuando una acción (pausar, cancelar, borrar…) falla, se ve por qué en vez de no pasar nada. */
 function avisar(texto) {
   const caja = $('#avisos'); if (!caja) return;
@@ -1038,7 +1043,7 @@ async function chats() {
       <button id="vnueva" class="suave" title="Crear una vista con los filtros que elijas">+ Vista</button></div>
     <div id="pfil" class="panel-filtros" ${estado.panelFiltros ? '' : 'hidden'}></div>
     <div id="activos" class="activos"></div>
-    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="col-lista"><div class="barra-filtros"><input id="q" type="search" aria-label="Buscar chat o mensaje" title="Buscar por nombre, teléfono o mensaje" placeholder="Buscar…" value="${esc(estado.q)}"><button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button><select id="bexp" aria-label="Exportar a CSV" title="Exportar a CSV"><option value="">CSV…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select></div><div class="lista" id="lista"><div class="vacio">Cargando…</div></div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
+    <div class="chats ${estado.conv ? 'con-hilo' : ''}" id="ch"><div class="col-lista"><div class="barra-filtros"><input id="q" type="search" aria-label="Buscar chat o mensaje" title="Buscar por nombre, teléfono o mensaje" placeholder="Buscar…" value="${esc(estado.q)}"><button id="bfil" aria-expanded="${Boolean(estado.panelFiltros)}" aria-controls="pfil">Filtros${resumenCriterios(estado.crit, opciones).length ? ` <span class="n">${resumenCriterios(estado.crit, opciones).length}</span>` : ''}</button><select id="bexp" aria-label="Exportar a CSV" title="Exportar a CSV"><option value="">CSV…</option><option value="chats">Estos chats (CSV)</option><option value="mensajes">Estos chats con sus mensajes (CSV)</option></select><button id="bsync" title="Trae de GHL los mensajes del equipo que falten en los chats de las últimas 24 h">⟳ Actualizar</button></div><div class="lista" id="lista"><div class="vacio">Cargando…</div></div></div><div class="hilo" id="hilo"><div class="vacio">Elige un chat</div></div></div>`;
   // Cambiar de vista solo vuelve a pedir la lista (una consulta, no tres) y los contadores se ponen al día aparte
   $('#main').querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
     estado.vista = b.dataset.v; estado.crit = { ...(estado.vistas.find((v) => String(v.id) === b.dataset.v)?.criterios || {}) }; estado.limite = 100;
@@ -1050,6 +1055,12 @@ async function chats() {
   $('#bfil').onclick = () => { estado.panelFiltros = !estado.panelFiltros; $('#pfil').hidden = !estado.panelFiltros; $('#bfil').setAttribute('aria-expanded', estado.panelFiltros); ajustarAltoChats(); };
   let t; $('#q').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { estado.q = e.target.value; estado.limite = 100; lista(); }, 300); };
   pintarFiltros();
+  $('#bsync').onclick = async () => {
+    const bt = $('#bsync'); bt.disabled = true; bt.textContent = 'Actualizando…';
+    try { const r = await api('/panel/conciliar', { method: 'POST' }); avisar(textoConciliado(r.recuperados)); await lista(); }
+    catch (e) { avisar(e.message); }
+    finally { if ($('#bsync') === bt) { bt.disabled = false; bt.textContent = '⟳ Actualizar'; } }
+  };
   $('#bexp').onchange = (e) => { const f = e.target.value; if (!f) return; e.target.value = ''; descargar(`/panel/exportar?formato=${f}&criterios=${encodeURIComponent(JSON.stringify(estado.crit || {}))}&q=${encodeURIComponent(estado.q)}`, `sofia_${f}_${new Date().toISOString().slice(0, 10)}.csv`); };
   await lista();
   if (estado.seccion === 'chats' && estado.conv) await abrir(estado.conv);
@@ -1388,7 +1399,7 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   const ETQ = { lead: 'lead', ia: 'Sofía', humano: 'equipo', sistema: 'sistema' };
   const disponibles = (estado.opciones?.etiquetas || []).filter((e) => !d.etiquetas.some((x) => x.id === e.id));
   $('#hilo').innerHTML = `<div class="cab"><div class="quien"><button class="volver" id="bv" aria-label="Volver a chats">← Chats</button><b>${esc(c.nombre || c.telefono || 'Sin nombre')}</b>${c.telefono ? `<span class="chip">${esc(c.telefono)}</span>` : ''}${chipsConv(c)}${c.pause_reason ? `<div class="motivo-pausa">${esc(c.pause_reason)}</div>` : ''}</div>
-      <div class="acciones-f">${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
+      <div class="acciones-f"><button id="bsynchilo" title="Trae de GHL los mensajes del equipo que falten en este chat" aria-label="Actualizar este chat con GHL">⟳</button>${c.ai_paused || c.derivado ? '<button class="primario" id="bact">Reactivar Sofía</button>' : '<button id="bfor" title="Sofía contesta ya (respeta su horario)">⚡ Responder ya</button><button class="peligro" id="bpau">Pausar Sofía</button>'}</div></div>
     <div class="etq-hilo">${d.etiquetas.map((e) => `<span class="etq-q">${pill(e)}<button type="button" class="x" data-quitar="${e.id}" aria-label="Quitar etiqueta ${esc(e.nombre)}">✕</button></span>`).join('')}
       ${disponibles.length ? `<select id="addetq" aria-label="Añadir etiqueta"><option value="">+ Añadir etiqueta</option>${disponibles.map((e) => `<option value="${e.id}">${esc(e.nombre)}</option>`).join('')}</select>` : ''}</div>
     <div class="centro"><div class="msgs" id="msgs">${(() => { let dia = ''; return d.mensajes.map((x) => { const f = fechaDe(x.created_at); const k = f.toDateString(); const sep = k !== dia ? `<div class="dia-sep">${esc(diaTexto(f))}</div>` : ''; dia = k;
@@ -1550,6 +1561,11 @@ async function abrir(id, { datos = null, mantener = false } = {}) {
   $('#bv').onclick = () => { if (history.state?.zappChat) history.back(); else cerrarHilo(); };
   const recargar = async () => { await Promise.all([lista(), abrir(id, { mantener: true })]); refrescarVistas(); };
   const accion = async (a) => { await api(`/panel/conversaciones/${encodeURIComponent(id)}/${a}`, { method: 'POST' }); recargar(); };
+  $('#bsynchilo').onclick = async () => {
+    const bt = $('#bsynchilo'); bt.disabled = true;
+    try { const r = await api(`/panel/conversaciones/${encodeURIComponent(id)}/conciliar`, { method: 'POST' }); avisar(textoConciliado((r.salientes || 0) + (r.historial || 0), 'Este chat')); await recargar(); }
+    catch (e) { avisar(e.message); bt.disabled = false; }
+  };
   $('#bact') && ($('#bact').onclick = () => accion('reanudar'));
   $('#bpau') && ($('#bpau').onclick = () => accion('pausar'));
   $('#bfor') && ($('#bfor').onclick = async () => { $('#bfor').disabled = true; try { await api(`/panel/conversaciones/${encodeURIComponent(id)}/forzar`, { method: 'POST' }); $('#bfor').textContent = '⚡ Contestará en unos segundos'; } catch (e) { $('#bfor').textContent = e.message; } });
