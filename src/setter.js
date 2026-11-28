@@ -418,7 +418,7 @@ export class Setter {
    * pausa a Sofía ni dispara etiquetas o palabras para parar o reanudar. Uno posterior se trata como cualquier mensaje
    * del equipo (`onOutbound`).
    */
-  async conciliarSalientes(convId, { horas = HORAS_CONCILIACION, motivo = 'repaso' } = {}) {
+  async conciliarSalientes(convId, { horas = HORAS_CONCILIACION } = {}) {
     if (String(convId).startsWith('prueba-') || !this.ghl.mensajes) return null;
     const previa = this.repo.getConv(convId);
     if (!previa || !this.permitido(previa)) return null;
@@ -448,68 +448,29 @@ export class Setter {
         }
       }
       const n = out.salientes + out.historial;
-      if (n) console.log(`[conciliar] ${convId}: ${n} ${n === 1 ? 'mensaje del equipo recuperado' : 'mensajes del equipo recuperados'} de GHL (${motivo})${out.historial ? `; ${out.historial} solo para el historial` : ''}`);
+      if (n) console.log(`[conciliar] ${convId}: ${n} ${n === 1 ? 'mensaje del equipo recuperado' : 'mensajes del equipo recuperados'} de GHL${out.historial ? ` (${out.historial} solo para el historial)` : ''}`);
       return out;
     });
   }
 
   /**
-   * Repaso de los chats de aquí con actividad en GHL en las últimas `horas`: a cada uno, `conciliarSalientes`. Un chat
-   * cuya última actividad no ha cambiado no se vuelve a leer hasta pasados `refrescoMs` (los del móvil pueden aparecer
-   * en GHL tarde y sin mover esa fecha). Los chats nuevos no entran: de esos se ocupa `barrerConversacionesNuevas`.
-   * Si ya hay un repaso en marcha, se devuelve ese mismo (el bucle, el panel y el botón no se pisan).
+   * Repaso de los chats de aquí con actividad en GHL en las últimas `horas`: a cada uno, `conciliarSalientes`. Los
+   * chats nuevos no entran: de esos se ocupa `barrerConversacionesNuevas`. null si GHL no da la lista.
    */
-  conciliarRecientes(opciones = {}) {
-    if (this.conciliando) return this.conciliando;
-    this.conciliando = this.#conciliarRecientes(opciones).finally(() => { this.conciliando = null; });
-    return this.conciliando;
-  }
-
-  async #conciliarRecientes({ horas = HORAS_CONCILIACION, refrescoMs = 30 * 60000, limite = 50, motivo = 'repaso' } = {}) {
+  async conciliarRecientes({ horas = HORAS_CONCILIACION, limite = 50 } = {}) {
     if (!this.ghl.conversacionesRecientes || !this.ghl.mensajes) return { revisadas: 0, recuperados: 0 };
-    const ahora = this.now().getTime();
-    const desdeMs = ahora - horas * 3600000;
+    const desdeMs = this.now().getTime() - horas * 3600000;
     const lista = await this.safe(() => this.ghl.conversacionesRecientes({ limit: limite, desdeMs }));
     if (!lista) return null;
-    this.conciliadas ??= new Map(); // conversación → { ultimo, at } de su último repaso
     let revisadas = 0; let recuperados = 0;
     for (const c of lista) {
-      if (new Date(c.ultimo).getTime() < desdeMs) continue;
-      const conv = this.repo.getConv(c.id);
-      if (!conv || !this.permitido(conv) || String(c.id).startsWith('prueba-')) continue;
-      const vista = this.conciliadas.get(c.id);
-      if (vista && vista.ultimo === c.ultimo && ahora - vista.at < refrescoMs) continue;
-      const r = await this.safe(() => this.conciliarSalientes(c.id, { horas, motivo }));
-      if (!r) continue; // GHL no responde: se vuelve a mirar en el siguiente repaso
+      if (new Date(c.ultimo).getTime() < desdeMs || !this.repo.getConv(c.id)) continue;
+      const r = await this.safe(() => this.conciliarSalientes(c.id, { horas }));
+      if (!r) continue; // GHL no responde (o chat no permitido): se vuelve a mirar en el siguiente repaso
       revisadas++; recuperados += (r.salientes || 0) + (r.historial || 0);
-      this.conciliadas.set(c.id, { ultimo: c.ultimo, at: ahora });
-      if (this.conciliadas.size > 2000) this.conciliadas.delete(this.conciliadas.keys().next().value);
     }
-    if (recuperados) console.log(`[conciliar] ${motivo}: ${revisadas} chats revisados, ${recuperados} mensajes del equipo recuperados de GHL`);
-    return { revisadas, recuperados, motivo };
-  }
-
-  /**
-   * Alguien está usando el panel (lista de chats a la vista): repaso de todos los chats recientes en segundo plano,
-   * como mucho uno cada `cadaMs` aunque haya varias personas conectadas. Devuelve si se ha lanzado.
-   */
-  conciliarAlAbrirPanel({ cadaMs = 5 * 60000 } = {}) {
-    const ahora = this.now().getTime();
-    if (this.conciliando || ahora - (this.ultimoRepasoPanel ?? -Infinity) < cadaMs) return false;
-    this.ultimoRepasoPanel = ahora;
-    this.conciliarRecientes({ motivo: 'panel abierto' }).catch((e) => console.error('[conciliar]', e.message));
-    return true;
-  }
-
-  /** Alguien tiene abierto un chat en el panel: se repasa ese chat en segundo plano, como mucho una vez por `cadaMs`. */
-  conciliarAlAbrirChat(convId, { cadaMs = 60000 } = {}) {
-    const ahora = this.now().getTime();
-    this.chatsAbiertos ??= new Map();
-    if (ahora - (this.chatsAbiertos.get(convId) ?? -Infinity) < cadaMs) return false;
-    this.chatsAbiertos.set(convId, ahora);
-    if (this.chatsAbiertos.size > 500) this.chatsAbiertos.delete(this.chatsAbiertos.keys().next().value);
-    this.safe(() => this.conciliarSalientes(convId, { motivo: 'chat abierto' }));
-    return true;
+    if (recuperados) console.log(`[conciliar] ${revisadas} chats revisados, ${recuperados} mensajes del equipo recuperados de GHL`);
+    return { revisadas, recuperados };
   }
 
   /**

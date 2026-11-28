@@ -113,7 +113,7 @@ test('chat en el que Sofía está escribiendo, de prueba o desconocido: no se to
   assert.equal(sal.lecturas.c1, undefined);
 });
 
-test('repaso de chats recientes: solo los conocidos, sin releer los que no cambian, y compartido si ya hay uno', async () => {
+test('repaso de chats recientes: solo los conocidos y dentro de la ventana; repetirlo no duplica', async () => {
   const recientes = [
     { id: 'c1', contactId: 'k-c1', ultimo: hace(10) },
     { id: 'nuevo', contactId: 'k-nuevo', ultimo: hace(10) },
@@ -121,74 +121,19 @@ test('repaso de chats recientes: solo los conocidos, sin releer los que no cambi
   ];
   const { repo, setter, sal } = montar({ recientes, mensajes: { c1: [saliente('o1', 'c1', 20)] } });
   chat(repo, 'c1'); chat(repo, 'viejo');
-  const [a, b] = [setter.conciliarRecientes(), setter.conciliarRecientes()];
-  assert.equal(a, b, 'dos peticiones a la vez comparten el mismo repaso');
-  assert.deepEqual(await a, { revisadas: 1, recuperados: 1, motivo: 'repaso' });
+  assert.deepEqual(await setter.conciliarRecientes(), { revisadas: 1, recuperados: 1 });
   assert.deepEqual(Object.keys(sal.lecturas), ['c1'], 'ni el chat nuevo (lo lleva el barrido) ni el de fuera de la ventana');
-  // Sin cambios en GHL no se vuelve a leer…
-  await setter.conciliarRecientes();
-  assert.equal(sal.lecturas.c1, 1);
-  // …salvo que se pida sin espera (botón «Actualizar»)
-  assert.deepEqual(await setter.conciliarRecientes({ refrescoMs: 0 }), { revisadas: 1, recuperados: 0, motivo: 'repaso' });
-  assert.equal(sal.lecturas.c1, 2);
+  assert.deepEqual(await setter.conciliarRecientes(), { revisadas: 1, recuperados: 0 });
+  assert.equal(repo.db.prepare("SELECT count(*) n FROM messages WHERE external_id = 'o1'").get().n, 1);
 });
 
-test('GHL no contesta: el repaso devuelve null y el chat se vuelve a mirar la próxima vez', async () => {
+test('GHL no contesta: el repaso no rompe nada y el chat se vuelve a mirar la próxima vez', async () => {
   const { repo, setter, sal } = montar({ recientes: [{ id: 'c1', contactId: 'k-c1', ultimo: hace(10) }] });
   chat(repo, 'c1');
   setter.ghl.mensajes = async (id) => { sal.lecturas[id] = (sal.lecturas[id] || 0) + 1; throw new Error('caído'); };
-  assert.deepEqual(await setter.conciliarRecientes(), { revisadas: 0, recuperados: 0, motivo: 'repaso' });
+  assert.deepEqual(await setter.conciliarRecientes(), { revisadas: 0, recuperados: 0 });
   await setter.conciliarRecientes();
   assert.equal(sal.lecturas.c1, 2);
   setter.ghl.conversacionesRecientes = async () => { throw new Error('caído'); };
   assert.equal(await setter.conciliarRecientes(), null);
-});
-
-test('panel abierto y chat abierto: repaso en segundo plano, con espera entre uno y otro', async () => {
-  let ahora = T0.getTime();
-  const { repo, setter, sal } = montar({ recientes: [{ id: 'c1', contactId: 'k-c1', ultimo: hace(10) }], mensajes: { c1: [saliente('o1', 'c1', 20)] } });
-  setter.now = () => new Date(ahora);
-  chat(repo, 'c1');
-  assert.equal(setter.conciliarAlAbrirPanel(), true);
-  await setter.conciliando;
-  assert.equal(setter.conciliarAlAbrirPanel(), false, 'a los pocos segundos no se repite');
-  ahora += 5 * 60000;
-  assert.equal(setter.conciliarAlAbrirPanel(), true);
-  await setter.conciliando;
-  assert.equal(autores(repo, 'c1').length, 1);
-
-  assert.equal(setter.conciliarAlAbrirChat('c1'), true);
-  assert.equal(setter.conciliarAlAbrirChat('c1'), false, 'el refresco de cada 5 s no vuelve a leer GHL');
-  await setter.enSerie('c1', async () => {});
-  const lecturas = sal.lecturas.c1;
-  ahora += 60000;
-  assert.equal(setter.conciliarAlAbrirChat('c1'), true);
-  await setter.enSerie('c1', async () => {});
-  assert.equal(sal.lecturas.c1, lecturas + 1);
-});
-
-test('panel: la lista y el chat lanzan el repaso, y los botones «Actualizar» dicen cuánto han traído', async () => {
-  const { config } = await import('../src/config.js');
-  const { crearApp } = await import('../src/server.js');
-  config.adminToken = 'clave-test';
-  const { repo, setter, sal } = montar({ recientes: [{ id: 'c1', contactId: 'k-c1', ultimo: hace(10) }], mensajes: { c1: [saliente('o1', 'c1', 20)] } });
-  chat(repo, 'c1');
-  const srv = crearApp({ setter, repo }).listen(0);
-  await new Promise((r) => srv.once('listening', r));
-  const base = `http://127.0.0.1:${srv.address().port}/admin`;
-  const api = (ruta, o = {}) => fetch(base + ruta, { ...o, headers: { authorization: 'Bearer clave-test' } });
-  try {
-    assert.equal((await api('/panel/conversaciones')).status, 200);
-    await setter.conciliando;
-    assert.equal(sal.lecturas.c1, 1, 'abrir la lista ha repasado los chats recientes');
-    assert.equal((await api('/panel/conversaciones/c1')).status, 200);
-    await setter.enSerie('c1', async () => {});
-    assert.equal(sal.lecturas.c1, 2, 'abrir el chat lo ha repasado');
-    const todos = await (await api('/panel/conciliar', { method: 'POST' })).json();
-    assert.deepEqual(todos, { revisadas: 1, recuperados: 0, motivo: 'botón Actualizar' });
-    const uno = await api('/panel/conversaciones/c1/conciliar', { method: 'POST' });
-    assert.deepEqual(await uno.json(), { salientes: 0, historial: 0 });
-    assert.equal((await api('/panel/conversaciones/nadie/conciliar', { method: 'POST' })).status, 404);
-    assert.equal(repo.db.prepare("SELECT count(*) n FROM messages WHERE external_id = 'o1'").get().n, 1, 'sin duplicados');
-  } finally { srv.close(); }
 });

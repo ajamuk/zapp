@@ -78,12 +78,10 @@ Dejarlo unos días en prueba y comparar las notas de Sofía con lo que contesta 
   el móvil), se aparta de ese chat. Para pararla antes de escribir, etiqueta `parar ia`; para devolvérselo,
   `continuar ia`. Los mensajes de otros workflows de GHL no la apartan.
 - GHL solo avisa a Sofía de los mensajes **entrantes**. Los del equipo (desde GHL, la app de GHL o WhatsApp Business
-  en el móvil, que llegan a GHL tarde y con su hora original) se traen por **conciliación por id**: cada 10 minutos
-  se repasan los chats con actividad en las últimas 24 h y entra todo saliente del equipo que aún no esté (72 h en
-  la primera vuelta tras arrancar). Además se repasa al abrir el panel (como mucho cada 5 min), al abrir un chat
-  (como mucho cada minuto) y con el botón **⟳ Actualizar** de la lista o del chat. Un mensaje que ya es pasado
-  (anterior al chat en Sofía, o con Sofía escribiendo después) queda solo en el historial y no la pausa. En el
-  registro sale como `[conciliar]`.
+  en el móvil, que llegan a GHL tarde y con su hora original) se traen por **conciliación por id**: cada 5 minutos se
+  repasan los chats con actividad en las últimas 24 h y entra todo saliente del equipo que aún no esté (72 h en la
+  primera vuelta tras arrancar). Un mensaje que ya es pasado (anterior al chat en Sofía, o con Sofía escribiendo
+  después) queda solo en el historial y no la pausa. En el registro sale como `[conciliar]`.
 - **Hace falta un número de WhatsApp propio de Sofía, en una subcuenta solo suya** (sin tocar el número ni los
   workflows que ya hay): ver [aislamiento-whatsapp.md](aislamiento-whatsapp.md). Sin ese aislamiento configurado,
   con `MODE=live` el servicio no recibe ni envía nada.
